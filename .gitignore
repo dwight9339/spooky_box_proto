@@ -1,0 +1,15 @@
+# Build and tool output (including CM4/build and CM7/build).
+build
+/CM7/build-usb-diag/
+/.pio/
+*.su
+mx.scratch
+/CMakeUserPresets.json
+
+# CubeMX reports are generated snapshots; keep the editable .ioc instead.
+/full_spooky_proto.pdf
+/full_spooky_proto.txt
+
+# Generated editor files contain local paths and are not the build source.
+/.vscode/c_cpp_properties.json
+/.vscode/launch.json
