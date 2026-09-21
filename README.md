@@ -5,13 +5,6 @@ microphone audio, magnetic-field sensing, session recording, and a responsive
 visual/physical interface. This repository is the STM32H755 Nucleo prototype,
 not yet the complete product firmware.
 
-The current firmware has demonstrated simultaneous Si4735 stereo radio and
-PDM-microphone capture to a three-channel, 48 kHz/16-bit WAV file on the audio
-shield's SD card. The resulting WAV was inspected successfully. During that
-recording workload, the measured current through backplane JP8 peaked below
-130 mA. These are prototype observations, not a final product power or
-reliability specification.
-
 ## Start here
 
 - [Product philosophy](docs/product-philosophy.md) - what the instrument should
@@ -46,6 +39,18 @@ GNU toolchain and Ninja. It also expects STM32CubeH7 V1.13.0 for the FatFs
 source; see `CM7/CMakeLists.txt` for `STM32CUBE_H7_ROOT` if it is not under the
 default STM32Cube repository location.
 
+## Start here
+
+- [Product philosophy](docs/product-philosophy.md) - what the instrument should
+  feel like and the meaning its controls and feedback should preserve.
+- [Architecture](docs/architecture.md) - current implementation, target M7/M4
+
+## Start here
+
+- [Product philosophy](docs/product-philosophy.md) - what the instrument should
+  feel like and the meaning its controls and feedback should preserve.
+- [Architecture](docs/architecture.md) - current implementation, target M7/M4
+
 From the repository root, with CMake, Ninja, and `arm-none-eabi-gcc` available:
 
 ```text
@@ -69,8 +74,7 @@ the generated settings. The specific discrepancies are listed in
 Keep the M7 as the source of truth for radio, audio, storage, session behavior,
 and sensor interpretation. The intended M4 role is input scanning and UI
 presentation, communicating semantic state and events across a controlled
-inter-core boundary. The UI board has not yet been integrated, and an external
-UI coprocessor is an option only if later measurements justify it.
+inter-core boundary. The UI board has not yet been integrated.
 
 The next software milestone is to preserve this working bring-up baseline,
 extract application code from the large M7 `main.c`, define the shared
