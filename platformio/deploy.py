@@ -18,8 +18,9 @@ PACKAGES_DIR = Path(env.subst("$PROJECT_PACKAGES_DIR")).resolve()
 PRESET = env.GetProjectOption("custom_cmake_preset", "Debug")
 ADAPTER_SPEED = env.GetProjectOption("custom_adapter_speed", "1000")
 
-CM7_ELF = PROJECT_DIR / "CM7" / "build" / "full_spooky_proto_CM7.elf"
-CM4_ELF = PROJECT_DIR / "CM4" / "build" / "full_spooky_proto_CM4.elf"
+FIRMWARE_DIR = PROJECT_DIR / "build" / PRESET / "firmware"
+CM7_ELF = FIRMWARE_DIR / "CM7" / "full_spooky_proto_CM7.elf"
+CM4_ELF = FIRMWARE_DIR / "CM4" / "full_spooky_proto_CM4.elf"
 
 
 def _latest_bundle_tool(bundle_name, executable):

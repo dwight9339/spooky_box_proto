@@ -4,6 +4,12 @@ set(CMAKE_SYSTEM_PROCESSOR          arm)
 set(CMAKE_C_COMPILER_ID GNU)
 set(CMAKE_CXX_COMPILER_ID GNU)
 
+# This is a fixed bare-metal cross toolchain. Avoid host-style compiler probes;
+# the real CM4/CM7 compilation still fails immediately if the toolchain is
+# missing or unusable.
+set(CMAKE_C_COMPILER_FORCED TRUE)
+set(CMAKE_CXX_COMPILER_FORCED TRUE)
+
 # Some default GCC settings
 # arm-none-eabi- must be part of path environment
 set(TOOLCHAIN_PREFIX                arm-none-eabi-)

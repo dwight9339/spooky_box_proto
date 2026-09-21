@@ -466,10 +466,10 @@ measurements but SOC, SOH, and mAh values as preliminary.
 
 ## Build, flash, and observe
 
-Build and flash both core images. The locally verified artifacts are:
+Build and flash both core images. For the Debug preset, the artifacts are:
 
-- `CM7/build/full_spooky_proto_CM7.elf`
-- `CM4/build/full_spooky_proto_CM4.elf`
+- `build/Debug/firmware/CM7/full_spooky_proto_CM7.elf`
+- `build/Debug/firmware/CM4/full_spooky_proto_CM4.elf`
 
 The CM4 image is the generated dual-core synchronization companion; all test
 logic runs on CM7.

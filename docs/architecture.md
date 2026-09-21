@@ -114,16 +114,16 @@ authoritative source. See the [CubeMX discrepancy list](../BRINGUP.md#cubemx-fin
 
 ## Next milestones and open decisions
 
-1. Capture a reproducible, version-controlled baseline of the passing
-   three-channel recorder and current measurements.
-2. Normalize Debug/Release build outputs and document the generated versus
-   maintained file boundary.
-3. Extract M7 board, radio/audio, recorder, sensor, power, and CLI services
+The passing recorder now has a version-controlled baseline. Debug and Release
+also have isolated output trees, with the generated/maintained file boundary
+documented in [repository-layout.md](repository-layout.md).
+
+1. Extract M7 board, radio/audio, recorder, sensor, power, and CLI services
    without changing their observed behavior.
-4. Define shared state/event/command types and host tests for packet and
+2. Define shared state/event/command types and host tests for packet and
    state-machine logic.
-5. Prove M7-to-M4 heartbeat and version mismatch handling.
-6. Integrate input/rendering drivers when the UI board is available, then
+3. Prove M7-to-M4 heartbeat and version mismatch handling.
+4. Integrate input/rendering drivers when the UI board is available, then
    rerun long recording and SD stress under maximal UI activity.
 
 Open design decisions include the concrete IPC memory/cache scheme, display

@@ -11,6 +11,8 @@ not yet the complete product firmware.
   feel like and the meaning its controls and feedback should preserve.
 - [Architecture](docs/architecture.md) - current implementation, target M7/M4
   split, boundaries, and open decisions.
+- [Repository and generated files](docs/repository-layout.md) - canonical build
+  outputs and which files may safely be edited or regenerated.
 - [Hardware bring-up and USB CLI](BRINGUP.md) - wiring, known prototype bodges,
   power checks, commands, and recording test procedure.
 - [STM32 pivot reference](reference/spooky_box_architecture_stm32h745_pivot.md)
@@ -34,22 +36,11 @@ not yet the complete product firmware.
 
 ## Build and flash
 
-The project uses the STM32CubeMX-generated dual-core CMake build with an ARM
-GNU toolchain and Ninja. It also expects STM32CubeH7 V1.13.0 for the FatFs
-source; see `CM7/CMakeLists.txt` for `STM32CUBE_H7_ROOT` if it is not under the
-default STM32Cube repository location.
-
-## Start here
-
-- [Product philosophy](docs/product-philosophy.md) - what the instrument should
-  feel like and the meaning its controls and feedback should preserve.
-- [Architecture](docs/architecture.md) - current implementation, target M7/M4
-
-## Start here
-
-- [Product philosophy](docs/product-philosophy.md) - what the instrument should
-  feel like and the meaning its controls and feedback should preserve.
-- [Architecture](docs/architecture.md) - current implementation, target M7/M4
+The project uses a maintained dual-core CMake orchestration layer around the
+STM32CubeMX-generated core projects, with an ARM GNU toolchain and Ninja. It
+also expects STM32CubeH7 V1.13.0 for the FatFs source; see `CM7/CMakeLists.txt`
+for `STM32CUBE_H7_ROOT` if it is not under the default STM32Cube repository
+location.
 
 From the repository root, with CMake, Ninja, and `arm-none-eabi-gcc` available:
 
@@ -58,11 +49,20 @@ cmake --preset Debug
 cmake --build --preset Debug
 ```
 
-The expected firmware images are `CM7/build/full_spooky_proto_CM7.elf` and
-`CM4/build/full_spooky_proto_CM4.elf`. The PlatformIO **Deploy** task builds,
-flashes, and verifies both images through the configured Picoprobe; it does not
-replace the CMake build. Follow [BRINGUP.md](BRINGUP.md) for power, connection,
-terminal, and test instructions before flashing hardware.
+Each preset has its own complete child builds and firmware images:
+
+```text
+build/Debug/firmware/CM7/full_spooky_proto_CM7.elf
+build/Debug/firmware/CM4/full_spooky_proto_CM4.elf
+build/Release/firmware/CM7/full_spooky_proto_CM7.elf
+build/Release/firmware/CM4/full_spooky_proto_CM4.elf
+```
+
+The PlatformIO **Deploy** task uses `custom_cmake_preset` (Debug by default),
+then builds, flashes, and verifies both matching images through the configured
+Picoprobe. It does not replace the CMake build. Follow
+[BRINGUP.md](BRINGUP.md) for power, connection, terminal, and test instructions
+before flashing hardware.
 
 Do not regenerate the `.ioc` and assume the result matches the passing image:
 several proven clock and peripheral configurations currently override or defer
