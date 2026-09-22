@@ -123,6 +123,12 @@ extern DMA_HandleTypeDef hdma_dfsdm1_flt0;
 #define REG_3V3_EN_GPIO_Port       GPIOB
 #define LED_MATRIX_EN_Pin          GPIO_PIN_5
 #define LED_MATRIX_EN_GPIO_Port    GPIOB
+#define DISP_RST_Pin               GPIO_PIN_15
+#define DISP_RST_GPIO_Port         GPIOA
+#define DISP_CS_Pin                GPIO_PIN_6
+#define DISP_CS_GPIO_Port          GPIOG
+#define DISP_DC_Pin                GPIO_PIN_7
+#define DISP_DC_GPIO_Port          GPIOG
 #define AMP_SD_Pin                 GPIO_PIN_8
 #define AMP_SD_GPIO_Port           GPIOG
 #define SD_CARD_IS_PRESENT() \

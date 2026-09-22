@@ -203,6 +203,16 @@ SD STATUS
 SD REINIT
 SD STRESS 64 1
 SD CLEAN
+UI STATUS
+UI WATCH START
+UI WATCH STOP
+UI LEDS
+UI MATRIX PROBE
+UI MATRIX ANIMATE
+UI DISPLAY TEST
+UI DISPLAY TEST 2
+UI DISPLAY OFF
+UI OFF
 SLEEP START
 ```
 
@@ -287,6 +297,100 @@ EMF=37uT
 OK EMF=37uT FIELD=4842uT BASELINE=4805uT
 OK EMF ZERO BASELINE=4842uT
 ```
+
+## UI-board Stage 1 test
+
+The first UI-board test runs on CM7 so it can report directly over the
+existing USB CDC CLI. This is temporary bring-up ownership rather than a
+decision about the final M4/M7 split. Before testing, fit JP9 so the
+backplane's `3V3_MCU` pull-ups for the ordinary buttons and encoder A/B
+contacts are powered.
+
+`UI STATUS` reports the unmodified GPIO levels and accumulated encoder counts.
+The expected idle state is `BTN0=1`, `BTN1=1`, encoder A/B both high, and each
+encoder switch (`S`) low. A pressed standalone button reads low; an encoder
+pushbutton is expected to read high. For example:
+
+```text
+OK UI RAW BTN0=1 BTN1=1 ENC0=A1B1S0/0 ENC1=A1B1S0/0 ENC2=A1B1S0/0 ENC3=A1B1S0/0 WATCH=0 LEDS=IDLE MATRIX_EN=0 DISPLAY=OFF DROPPED=0
+```
+
+Start event reporting with `UI WATCH START`, then press and release each
+button and rotate each encoder slowly in both directions. Pushbuttons are
+debounced for 15 ms. Encoder A/B is sampled by the 1 kHz SysTick interrupt;
+completed detents are handed off to the foreground USB task. The observed
+phase order is reported as `DIR=CW` or `DIR=CCW`, and `STEPS` groups any
+detents completed between foreground service calls:
+
+```text
+OK UI WATCH START counts-reset=1 debounce=15-ms sample=1-kHz
+UI EVENT BTN0 PRESSED RAW=0
+UI EVENT BTN0 RELEASED RAW=1
+UI EVENT ENC0 DIR=CW STEPS=1 COUNT=1 AB=11
+UI EVENT ENC0_BTN PRESSED RAW=1
+```
+
+Pay particular attention to the encoder pushbuttons. The UI-board 12 kOhm /
+22 kOhm network and the backplane's additional 10 kOhm pulldown predict only
+about 1.82 V at the MCU when pressed. Measure one `ENCx_BTN` net released and
+pressed and do not accept this part of the test merely because a particular
+prototype happens to cross the digital threshold.
+
+`UI LEDS` drives all fourteen channels one at a time for 350 ms: the two
+standalone button LEDs first, followed by the twelve encoder RGB channels. It
+then restores every low-side-driver input low. Run this test only with the
+correct LED series-resistor values fitted at R18 and R22. `UI OFF` aborts a
+chase, stops input event reporting, disables the matrix, turns off and resets
+the display, and forces all LED controls low.
+
+`UI MATRIX PROBE` raises PB5, waits 10 ms, and probes only the IS31FL3741
+default 7-bit I2C address `0x30`. It does not initialize or illuminate the
+matrix. The command always returns PB5 low after the probe:
+
+```text
+OK UI MATRIX ACK address=0x30 EN-restored=0
+```
+
+`UI MATRIX ANIMATE` initializes the controller at a conservative global
+current and treats physical columns 2 through 10 as a centered logical 9x9
+canvas. Physical columns 0, 1, 11, and 12 remain dark. A color-changing comet
+snakes through all 81 logical pixels with a dim three-pixel tail, then the
+test clears the PWM registers, enters software shutdown, and returns PB5 low:
+
+```text
+OK UI MATRIX ANIMATE START logical=9x9 physical-cols=2..10 step=70-ms current=0x40
+OK UI MATRIX ANIMATE PASS pixels=81 logical=9x9 blanked=1 EN=0
+```
+
+The animation takes about six seconds. `UI OFF` may be used at any time to
+abort it immediately through the hardware enable pin.
+
+## UI-board SSD1309 display test
+
+The 2.42-inch OLED is a 128x64 SSD1309 module in 4-wire SPI mode. During this
+bring-up test, firmware overrides the still-provisional CubeMX SPI6 settings
+with an 8-bit, transmit-only, mode-0 configuration at 8 MHz. PA7 drives MOSI,
+PG13 drives SCK, PG6 is chip select, PG7 is data/command, and PA15 is reset.
+
+Run `UI DISPLAY TEST`. Prototype testing confirmed that this module uses a
+zero-column offset. A successful transfer leaves a static test image visible
+and reports:
+
+```text
+OK UI DISPLAY TEST PASS controller=SSD1309 resolution=128x64 offset=0 spi=8-MHz
+```
+
+The image has a one-pixel border, both diagonals, a center cross, a filled
+square in the upper-left corner, an outline square in the upper-right, three
+descending horizontal bars at lower left, and vertical bars at lower right.
+Check that all four border edges are visible and that these asymmetric marks
+appear in the stated corners. `UI DISPLAY TEST 0` explicitly selects the
+confirmed mapping; `UI DISPLAY TEST 2` retains the alternate two-column
+mapping as a diagnostic option for other SSD1309 module variants.
+
+`UI DISPLAY OFF` sends display-off, asserts reset low, and leaves chip select
+high. `UI OFF` performs the same display shutdown along with the other UI
+safe-state actions.
 
 ## Three-channel radio and microphone recording test
 

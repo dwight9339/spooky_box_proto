@@ -66,6 +66,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/radio_recorder.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/sd_diskio.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/sd_test.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/ui_board_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/USB_Device/Src/usb_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/USB_Device/Src/usbd_conf.c
     ${CMAKE_CURRENT_SOURCE_DIR}/USB_Device/Src/usbd_desc.c
@@ -111,7 +112,6 @@ list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 if((CMAKE_C_STANDARD EQUAL 90) OR (CMAKE_C_STANDARD EQUAL 99))
     message(ERROR "Generated code requires C11 or higher")
 endif()
-
 
 
 

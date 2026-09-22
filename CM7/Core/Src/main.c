@@ -29,6 +29,7 @@
 #include "magnetometer_test.h"
 #include "radio_recorder.h"
 #include "sd_test.h"
+#include "ui_board_test.h"
 #include "usb_test.h"
 
 /* USER CODE END Includes */
@@ -1544,7 +1545,9 @@ static void UsbCliCommand(const char *line)
       "OK MAG READ|STATUS|STREAM START [ms]|STOP\r\n"
       "OK EMF READ|STATUS|ZERO|STREAM START [ms]|STOP\r\n"
       "OK RECORD STATUS|START [seconds]|STOP\r\n"
-      "OK SD STATUS|REINIT|STRESS [size-MiB] [passes]|CLEAN\r\n");
+      "OK SD STATUS|REINIT|STRESS [size-MiB] [passes]|CLEAN\r\n"
+      "OK UI STATUS|WATCH START|WATCH STOP|LEDS|MATRIX PROBE|"
+      "MATRIX ANIMATE|DISPLAY TEST [0|2]|DISPLAY OFF|OFF\r\n");
     return;
   }
   if (strcmp(command, "SLEEP START") == 0)
@@ -1555,6 +1558,10 @@ static void UsbCliCommand(const char *line)
     return;
   }
   if (MagnetometerTest_HandleCommand(command))
+  {
+    return;
+  }
+  if (UiBoardTest_HandleCommand(command))
   {
     return;
   }
@@ -1945,6 +1952,7 @@ static void PrototypeSleepRun(void)
   printf("[sleep] reporting once before shutdown\r\n");
   (void)FuelGaugeTest_ReportNow();
   (void)MagnetometerTest_Sleep();
+  UiBoardTest_SafeOff();
   RadioRecorder_Stop();
   SdTest_Stop();
   SleepStopRadioAudio();
@@ -2120,6 +2128,10 @@ Error_Handler();
   {
     BSP_LED_On(LED_RED);
   }
+  if (!UiBoardTest_Start(&hi2c2, &hspi6))
+  {
+    BSP_LED_On(LED_RED);
+  }
   UsbTest_SetLineHandler(UsbCliCommand);
   if (!UsbTest_Start())
   {
@@ -2135,6 +2147,7 @@ Error_Handler();
     RadioRecorder_Service();
     FuelGaugeTest_Service();
     UsbTest_Service();
+    UiBoardTest_Service();
     SdTest_Service();
     if (sleep_requested)
     {
