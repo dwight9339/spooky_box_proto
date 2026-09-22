@@ -525,18 +525,27 @@ treated as production-ready yet:
 - Most non-peripheral GPIOs have no CM7 ownership attribute, so CubeMX omitted
   their definitions and initialization. The smoke test manually owns only the
   RF reset/status pins it needs.
-- SAI2 is still represented in CubeMX as an 8-bit master transmitter with
-  invalid framing. The test deliberately replaces that generated init with
-  a native 32-bit-frame, 16-bit-stereo, 48 kHz master-receive setup. The
-  sibling jumper test's experimental 64-bit compensation was tried first but
-  captured at half rate on this board, making playback one octave high. Do
-  not regenerate over the user code and assume the `.ioc` SAI2 settings are
-  authoritative.
-- The `.ioc` DFSDM settings remain non-authoritative. This firmware overrides
-  them with the proven SPK0641 falling-edge, Sinc4/OSR64 configuration. Because
-  this image's PLL3 audio kernel is 24.576 MHz, its DFSDM divider is 8 rather
-  than the sibling project's divider of 16, producing the same 3.072 MHz PDM
-  clock and 48 kHz PCM rate.
+- SAI2 is now represented as I2S-standard, 16-bit stereo master receive with
+  circular halfword DMA on DMA1 Stream 4, and its kernel clock is PLL3P at
+  approximately 24.576 MHz. STM32CubeMX 6.17's H755 device data nevertheless
+  limits the user-set SAI master divider to 15, while this hardware needs the
+  valid divider 16 for 48 kHz. The `.ioc` therefore carries the nearest valid
+  CubeMX placeholder (`Mckdiv=15`). CubeMX also serializes the UI's disabled
+  `Master Clock No Divider` selection using an unrelated oversampling enum and
+  consequently displays a 0 Hz derived rate. `RadioSai2Start()` deliberately
+  replaces both fields with the tested HAL values before starting SAI2 and
+  DMA. Do not treat generated SAI2 timing as authoritative until ST's device
+  data can represent these settings. The sibling jumper test's experimental
+  64-bit compensation captured at half rate on this board, making playback one
+  octave high.
+- DFSDM1 now represents the proven SPK0641 path: the approximately 24.576 MHz
+  PLL3 audio clock divided by 8, falling-edge Channel 0 input with a 9-bit
+  right shift, and continuous Sinc4/OSR64 Filter 0 conversion. Its regular
+  output uses circular word transfers on DMA2 Stream 0. CubeMX locks that DMA
+  interrupt at priority 0 under the current project policy; this is safe
+  because its callbacks do not call RTOS APIs, while the existing hand-written
+  MSP initialization lowers it to priority 4. Both configurations produce the
+  same 3.072 MHz PDM clock and 48 kHz PCM rate.
 - SDMMC initializes immediately in generated code and can stop boot when a
   card/path is unavailable. It is deferred here.
 - SPI6 is generated for 4-bit data. It is disabled here until the display
@@ -545,10 +554,13 @@ treated as production-ready yet:
   configuring the codec. PLL3P in the `.ioc` is now 24.576 MHz for the legal
   64 MHz PCLK2/SAI2 relationship, but the displayed CubeMX SAI timing remains
   non-authoritative.
-- The `.ioc` still reports an invalid 75 MHz USB clock. The test does not use
-  that value: it enables HSI48, selects it as the USB kernel clock, and enables
-  CRS synchronization at runtime. Preserve that setup if the project is later
-  regenerated in CubeMX.
+- USB OTG FS is now represented as an M7 device-only peripheral using HSI48 at
+  48 MHz. PA9 is an M7 GPIO input because firmware monitors the divided VBUS
+  signal in software; PA10 remains the radio-reset bodge rather than USB ID.
+  CubeMX locks the enabled OTG FS interrupt at priority 0 under the current
+  project policy, while the preserved USB MSP initialization lowers it to the
+  intended FreeRTOS-safe priority 6 before enabling it. HSI48 CRS calibration
+  from USB2 SOF is still configured explicitly at runtime.
 
 After the short capture is clean, run the ten-minute recording/power benchmark
 and inspect the three extracted channels before extending the recorder toward
