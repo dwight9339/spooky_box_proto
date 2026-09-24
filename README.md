@@ -28,6 +28,8 @@ not yet the complete product firmware.
   diagnostic history, tests, and bench acceptance.
 - [Bench results](docs/bench-results-2026-09-23.md) - supplied hardware transcripts,
   source checkpoints, power observations, and remaining validation.
+- [Spooky Bench setup](docs/spooky-bench-setup.md) - installed Windows Phase-1A CLI
+  for discovery, bounded UART capture, LOG/DIAG queries, and JSON run evidence.
 - [Spookyprobe v1 contract](docs/spookyprobe-v1.md) - serial formats and the
   independent probe capture/decoder work package.
 - [STM32 pivot reference](reference/legacy_docs/spooky_box_architecture_stm32h745_pivot.md)
@@ -46,6 +48,7 @@ not yet the complete product firmware.
 | `CM7/App/` | Board diagnostics, prototype power, bounded UART logger, diagnostic CLI, and IPC CLI adapter. |
 | `Common/` | Shared startup, portable log/event buffers, diagnostic IPC contract, and STM32 IPC transport. |
 | `tests/` | Native C tests that run without hardware. |
+| `host/` | Spooky Bench Python CLI, profiles, dependency pin, and offline tests. |
 | `Drivers/`, `Middlewares/` | STM32 HAL/BSP and USB middleware dependencies. |
 | `full_spooky_proto.ioc` | CubeMX project/pin map; not yet authoritative for all working runtime settings. |
 | `platformio/`, `platformio.ini` | VS Code task/deployment wrapper around the CMake firmware build and Picoprobe/OpenOCD flashing. |

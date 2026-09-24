@@ -2,6 +2,11 @@
 build
 /CM7/build-usb-diag/
 /.pio/
+/host/.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+/host/bench.local.json
 *.su
 mx.scratch
 /CMakeUserPresets.json

@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "board_id": "spooky-box-prototype",
+  "artifact_root": "%LOCALAPPDATA%/SpookyBench/runs",
+  "probe": {"vid": 11914, "pid": 12, "serial_number": "REPLACE_WITH_PICO_SERIAL"},
+  "device": {"vid": 1155, "pid": 22336, "serial_number": "REPLACE_WITH_TARGET_SERIAL"}
+}

@@ -1,10 +1,22 @@
 # Spooky Bench: current-state audit and implementation proposal
 
-Audit date: 2026-09-23 (America/Denver). Status: **Phase 0 only; no bench
-implementation or hardware operation performed in this session.** Host direction
-updated to use the existing Windows development PC first, with Raspberry Pi/Linux
-deployment deferred. This revision changes the plan only; it adds no hardware
-validation evidence. This plan sets the absentee-debugging sequence; the product roadmap remains in
+Audit date: 2026-09-23 (America/Denver). Implementation update: 2026-09-24.
+**Phase 1A is implemented under `host/` and passes 22 offline tests on Windows.**
+The repo-local environment is installed. Both CDC identities were discovered and
+selected, and all four LOG/DIAG command paths passed with archived evidence,
+including a complete dump. UART startup capture also passed with 2791 bytes and
+verified raw/index/session artifacts; see [live results](bench-results-2026-09-24.md).
+Probe unplug produced a prompt error with preserved incomplete evidence, and
+capture after reconnect passed. Target CDC disconnect during synchronization and
+a query after reconnect also passed. Concurrent-operation rejection and Ctrl+C
+termination behaved as expected, and post-interrupt query/capture verified lock
+and port release. Basic live checks are complete; mid-response disconnect,
+hardware COM renumbering, and sustained-load checks remain pending. See
+[setup and usage](spooky-bench-setup.md). Phase 1B controls and Phase 2 boot-smoke
+remain planned. Raspberry Pi/Linux deployment is deferred. The original audit
+below records the state before implementation; its inventory and validation
+claims should be read in that historical context. This plan sets the
+absentee-debugging sequence; the product roadmap remains in
 [next-steps.md](next-steps.md).
 
 ## Decision in brief
@@ -49,8 +61,8 @@ PC staying awake and connected; host sleep/disconnect is not a target failure.
 
 The revisions and working-tree descriptions in this section record the original
 audit state. Subsequent source checkpoints and user-reported hardware evidence
-are recorded in [bench results](bench-results-2026-09-23.md). Spooky Bench itself
-remains a proposal; those results were collected manually.
+are recorded in [bench results](bench-results-2026-09-23.md). Those hardware
+results were collected manually before the Phase-1A utility was implemented.
 
 The target repository HEAD is `75ff3a0d59bb452d66a4477c7a42e10be711a00b`.
 The audit includes the **dirty working tree**, including untracked App/Common
@@ -684,13 +696,21 @@ execute the repeatable portions unattended.
 - [ ] Before unattended jobs, verify bounded recovery exhaustion,
       HUMAN_REQUIRED, actual final target state, permissions and artifact provenance.
 
-## First implementation slice and stopping point
+## Implementation status and next slice
 
-Next change set: **host-only Phase 1A on this Windows PC**. Implement profiles,
-device discovery/status, bounded console capture, LOG/DIAG queries, JSON/exit
-contract, deadlines, Windows lock, capped artifacts, and fake transport tests.
-Reuse the pinned Spooky Probe capture/client/decoder package through an adapter.
-No target or Pico firmware changes, Pi setup, power control, trace or CI.
+**Host-only Phase 1A is implemented on this Windows PC**: profiles, device
+discovery/status, bounded console capture, LOG/DIAG queries, JSON/exit contract,
+supervised deadlines, Windows locking, capped artifacts, and fake transport
+tests. The installed Spooky Probe package is verified against the committed
+`ce039ca` source snapshot. Configured runs archive the actual bench module
+sources/hash, including local edits. See [setup](spooky-bench-setup.md) for exact
+commands, result semantics, limits, and first live acceptance.
+
+The implementation adds no target/Pico firmware changes, Pi setup, power control,
+trace or CI. No-profile status performs discovery without opening serial ports;
+with a profile, status validates both CDC selections. OpenOCD checks are deferred
+to Phase 1B and are explicitly not_checked. Phase 1A holds one board lock per
+operation; combined capture/diagnostic orchestration belongs to the later runner.
 
 Follow with **Phase 1B** for SWD probe, paired-image validation/flash, and reset,
 using the existing Windows OpenOCD recipe and testing partial-failure cleanup.
@@ -699,4 +719,9 @@ Phase-2 boot-smoke separately after flash/reset/capture are proven. A dedicated
 Pi remains a later deployment choice, not a prerequisite for agent-accessible
 hardware testing.
 
-This audit stops here. Implementation and all hardware acceptance remain pending.
+Validation: 22/22 bench tests pass, including fake serial/decoder scenarios,
+storage refusal, Windows spawned CLI execution and forced worker termination
+with lock release. Package installation and `pip check` pass. The test environment
+uses Python 3.12.14 and pyserial 3.5. All four LOG/DIAG query paths and configured
+device selection passed initial live checks; remaining hardware checks are tracked in the
+[live results](bench-results-2026-09-24.md). Discovery alone is not target health evidence.

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spookybench"
+version = "0.1.0"
+description = "Bounded local Spooky Box bench observation tools"
+requires-python = ">=3.10"
+dependencies = ["pyserial==3.5", "spookyprobe==0.1.0"]
+
+[project.scripts]
+spookybench = "spookybench.cli:main"
+
+[tool.setuptools.package-data]
+spookybench = ["probe-lock.json"]
+
+[tool.setuptools.packages.find]
+include = ["spookybench*"]

@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "board_id": "spooky-simulated",
+  "artifact_root": "%LOCALAPPDATA%/SpookyBench/simulated",
+  "probe": {"serial_number": "SIM-PROBE"},
+  "device": {"serial_number": "SIM-TARGET"}
+}

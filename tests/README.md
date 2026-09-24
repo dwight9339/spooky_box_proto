@@ -4,6 +4,10 @@ Run in a shell with a native C11 compiler, CMake, and Ninja on PATH. On
 Windows use a Visual Studio Developer Command Prompt (VS 2019 16.11 or newer).
 These tests do not use the ARM toolchain or connect to the board.
 
+The separate Python Spooky Bench tests live in `host/tests`; see
+[bench setup](../docs/spooky-bench-setup.md#simulation-and-tests). They do not
+change or replace these native firmware tests.
+
 ```text
 cmake -S tests -B build/host -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build/host
