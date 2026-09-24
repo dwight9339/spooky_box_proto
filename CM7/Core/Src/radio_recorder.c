@@ -1,4 +1,5 @@
 #include "radio_recorder.h"
+#include "diagnostics.h"
 
 #include "diskio.h"
 #include "ff.h"
@@ -363,6 +364,8 @@ static void RecorderEnqueuePdm(int32_t *source)
   }
   if (pdm_queue_count >= RECORDER_QUEUE_DEPTH)
   {
+    if (!pdm_overrun)
+      Diagnostics_Record(DIAG_PDM_OVERRUN, pdm_queue_count, radio_queue_count);
     pdm_overrun = true;
     return;
   }
@@ -399,6 +402,8 @@ void RadioRecorder_OnRadioSamples(const int16_t *samples,
 
     if (radio_queue_count >= RECORDER_QUEUE_DEPTH)
     {
+      if (!radio_overrun)
+        Diagnostics_Record(DIAG_RADIO_OVERRUN, radio_queue_count, pdm_queue_count);
       radio_overrun = true;
       return;
     }
@@ -484,12 +489,15 @@ static bool RecorderWriteBlock(const int16_t *radio, const int32_t *pdm)
   result = f_write(&recorder_file, output_block,
                    RECORDER_OUTPUT_BYTES, &written);
   write_ms = HAL_GetTick() - write_start;
+  Diagnostics_Record(DIAG_SD_WRITE, write_ms,
+    (uint32_t)radio_queue_count | ((uint32_t)pdm_queue_count << 16));
   if (write_ms > max_write_ms)
   {
     max_write_ms = write_ms;
   }
   if ((result != FR_OK) || (written != RECORDER_OUTPUT_BYTES))
   {
+    Diagnostics_Record(DIAG_SD_ERROR, (uint32_t)result, written);
     RecorderSend("ERR RECORD write failed result=%s(%u) bytes=%u/%u\r\n",
                  RecorderFsResultName(result), (unsigned int)result,
                  (unsigned int)written,
@@ -535,6 +543,8 @@ static void RecorderFinish(bool aborted, const char *reason)
   recorder_state = RECORDER_IDLE;
   stop_requested = false;
   elapsed_ms = HAL_GetTick() - recording_start_ms;
+  Diagnostics_Record(DIAG_RECORD_END, frames_written,
+    ((aborted || !finalized) ? 1U : 0U) | (finalized ? 2U : 0U));
 
   if (aborted || !finalized)
   {
@@ -627,6 +637,7 @@ static bool RecorderStart(uint32_t seconds, bool radio_ready)
   pdm_dma_running = true;
   recording_start_ms = HAL_GetTick();
   progress_last_ms = recording_start_ms;
+  Diagnostics_Record(DIAG_RECORD_START, seconds, RECORDER_SAMPLE_RATE_HZ);
   RecorderSend("OK RECORD START file=%s duration=%lus "
                "format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]\r\n",
                recorder_filename, (unsigned long)seconds);
@@ -843,6 +854,8 @@ void HAL_DFSDM_FilterErrorCallback(DFSDM_Filter_HandleTypeDef *filter)
 {
   if ((filter == pdm_filter) && pdm_dma_running)
   {
+    if (!pdm_error)
+      Diagnostics_Record(DIAG_AUDIO_ERROR, 3U, filter->ErrorCode);
     pdm_error = true;
   }
 }

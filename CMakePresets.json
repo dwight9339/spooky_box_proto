@@ -18,6 +18,20 @@
             }
         },
         {
+            "name": "IpcSmoke",
+            "inherits": "Debug",
+            "cacheVariables": {
+                "SPOOKY_IPC_SMOKE": "ON"
+            }
+        },
+        {
+            "name": "IpcMismatch",
+            "inherits": "IpcSmoke",
+            "cacheVariables": {
+                "SPOOKY_IPC_M4_VERSION": "2"
+            }
+        },
+        {
             "name": "Release",
             "inherits": "default",
             "cacheVariables": {
@@ -26,6 +40,14 @@
         }
     ],
     "buildPresets": [
+        {
+            "name": "IpcSmoke",
+            "configurePreset": "IpcSmoke"
+        },
+        {
+            "name": "IpcMismatch",
+            "configurePreset": "IpcMismatch"
+        },
         {
             "name": "Debug",
             "configurePreset": "Debug"

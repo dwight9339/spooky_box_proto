@@ -53,6 +53,8 @@ enable_language(C ASM)
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/App
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc
     ${CMAKE_CURRENT_SOURCE_DIR}/USB_Device/Inc
     ${CMAKE_CURRENT_SOURCE_DIR}/../Middlewares/ST/STM32_USB_Device_Library/Core/Inc
@@ -61,6 +63,13 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/log_buffer.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/diag_history.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/target_logger.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/diagnostics.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/board_diagnostics.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/prototype_power.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/ipc_smoke_cli.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/fuel_gauge_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/magnetometer_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/radio_recorder.c
@@ -78,6 +87,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd_ex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_ll_usb.c
 )
+
+include("../cmake/ipc_smoke.cmake")
 
 # Use the same FatFs R0.12c release as the passing sibling SDMMC tests.
 set(STM32CUBE_H7_ROOT
@@ -112,6 +123,3 @@ list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 if((CMAKE_C_STANDARD EQUAL 90) OR (CMAKE_C_STANDARD EQUAL 99))
     message(ERROR "Generated code requires C11 or higher")
 endif()
-
-
-

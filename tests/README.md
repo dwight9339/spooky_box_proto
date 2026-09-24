@@ -1,0 +1,30 @@
+# Host tests
+
+Run in a shell with a native C11 compiler, CMake, and Ninja on PATH. On
+Windows use a Visual Studio Developer Command Prompt (VS 2019 16.11 or newer).
+These tests do not use the ARM toolchain or connect to the board.
+
+```text
+cmake -S tests -B build/host -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/host
+ctest --test-dir build/host --output-on-failure
+```
+
+The IPC tests compile the same portable protocol code as both cores. They
+exercise invalid headers, version/size mismatches, first handshake, missing
+acknowledgements, corrupted echoes, stale repeated packets, recovery, sequence
+wrap, tick wrap, and independent core clock epochs. Checks remain enabled in
+Release. The firmware builds also enforce the packet layout with C11 static
+assertions and the mailbox allocation with linker assertions.
+
+The logger/diagnostic tests compile the real App adapters against fake HAL and
+USB transports, as well as the portable buffers. They check queue saturation,
+buffer lifetime while UART owns a chunk, wrap and refill, context rejection,
+transport errors, timeout across tick wrap, bounded sleep drain/abort, event
+overwrite, preserved latest fault, and sequence wrap. CLI tests cover USB busy
+retry, finite dumps, overwrite gaps, cancellation, timeout, and streamed HELP.
+The HAL stub is not a UART timing or NVIC simulator.
+
+These tests do **not** establish SRAM visibility, MPU/cache behavior, HSEM
+operation, boot timing, or recording reliability. Those require the
+[IPC bench procedure](../docs/ipc-smoke-test.md).

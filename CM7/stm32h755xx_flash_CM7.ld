@@ -41,6 +41,8 @@ FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 1024K
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
 RAM_DMA (xrw)  : ORIGIN = 0x24000000, LENGTH = 512K
 ITCMRAM (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
+/* Reserved identically in both cores; diagnostic IPC only. */
+RAM_IPC (rw)       : ORIGIN = 0x38000000, LENGTH = 256
 }
 /* Highest address of the user mode stack */
 _estack = 0x20020000;    /* end of RAM */
@@ -51,6 +53,14 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 /* Define output sections */
 SECTIONS
 {
+  .ipc_shared (NOLOAD) :
+  {
+    . = ALIGN(32);
+    KEEP(*(.ipc_shared))
+    . = ALIGN(32);
+  } >RAM_IPC
+  ASSERT(SIZEOF(.ipc_shared) == 0 || SIZEOF(.ipc_shared) == 64,
+         "Unexpected IPC mailbox layout")
   /* The startup code goes first into FLASH */
   .isr_vector :
   {

@@ -21,6 +21,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#if defined(SPOOKY_IPC_SMOKE)
+#include "ipc_smoke.h"
+#endif
 
 /* USER CODE END Includes */
 
@@ -118,19 +121,28 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
+#if defined(SPOOKY_IPC_SMOKE)
+  IpcSmoke_Init();
+#endif
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  /* CM4 has no prototype workload.  Keep it asleep instead of burning power
-   * in the generated empty foreground loop. */
+  /* Normal builds have no M4 workload and suspend the tick. The opt-in IPC
+   * experiment keeps the tick active to service its foreground heartbeat. */
+#if !defined(SPOOKY_IPC_SMOKE)
   HAL_SuspendTick();
+#endif
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+#if defined(SPOOKY_IPC_SMOKE)
+    /* SysTick wakes the core; transport polls only once per 100 ms. */
+    IpcSmoke_Service();
+#endif
     __WFI();
   }
   /* USER CODE END 3 */

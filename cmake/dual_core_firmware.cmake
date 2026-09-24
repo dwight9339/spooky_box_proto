@@ -4,6 +4,8 @@ set(ST_MULTICONTEXT DUAL_CORE CACHE STRING "Type of multi-context")
 set(SPOOKY_FIRMWARE_BINARY_ROOT "${CMAKE_BINARY_DIR}/firmware")
 set(SPOOKY_EXTERNAL_PREFIX_ROOT "${CMAKE_BINARY_DIR}/_external")
 set(SPOOKY_FIRMWARE_SUFFIX ".elf")
+option(SPOOKY_IPC_SMOKE "Build the unvalidated dual-core IPC bench experiment" OFF)
+set(SPOOKY_IPC_M4_VERSION "1" CACHE STRING "M4 diagnostic ABI; 2 tests mismatch")
 
 function(spooky_add_core core_name target_name)
     set(core_source_dir "${PROJECT_SOURCE_DIR}/${core_name}")
@@ -19,6 +21,8 @@ function(spooky_add_core core_name target_name)
             "-DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON"
             "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE}"
             "-DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}"
+            "-DSPOOKY_IPC_SMOKE:BOOL=${SPOOKY_IPC_SMOKE}"
+            "-DSPOOKY_IPC_M4_VERSION:STRING=${SPOOKY_IPC_M4_VERSION}"
         BUILD_ALWAYS                true
     )
 endfunction()

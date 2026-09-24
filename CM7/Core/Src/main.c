@@ -25,6 +25,14 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include "board_diagnostics.h"
+#include "target_logger.h"
+#include "diagnostics.h"
+#include "ipc_smoke_cli.h"
+#if defined(SPOOKY_IPC_SMOKE)
+#include "ipc_smoke.h"
+#endif
+#include "prototype_power.h"
 #include "fuel_gauge_test.h"
 #include "magnetometer_test.h"
 #include "radio_recorder.h"
@@ -96,10 +104,6 @@ typedef struct
 #define VOLUME_MUTE_THRESHOLD          1024U
 #define HP_VOLUME_0DB_CODE             0x18U
 #define HP_VOLUME_MIN_CODE             0x7FU
-#define SLEEP_REPORT_PERIOD_SECONDS    300U
-#define SLEEP_WAKE_SELF_TEST_SECONDS   10U
-#define SLEEP_RAIL_STARTUP_MS          10U
-#define SLEEP_RTC_TIMEOUT_MS           1000U
 
 #define SI4735_CMD_SET_PROPERTY        0x12U
 #define SI4735_CMD_GET_INT_STATUS      0x14U
@@ -219,11 +223,6 @@ static uint32_t radio_last_frequency_khz[RADIO_BAND_COUNT] =
 {
   RADIO_AUDIO_FREQUENCY_KHZ, 1000U, 6000U, 198U
 };
-static volatile bool sleep_requested;
-static volatile bool sleep_report_due;
-static volatile bool sleep_reset_requested;
-static bool sleep_mode_active;
-static bool sleep_first_wake;
 
 /* USER CODE END PV */
 
@@ -256,64 +255,14 @@ static bool RadioTuneFrequency(RadioBand band, uint32_t frequency_khz,
                                RadioTuneStatus *tune_status);
 static bool VolumeControlInit(void);
 static bool VolumeControlService(bool force);
-static bool DebugUart7Start(void);
-static void BatteryUsbSendStatus(bool charging_only);
 static void UsbCliCommand(const char *line);
 static void RadioAudio_Service(void);
 static uint32_t RadioAudioMeasureFs(GPIO_TypeDef *port, uint32_t pin);
-static void PrototypeSleepRun(void);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-static bool DebugUart7Start(void)
-{
-  GPIO_InitTypeDef gpio = {0};
-  UART_HandleTypeDef *uart = &hcom_uart[COM1];
-
-  /* Prototype Spooky Probe console:
-   *   PE8 / UART7_TX -> Pico GP5 / UART_RX
-   *   PE7 / UART7_RX <- Pico GP4 / UART_TX
-   * The future application will move physical UART ownership to CM4, but the
-   * current single-core bring-up keeps it on CM7 for probe validation. */
-  __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_UART7_CONFIG(RCC_UART7CLKSOURCE_D2PCLK1);
-  __HAL_RCC_UART7_CLK_ENABLE();
-  __HAL_RCC_UART7_FORCE_RESET();
-  __HAL_RCC_UART7_RELEASE_RESET();
-
-  gpio.Pin = DEBUG_UART_RX_Pin | DEBUG_UART_TX_Pin;
-  gpio.Mode = GPIO_MODE_AF_PP;
-  gpio.Pull = GPIO_PULLUP;
-  gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  gpio.Alternate = GPIO_AF7_UART7;
-  HAL_GPIO_Init(DEBUG_UART_TX_GPIO_Port, &gpio);
-
-  memset(uart, 0, sizeof(*uart));
-  uart->Instance = UART7;
-  uart->Init.BaudRate = 115200U;
-  uart->Init.WordLength = UART_WORDLENGTH_8B;
-  uart->Init.StopBits = UART_STOPBITS_1;
-  uart->Init.Parity = UART_PARITY_NONE;
-  uart->Init.Mode = UART_MODE_TX_RX;
-  uart->Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  uart->Init.OverSampling = UART_OVERSAMPLING_16;
-  uart->Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  uart->Init.ClockPrescaler = UART_PRESCALER_DIV1;
-  uart->AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if ((HAL_UART_Init(uart) != HAL_OK) ||
-      (HAL_UARTEx_SetTxFifoThreshold(uart, UART_TXFIFO_THRESHOLD_1_8) !=
-       HAL_OK) ||
-      (HAL_UARTEx_SetRxFifoThreshold(uart, UART_RXFIFO_THRESHOLD_1_8) !=
-       HAL_OK) ||
-      (HAL_UARTEx_DisableFifoMode(uart) != HAL_OK))
-  {
-    return false;
-  }
-  return true;
-}
 
 static HAL_StatusTypeDef Bringup_CodecStartClock(uint32_t *mclk_hz)
 {
@@ -1451,55 +1400,6 @@ static void VolumeUsbSendStatus(void)
   (void)UsbTest_SendText(response);
 }
 
-static void BatteryUsbSendStatus(bool charging_only)
-{
-  FuelGaugeTelemetry telemetry;
-  char response[192];
-  const char *state;
-
-  if (!FuelGaugeTest_ReadTelemetry(&telemetry))
-  {
-    (void)UsbTest_SendText("ERR BATTERY telemetry unavailable\r\n");
-    return;
-  }
-
-  if (telemetry.average_current_mA > 5)
-  {
-    state = "CHARGING";
-  }
-  else if (telemetry.average_current_mA < -5)
-  {
-    state = "DISCHARGING";
-  }
-  else
-  {
-    state = "IDLE";
-  }
-
-  if (charging_only)
-  {
-    (void)snprintf(response, sizeof(response),
-                   "OK CHARGE VBUS=%u STATE=%s CURRENT=%d mA POWER=%d mW "
-                   "FULL=%u\r\n",
-                   HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9) == GPIO_PIN_SET,
-                   state, telemetry.average_current_mA,
-                   telemetry.average_power_mW, telemetry.full);
-  }
-  else
-  {
-    (void)snprintf(response, sizeof(response),
-                   "OK BATTERY PRESENT=%u SOC=%u%% VOLTAGE=%u mV "
-                   "REMAINING=%u mAh FULL=%u mAh DESIGN=%u mAh "
-                   "SOH=%u%% FLAGS=0x%04X\r\n",
-                   telemetry.battery_present, telemetry.state_of_charge_pct,
-                   telemetry.voltage_mV, telemetry.remaining_capacity_mAh,
-                   telemetry.full_charge_capacity_mAh,
-                   telemetry.design_capacity_mAh,
-                   telemetry.state_of_health_pct, telemetry.flags);
-  }
-  (void)UsbTest_SendText(response);
-}
-
 static void UsbCliCommand(const char *line)
 {
   char command[64];
@@ -1537,24 +1437,23 @@ static void UsbCliCommand(const char *line)
   }
   command[length] = '\0';
 
-  if (strcmp(command, "HELP") == 0)
+  if (Diagnostics_HandleCommand(command))
   {
-    (void)UsbTest_SendText(
-      "OK RADIO BAND [FM|AM|SW|LW] | TUNE <kHz> | UP | DOWN | STATUS\r\n"
-      "OK VOLUME READ | BATTERY READ | CHARGE STATUS | SLEEP START\r\n"
-      "OK MAG READ|STATUS|STREAM START [ms]|STOP\r\n"
-      "OK EMF READ|STATUS|ZERO|STREAM START [ms]|STOP\r\n"
-      "OK RECORD STATUS|START [seconds]|STOP\r\n"
-      "OK SD STATUS|REINIT|STRESS [size-MiB] [passes]|CLEAN\r\n"
-      "OK UI STATUS|WATCH START|WATCH STOP|LEDS|MATRIX PROBE|"
-      "MATRIX ANIMATE|DISPLAY TEST [0|2]|DISPLAY OFF|OFF\r\n");
     return;
   }
   if (strcmp(command, "SLEEP START") == 0)
   {
-    sleep_requested = true;
+#if defined(SPOOKY_IPC_SMOKE)
+    (void)UsbTest_SendText("ERR SLEEP unavailable in IPC smoke build; use Debug\r\n");
+#else
+    PrototypePower_RequestSleep();
     (void)UsbTest_SendText(
       "OK SLEEP START; CDC will disconnect; updates continue on AUX UART7\r\n");
+#endif
+    return;
+  }
+  if (IpcSmokeCli_HandleCommand(command))
+  {
     return;
   }
   if (MagnetometerTest_HandleCommand(command))
@@ -1585,14 +1484,14 @@ static void UsbCliCommand(const char *line)
       (strcmp(command, "BATTERY READ") == 0) ||
       (strcmp(command, "BATTERY STATUS") == 0))
   {
-    BatteryUsbSendStatus(false);
+    BoardDiagnostics_SendBatteryStatus(false);
     return;
   }
   if ((strcmp(command, "CHARGE") == 0) ||
       (strcmp(command, "CHARGE READ") == 0) ||
       (strcmp(command, "CHARGE STATUS") == 0))
   {
-    BatteryUsbSendStatus(true);
+    BoardDiagnostics_SendBatteryStatus(true);
     return;
   }
   if (!radio_audio_running)
@@ -1781,111 +1680,6 @@ static void Bringup_Run(void)
   }
 }
 
-static bool SleepRtcWaitForFlag(uint32_t flag)
-{
-  const uint32_t start_tick = HAL_GetTick();
-
-  while ((RTC->ISR & flag) == 0U)
-  {
-    if ((HAL_GetTick() - start_tick) > SLEEP_RTC_TIMEOUT_MS)
-    {
-      return false;
-    }
-  }
-  return true;
-}
-
-static bool SleepRtcArmWakeTimer(uint32_t period_seconds)
-{
-  if ((period_seconds == 0U) || (period_seconds > 65536U))
-  {
-    return false;
-  }
-
-  /* RTC write-protection unlock sequence. */
-  RTC->WPR = 0xCAU;
-  RTC->WPR = 0x53U;
-
-  RTC->CR &= ~(RTC_CR_WUTE | RTC_CR_WUTIE);
-  if (!SleepRtcWaitForFlag(RTC_ISR_WUTWF))
-  {
-    RTC->WPR = 0xFFU;
-    return false;
-  }
-
-  RTC->WUTR = period_seconds - 1U;
-  MODIFY_REG(RTC->CR, RTC_CR_WUCKSEL, RTC_CR_WUCKSEL_2); /* ck_spre = 1 Hz */
-
-  /* WUTF is cleared by writing zero while the other writable flags remain one. */
-  RTC->ISR = (~(RTC_ISR_WUTF | RTC_ISR_INIT)) |
-             (RTC->ISR & RTC_ISR_INIT);
-  HAL_EXTI_D1_ClearFlag(EXTI_LINE19);
-  HAL_EXTI_D2_ClearFlag(EXTI_LINE19);
-
-  RTC->CR |= RTC_CR_WUTIE | RTC_CR_WUTE;
-  RTC->WPR = 0xFFU;
-  return true;
-}
-
-static bool SleepReportRtcStart(void)
-{
-  uint32_t start_tick;
-
-  HAL_PWR_EnableBkUpAccess();
-
-  /* SystemClock_Config has already started LSE for the radio reference clock. */
-  if ((RCC->BDCR & RCC_BDCR_RTCSEL_Msk) == 0U)
-  {
-    __HAL_RCC_RTC_CONFIG(RCC_RTCCLKSOURCE_LSE);
-  }
-  else if ((RCC->BDCR & RCC_BDCR_RTCSEL_Msk) != RCC_RTCCLKSOURCE_LSE)
-  {
-    return false;
-  }
-
-  __HAL_RCC_RTC_ENABLE();
-  __HAL_RCC_RTC_CLK_ENABLE();
-  __HAL_RCC_RTC_CLK_SLEEP_ENABLE();
-
-  /* Establish a 1 Hz ck_spre timebase from the 32768 Hz LSE. */
-  RTC->WPR = 0xCAU;
-  RTC->WPR = 0x53U;
-  if (((RTC->ISR & RTC_ISR_INITS) == 0U) ||
-      ((RTC->PRER & (RTC_PRER_PREDIV_A | RTC_PRER_PREDIV_S)) !=
-       ((127U << RTC_PRER_PREDIV_A_Pos) |
-        (255U << RTC_PRER_PREDIV_S_Pos))))
-  {
-    RTC->ISR = 0xFFFFFFFFU;
-    start_tick = HAL_GetTick();
-    while ((RTC->ISR & RTC_ISR_INITF) == 0U)
-    {
-      if ((HAL_GetTick() - start_tick) > SLEEP_RTC_TIMEOUT_MS)
-      {
-        RTC->WPR = 0xFFU;
-        return false;
-      }
-    }
-    RTC->PRER = (127U << RTC_PRER_PREDIV_A_Pos) |
-                (255U << RTC_PRER_PREDIV_S_Pos);
-    RTC->ISR &= ~RTC_ISR_INIT;
-  }
-  RTC->WPR = 0xFFU;
-
-  /* D1 gets the interrupt.  The D2 event also wakes that domain so UART7 and
-   * I2C2 are clock-ready when CM7 performs the charging report. */
-  HAL_EXTI_D1_EventInputConfig(EXTI_LINE19, EXTI_MODE_IT, ENABLE);
-  HAL_EXTI_D2_EventInputConfig(EXTI_LINE19, EXTI_MODE_EVT, ENABLE);
-  EXTI->FTSR1 &= ~(1UL << EXTI_LINE19);
-  EXTI->RTSR1 |= (1UL << EXTI_LINE19);
-  HAL_NVIC_ClearPendingIRQ(RTC_WKUP_IRQn);
-  HAL_NVIC_SetPriority(RTC_WKUP_IRQn, 7U, 0U);
-  HAL_NVIC_EnableIRQ(RTC_WKUP_IRQn);
-
-  /* The first wake is deliberately quick so this path can be verified without
-   * waiting five minutes.  The foreground re-arms it for the normal cadence. */
-  return SleepRtcArmWakeTimer(SLEEP_WAKE_SELF_TEST_SECONDS);
-}
-
 static void SleepMakePeripheralPinsHighImpedance(void)
 {
   GPIO_InitTypeDef gpio = {0};
@@ -1941,79 +1735,6 @@ static void SleepStopRadioAudio(void)
   __HAL_RCC_I2C4_CLK_DISABLE();
 }
 
-static void PrototypeSleepRun(void)
-{
-  sleep_mode_active = true;
-  sleep_report_due = false;
-  sleep_reset_requested = false;
-  sleep_first_wake = true;
-
-  printf("\r\n[sleep] preparing low-power charging monitor\r\n");
-  printf("[sleep] reporting once before shutdown\r\n");
-  (void)FuelGaugeTest_ReportNow();
-  (void)MagnetometerTest_Sleep();
-  UiBoardTest_SafeOff();
-  RadioRecorder_Stop();
-  SdTest_Stop();
-  SleepStopRadioAudio();
-  BSP_LED_Off(LED_GREEN);
-  BSP_LED_Off(LED_YELLOW);
-  BSP_LED_Off(LED_RED);
-
-  /* Give the CDC acknowledgement time to leave before disconnecting the PHY. */
-  HAL_Delay(100U);
-  UsbTest_Stop();
-  printf("[sleep] USB CDC stopped; AUX UART7 remains active\r\n");
-  printf("[sleep] RTC wake self-test in 10 seconds, then reports every 5 minutes\r\n");
-  printf("[sleep] 3V3_VSYS turns on only while reading the gauge\r\n");
-  printf("[sleep] 5V_VSYS and the Babysitter power path remain on\r\n");
-  printf("[sleep] press the blue USER button or RESET to reboot\r\n");
-
-  if (!SleepReportRtcStart())
-  {
-    printf("[sleep] FAIL: LSE/RTC wake timer did not start; rebooting safely\r\n");
-    HAL_Delay(100U);
-    NVIC_SystemReset();
-  }
-  HAL_GPIO_WritePin(REG_3V3_EN_GPIO_Port, REG_3V3_EN_Pin, GPIO_PIN_RESET);
-  __HAL_RCC_I2C2_CLK_DISABLE();
-  printf("[sleep] 3V3_VSYS disabled; CM7 entering SLEEP mode\r\n");
-  HAL_SuspendTick();
-
-  for (;;)
-  {
-    HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-
-    if (sleep_reset_requested)
-    {
-      NVIC_SystemReset();
-    }
-    if (sleep_report_due)
-    {
-      sleep_report_due = false;
-      HAL_ResumeTick();
-      if (sleep_first_wake)
-      {
-        sleep_first_wake = false;
-        if (!SleepRtcArmWakeTimer(SLEEP_REPORT_PERIOD_SECONDS))
-        {
-          printf("[sleep] FAIL: could not arm five-minute RTC wake; rebooting\r\n");
-          HAL_Delay(100U);
-          NVIC_SystemReset();
-        }
-        printf("[sleep] RTC wake self-test passed; five-minute cadence armed\r\n");
-      }
-      HAL_GPIO_WritePin(REG_3V3_EN_GPIO_Port, REG_3V3_EN_Pin, GPIO_PIN_SET);
-      HAL_Delay(SLEEP_RAIL_STARTUP_MS);
-      __HAL_RCC_I2C2_CLK_ENABLE();
-      (void)FuelGaugeTest_ReportNow();
-      __HAL_RCC_I2C2_CLK_DISABLE();
-      HAL_GPIO_WritePin(REG_3V3_EN_GPIO_Port, REG_3V3_EN_Pin, GPIO_PIN_RESET);
-      HAL_SuspendTick();
-    }
-  }
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -2049,6 +1770,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+  Diagnostics_Init();
 
   /* USER CODE END Init */
 
@@ -2058,6 +1780,9 @@ int main(void)
   /* Configure the peripherals common clocks */
   PeriphCommonClock_Config();
 /* USER CODE BEGIN Boot_Mode_Sequence_2 */
+#if defined(SPOOKY_IPC_SMOKE)
+  IpcSmoke_Init(); /* M4 is still held in its boot STOP wait. */
+#endif
 #if defined(DUAL_CORE_BOOT_SYNC_SEQUENCE)
 /* When system initialization is finished, Cortex-M7 will release Cortex-M4 by means of
 HSEM notification */
@@ -2107,9 +1832,9 @@ Error_Handler();
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
 
-  /* Route the BSP printf hook through the backplane AUX UART instead of the
+  /* Route the bounded printf logger through the backplane AUX UART instead of the
    * Nucleo ST-LINK VCP on USART3. */
-  if (!DebugUart7Start())
+  if (!BoardDiagnostics_StartConsole())
   {
     Error_Handler();
   }
@@ -2143,16 +1868,18 @@ Error_Handler();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+#if defined(SPOOKY_IPC_SMOKE)
+    IpcSmoke_Service();
+#endif
     RadioAudio_Service();
     RadioRecorder_Service();
     FuelGaugeTest_Service();
     UsbTest_Service();
+    TargetLogger_Service();
+    Diagnostics_Service();
     UiBoardTest_Service();
     SdTest_Service();
-    if (sleep_requested)
-    {
-      PrototypeSleepRun();
-    }
+    PrototypePower_Service(SleepStopRadioAudio);
     MagnetometerTest_Service();
     HAL_Delay(5U);
   }
@@ -2829,21 +2556,14 @@ static void MX_GPIO_Init(void)
 
 void RTC_WKUP_IRQHandler(void)
 {
-  HAL_EXTI_D1_ClearFlag(EXTI_LINE19);
-  HAL_EXTI_D2_ClearFlag(EXTI_LINE19);
-  if ((RTC->ISR & RTC_ISR_WUTF) != 0U)
-  {
-    RTC->ISR = (~(RTC_ISR_WUTF | RTC_ISR_INIT)) |
-               (RTC->ISR & RTC_ISR_INIT);
-    sleep_report_due = true;
-  }
+  PrototypePower_OnRtcWake();
 }
 
 void BSP_PB_Callback(Button_TypeDef Button)
 {
-  if ((Button == BUTTON_USER) && sleep_mode_active)
+  if (Button == BUTTON_USER)
   {
-    sleep_reset_requested = true;
+    PrototypePower_OnUserButton();
   }
 }
 
@@ -2890,11 +2610,15 @@ void HAL_SAI_ErrorCallback(SAI_HandleTypeDef *hsai)
 {
   if ((hsai != NULL) && (hsai->Instance == SAI2_Block_A))
   {
+    if ((radio_audio_error_flags & 1U) == 0U)
+      Diagnostics_Record(DIAG_AUDIO_ERROR, 1U, hsai->ErrorCode);
     radio_audio_error_flags |= 1U;
     RadioRecorder_NotifyRadioError();
   }
   else if ((hsai != NULL) && (hsai->Instance == SAI1_Block_A))
   {
+    if ((radio_audio_error_flags & 2U) == 0U)
+      Diagnostics_Record(DIAG_AUDIO_ERROR, 2U, hsai->ErrorCode);
     radio_audio_error_flags |= 2U;
   }
 }
