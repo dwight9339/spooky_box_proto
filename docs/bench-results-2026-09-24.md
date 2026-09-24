@@ -344,3 +344,46 @@ human_required false, and complete evidence with all seven checks passing.
 This passes the initial Phase-2 hardware gate for one local PC invocation. It
 does not replace the pending repeated-reset, physical absence/timeout, sustained
 load, power-state, or deliberately interrupted hardware tests.
+
+## Phase 3: IPC progress under recording load
+
+Spooky Bench 0.4.0 adds `test ipc-load --seconds N`. The final implementation has
+45 passing offline tests, including simulated record abort, queue overrun, stale
+IPC, target disconnect, pre-existing recording, bounded cleanup, and a spawned
+worker run. The editable installation and `pip check` pass.
+
+Hardware run `2026-09-24T182232.516815_0000-9de48985` passed in 109,750 ms with
+complete evidence, `target_health=healthy`, `final_target_state=running`, and
+`human_required=false`. It archived exact runner source hash
+`3f07821d21ebd59c968b19bd2f48afa531ac1b3ef3bcd9e3d231cb78338d39d0`.
+The target was selected on COM3 and the Spookyprobe Pico on COM6 by their saved
+serial identities.
+
+The target was initially idle and created `REC004.WAV`. It reported 2,883,584
+frames, 17,301,504 data bytes, 60.074 seconds of audio, and 60,116 ms elapsed.
+Eleven progress records were observed through 55.1 seconds. Maximum current queue
+occupancy was radio 1 and PDM 0; final high-water was radio 1/8 and PDM 1/8.
+Maximum SD write time was 44 ms, and final channel peaks were 1643, 1640, and
+672. No cleanup was needed.
+
+All IPC snapshots reported LINK UP, ABI 1/1, both seen flags, zero errors, and
+BUSY=0. Forward counter evidence was:
+
+| Interval | TX | RX | ACK | ROUNDTRIPS |
+| --- | ---: | ---: | ---: | ---: |
+| Before to first in-load sample | +253 | +272 | +253 | +253 |
+| First to second in-load sample | +185 | +200 | +185 | +185 |
+| Second in-load sample to after | +225 | +239 | +225 | +225 |
+
+The final DIAG status had COUNT=128, SD_MAX_MS=44, LOOP_MAX_MS=204, and zero
+radio/PDM overruns, SD/audio errors, or fault. Its 583 overwritten history entries
+reflect the fixed 128-entry diagnostic ring under sustained SD_WRITE events;
+the archived dump itself was complete and gap-free from sequence 584, containing
+127 SD_WRITE entries and one RECORD_END. Final LOG status retained zero loss,
+transport, and context errors with empty queues. DIAG LAST returned NONE.
+
+This passes the first automated Phase-3 load gate: IPC foreground progress and
+target-reported recording health are established throughout one 60-second run.
+The WAV was not copied or inspected on the host, so audio content/channel quality,
+the ten-minute run, deliberate failure hardware cases, and broader SD/peripheral
+tests remain pending.

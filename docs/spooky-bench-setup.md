@@ -1,11 +1,13 @@
 # Spooky Bench: Windows setup and observation
 
-Implemented 2026-09-24. This slice observes the bench: serial discovery/status,
-finite UART capture, and one LOG/DIAG request per invocation. Version 0.2.0 also
+Implemented 2026-09-24. The utility provides serial discovery/status, finite UART
+capture, and LOG/DIAG requests. Version 0.2.0 also
 implements [Phase 1B SWD probe, reset and paired flash](spooky-bench-controls.md).
-Version 0.3.0 adds the [paired boot smoke](spooky-bench-boot-smoke.md). Power,
-trace, and crash collection still return `unsupported` and exit 3. No STM32 or
-Pico firmware changes are needed to install the utility.
+Version 0.3.0 adds the [paired boot smoke](spooky-bench-boot-smoke.md), and
+version 0.4.0 adds the supervised
+[IPC recording-load test](spooky-bench-ipc-load.md). Power, trace, and crash
+collection still return `unsupported` and exit 3. No STM32 or Pico firmware
+changes are needed to install the utility.
 
 Software tests run on Windows with spawned workers and fake serial transports.
 Configured discovery, all four LOG/DIAG command paths, and UART startup capture
@@ -16,8 +18,9 @@ evidence, followed by successful capture after reconnect; see
 synchronization and a query after reconnect also passed. Concurrent-operation
 rejection and Ctrl+C termination behaved as expected, and subsequent diagnostic
 and console runs confirmed lock and port release. Basic live checks are complete;
-mid-response disconnect, COM renumbering, and timing/loss under sustained load
-still require bench acceptance. Enumeration
+mid-response disconnect, COM renumbering, and deliberate transport-overload
+testing still require bench acceptance. A 60-second recording-load test has
+passed with IPC progress throughout. Enumeration
 alone does not establish a working target.
 
 ## Install in this repo
@@ -86,12 +89,15 @@ host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.j
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json diag last
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json diag dump
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test boot-smoke --manifest build/ipc-build-info.json
+host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test ipc-load --seconds 60
 ```
 
 Put global options before the command. Only one operation may own a board at a
 time, including console capture. Stop console before running a separate bench
-diagnostic invocation. A later combined runner will own both streams under one
-lock. Close other terminal applications before opening their COM ports here;
+diagnostic invocation. Boot smoke owns capture, controls, and diagnostics under
+one lock. IPC load owns one target CDC session for recording progress and its
+in-load IPC requests, then uses bounded diagnostic sessions before and after it.
+Close other terminal applications before opening their COM ports here;
 Spooky Bench does not terminate unrelated applications or steal their handles.
 
 Console is receive-only at 115200 8N1, without flow control. It saves arbitrary
@@ -131,6 +137,12 @@ writes 1-second timeouts. Two seconds of each total are reserved for forced
 termination/reaping if needed. Capture archival uses the existing bounded
 64 x 4096-byte queue in the supervised process; a stuck writer cannot hold the
 supervisor waiting on Archive.close indefinitely.
+
+IPC load accepts a whole number of seconds from 10 through 600 and has that
+duration plus 60 seconds for setup, health queries, result collection, and
+cleanup. It refuses to disturb an already active recording. If a recording that
+it started fails or loses evidence, it issues one bounded `RECORD STOP`; an
+incomplete cleanup is reported with `human_required=true`.
 
 Worker supervision uses Windows-compatible `spawn`, bounded shared result memory,
 and terminate/kill/reap rather than unbounded thread joins in the CLI process.

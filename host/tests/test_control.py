@@ -232,6 +232,42 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(result["result"], "pass", result)
         self.assertEqual(result["metrics"]["selected_after_reset"]["device"]["port"], "COM104")
 
+    def test_ipc_load_happy_path(self):
+        options = dict(self.options("test ipc-load"), seconds=10,
+                       deadline=time.monotonic() + 30)
+        result = execute(options)
+        self.assertEqual(result["result"], "pass", result)
+        self.assertEqual(result["metrics"]["recording"]["requested_seconds"], 10)
+        self.assertEqual(result["metrics"]["recording"]["result"]["bytes"],
+                         result["metrics"]["recording"]["result"]["frames"] * 6)
+        self.assertEqual([item["phase"] for item in result["metrics"]["ipc"]["snapshots"]],
+                         ["before", "recording-1", "recording-2", "after"])
+        self.assertEqual(result["metrics"]["target_health"], "healthy")
+        self.assertFalse(result["metrics"]["human_required"])
+
+    def test_ipc_load_failure_verdicts_and_cleanup(self):
+        cases = (("record-abort", "recording_aborted", "not_needed"),
+                 ("record-overrun", "recorder_overrun", "not_needed"),
+                 ("record-ipc-stale", "ipc_no_progress", "stopped"),
+                 ("record-disconnect", "io_error", "failed"),
+                 ("record-busy", "recording_busy", "not_needed"))
+        for scenario, reason, cleanup in cases:
+            with self.subTest(scenario=scenario):
+                options = dict(self.options("test ipc-load", scenario), seconds=10,
+                               deadline=time.monotonic() + 30)
+                result = execute(options)
+                self.assertEqual(result["reason"], reason, result)
+                self.assertNotEqual(result["result"], "pass")
+                self.assertEqual(result["metrics"]["recording"]["cleanup"], cleanup)
+                self.assertEqual(result["metrics"]["human_required"],
+                                 cleanup == "failed" or scenario == "record-busy")
+
+    def test_spawned_simulated_ipc_load(self):
+        options = dict(self.options("test ipc-load"), seconds=10)
+        result = supervise(options, 30)
+        self.assertEqual(result["result"], "pass", result)
+        self.assertEqual(result["execution"], "simulated")
+
     def test_manifest_generator_records_explicit_provenance(self):
         helper = Path(__file__).resolve().parents[1] / "tools/make_manifest.py"
         output = self.root / "generated manifest.json"

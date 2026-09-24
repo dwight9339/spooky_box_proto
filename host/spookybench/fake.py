@@ -44,6 +44,21 @@ class Serial:
             if self.scenario == "uart-empty":
                 return b""
             return (b"simulated UART\r\n\xffpartial" * 200)[:size] if self.reads == 1 else b""
+        if self.scenario == "record-disconnect" and self.state.get("recording_active"):
+            raise OSError("simulated target disconnect during recording")
+        if not self.pending and self.state.get("recording_active"):
+            elapsed = self.clock.now() - self.state["recording_started"]
+            if self.state.get("stop_requested"):
+                self._finish_recording(False)
+            elif self.scenario == "record-abort" and elapsed >= 5.0:
+                self._finish_recording(True)
+            elif elapsed >= self.state["recording_seconds"]:
+                self._finish_recording(False)
+            elif elapsed >= self.state["next_record_progress"]:
+                whole = int(elapsed)
+                self.pending = (f"RECORD progress={whole}.0s queues=0/8,0/8 "
+                                "max-write=25ms\r\n").encode()
+                self.state["next_record_progress"] += 5.0
         out, self.pending = self.pending[:17], self.pending[17:]
         return out
 
@@ -59,6 +74,8 @@ class Serial:
             count = self.state.get("ipc_requests", 0) + 1
             self.state["ipc_requests"] = count
             sequence = 100 if self.scenario == "ipc-stale" else 100 + count
+            if self.scenario == "record-ipc-stale" and self.state.get("recording_active"):
+                sequence = self.state.setdefault("record_ipc_sequence", 100 + count)
             answers[command] = (f"OK IPC LINK=UP VERSION=1 PEER_VERSION=1 TX={sequence} "
                 f"RX={sequence + 7} ACK={sequence - 1} ROUNDTRIPS={sequence - 1} "
                 "PEER_SEEN=1 ACK_SEEN=1 RX_AGE=40 ACK_AGE=40 ERROR=0 PEER_ERROR=0 BUSY=0\r\n").encode()
@@ -66,6 +83,22 @@ class Serial:
                 answers[command] = b"OK IPC DISABLED; build preset IpcSmoke for bench test\r\n"
             elif self.scenario == "ipc-error":
                 answers[command] = answers[command].replace(b"ERROR=0", b"ERROR=3", 1)
+        elif command.startswith("RECORD START "):
+            seconds = int(command.split()[-1])
+            self.state.update(recording_active=True, recording_seconds=seconds,
+                recording_started=self.clock.now(), next_record_progress=5.0,
+                stop_requested=False, record_filename="REC900.WAV")
+            answers[command] = (f"OK RECORD START file=REC900.WAV duration={seconds}s "
+                "format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]\r\n").encode()
+        elif command == "RECORD STOP":
+            self.state["stop_requested"] = True
+            answers[command] = b"OK RECORD STOP requested; finalizing next matched block\r\n"
+        elif command == "RECORD STATUS":
+            if self.scenario == "record-busy" or self.state.get("recording_active"):
+                answers[command] = (b"OK RECORD ACTIVE file=REC899.WAV audio=1.0s "
+                                    b"queues=0/8,0/8 max-write=25ms\r\n")
+            else:
+                answers[command] = b"OK RECORD IDLE last-file=none frames=0 max-write=0ms\r\n"
         self.pending = answers[command]
         if self.scenario == "diag-fault" and command == "DIAG STATUS":
             self.pending = self.pending.replace(b"HAS_FAULT=0", b"HAS_FAULT=1")
@@ -79,3 +112,19 @@ class Serial:
 
     def close(self):
         self.closed = True
+
+    def _finish_recording(self, aborted):
+        seconds = self.state["recording_seconds"]
+        frames = ((seconds * 48000 + 4095) // 4096) * 4096
+        audio_ms = frames * 1000 // 48000
+        self.state["recording_active"] = False
+        if aborted:
+            result = (f"ERR RECORD ABORT file={self.state['record_filename']} frames={frames // 2} "
+                f"bytes={frames * 3} reason=simulated failure finalized=1\r\n")
+        else:
+            result = (f"OK RECORD PASS file={self.state['record_filename']} frames={frames} "
+                f"bytes={frames * 6} audio={audio_ms // 1000}.{audio_ms % 1000:03d}s "
+                f"elapsed={audio_ms + 40}ms\r\n")
+        radio_high = 8 if self.scenario == "record-overrun" else 1
+        self.pending = (result + f"RECORD DIAG queues radio={radio_high}/8 pdm=1/8 "
+            "max-write=25ms peaks=1800,1790,500\r\n").encode()

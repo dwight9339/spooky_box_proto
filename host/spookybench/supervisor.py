@@ -60,7 +60,7 @@ def supervise(options, seconds, target=worker):
         value = outcome(options["command"], "simulated" if options["simulate"] else "hardware",
             started_at, started, result="error", reason=reason or "worker_failed", artifacts=artifacts,
             metrics={"cleanup": cleanup, "evidence_complete": False,
-                     "final_target_state": "unknown", "human_required": cleanup == "failed" or options["command"] in ("flash", "reset", "test boot-smoke")},
+                     "final_target_state": "unknown", "human_required": cleanup == "failed" or options["command"] in ("flash", "reset", "test boot-smoke", "test ipc-load")},
             detail="Operation stopped; any run without a final result must be treated as incomplete")
     if not process.is_alive():
         process.close()

@@ -23,12 +23,19 @@ def duration(text):
         raise argparse.ArgumentTypeError("seconds must be finite and in (0, 3600]") from exc
 
 
+def load_duration(text):
+    value = duration(text)
+    if not 10 <= value <= 600 or not value.is_integer():
+        raise argparse.ArgumentTypeError("load-test seconds must be a whole number in [10, 600]")
+    return int(value)
+
+
 def parser():
     p = Parser(description="Spooky Bench: local observation and bounded SWD controls")
     p.add_argument("--json", action="store_true", help="emit one machine-readable result")
     p.add_argument("--profile", help="JSON bench profile; optional only for discovery status")
     p.add_argument("--simulate", action="store_true", help="use fake devices; never hardware acceptance")
-    p.add_argument("--scenario", choices=("happy", "missing", "ambiguous", "disconnect", "incomplete", "invalid-schema", "no-response", "m4-unavailable", "tool-timeout", "tool-failure", "partial-flash", "cdc-missing", "com-renumber", "uart-empty", "ipc-disabled", "ipc-stale", "ipc-error", "diag-fault"), default="happy")
+    p.add_argument("--scenario", choices=("happy", "missing", "ambiguous", "disconnect", "incomplete", "invalid-schema", "no-response", "m4-unavailable", "tool-timeout", "tool-failure", "partial-flash", "cdc-missing", "com-renumber", "uart-empty", "ipc-disabled", "ipc-stale", "ipc-error", "diag-fault", "record-abort", "record-overrun", "record-ipc-stale", "record-disconnect", "record-busy"), default="happy")
     commands = p.add_subparsers(dest="action", required=True)
     commands.add_parser("status", help="list ports; with profile, validate both selections")
     capture = commands.add_parser("console", help="bounded receive-only Pico UART capture")
@@ -45,6 +52,9 @@ def parser():
     tests = test.add_subparsers(dest="query", required=True)
     boot = tests.add_parser("boot-smoke", help="flash IpcSmoke and prove both-core progress")
     boot.add_argument("--manifest", required=True, help="paired IpcSmoke build-info JSON")
+    load = tests.add_parser("ipc-load", help="prove IPC progress during a bounded recording")
+    load.add_argument("--seconds", type=load_duration, required=True,
+                      help="recording duration, whole seconds in [10, 600]")
     for name in ("power", "trace", "crash"):
         commands.add_parser(name, help="not implemented")
     return p
@@ -67,7 +77,7 @@ def main(argv=None):
         options = {"command": command, "profile": args.profile, "simulate": args.simulate,
                    "scenario": args.scenario, "seconds": getattr(args, "seconds", None),
                    "manifest": getattr(args, "manifest", None)}
-        seconds = 240.0 if command == "test boot-smoke" else 120.0 if command == "flash" else 10.0 if command == "status" else args.seconds + 12.0 if command == "console" else 15.0
+        seconds = args.seconds + 60.0 if command == "test ipc-load" else 240.0 if command == "test boot-smoke" else 120.0 if command == "flash" else 10.0 if command == "status" else args.seconds + 12.0 if command == "console" else 15.0
         value = supervise(options, seconds)
     except BenchError as exc:
         value = outcome(command, execution, started_at, started, result=exc.result, reason=exc.reason, detail=str(exc))

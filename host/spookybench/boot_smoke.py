@@ -106,7 +106,7 @@ def ipc_status(serial, emit, clock, deadline):
 def _remaining_deadline(clock, overall, maximum):
     remaining = overall - time.monotonic()
     if remaining <= 0:
-        raise BenchError("operation_timeout", "No boot-smoke budget remains")
+        raise BenchError("operation_timeout", "No operation budget remains")
     return clock.now() + min(maximum, remaining)
 
 

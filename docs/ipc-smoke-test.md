@@ -5,8 +5,10 @@ results show a healthy link, between-sample progress, correct deliberate version
 rejection, successful 60-second recordings in IpcSmoke, forward IPC progress and
 link UP after recording, and user-observed link UP after reboot;
 see the [bench results](bench-results-2026-09-23.md#initial-ipc-hardware-results).
-IPC progress during recording, longer runs, explicit cold-start, and M4
-halt/stale/resume checks remain pending.
+Spooky Bench 0.4.0 has also proved IPC progress twice during an automated
+60-second recording, with clean post-load health; see the
+[IPC load results](bench-results-2026-09-24.md#phase-3-ipc-progress-under-recording-load).
+Longer runs, explicit cold-start, and M4 halt/stale/resume checks remain pending.
 Normal Debug and Release still suspend the M4 tick and leave M4 asleep after
 boot. `IPC STATUS` reports `DISABLED` in those builds.
 
@@ -83,7 +85,8 @@ cannot acknowledge packets. Follow the existing power/wiring procedure in
    `LINK` field is the actual health result.
 3. Run `RECORD START 60`, inspect `RECORD STATUS` and `IPC STATUS`, then inspect
    the resulting WAV as in BRINGUP. Require no recorder overrun or abort and
-   continued IPC progress. Follow with the ten-minute recording test.
+   continued IPC progress. The automated 60-second counter/progress portion has
+   passed; host-side WAV inspection and the ten-minute recording test remain.
 4. If the debugger can halt only M4 while M7 continues, halt M4 and wait over
    two seconds. Require `STALE`; resume M4 and require recovery. If halted
    inside HSEM 1, BUSY may rise until resume. Do not force-unlock it while
