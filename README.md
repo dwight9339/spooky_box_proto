@@ -30,6 +30,8 @@ not yet the complete product firmware.
   source checkpoints, power observations, and remaining validation.
 - [Spooky Bench setup](docs/spooky-bench-setup.md) - installed Windows Phase-1A CLI
   for discovery, bounded UART capture, LOG/DIAG queries, and JSON run evidence.
+- [Spooky Bench controls](docs/spooky-bench-controls.md) - Phase-1B SWD probe,
+  reset with UART capture, and hash-checked paired-image flash manifests.
 - [Spookyprobe v1 contract](docs/spookyprobe-v1.md) - serial formats and the
   independent probe capture/decoder work package.
 - [STM32 pivot reference](reference/legacy_docs/spooky_box_architecture_stm32h745_pivot.md)

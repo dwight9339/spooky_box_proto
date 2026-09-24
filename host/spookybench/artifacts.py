@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import uuid
+import threading
 from .platform_io import no_links
 from .result import BenchError, utc_now
 
@@ -34,6 +35,7 @@ class Run:
     def __init__(self, profile, profile_raw, metadata):
         self.limits = profile["limits"]
         self.used = 0
+        self._budget_lock = threading.Lock()
         root = Path(profile["artifact_root"])
         no_links(root)
         # Enforce this in a source checkout. Installed wheels have no .git here.
@@ -55,9 +57,10 @@ class Run:
 
     def reserve(self, length):
         # Keep 64 KiB for authoritative completion/error metadata.
-        if self.used + length > self.limits["run_bytes"] - 65536:
-            raise BenchError("artifact_limit", "Run artifact budget exhausted", "fail")
-        self.used += length
+        with self._budget_lock:
+            if self.used + length > self.limits["run_bytes"] - 65536:
+                raise BenchError("artifact_limit", "Run artifact budget exhausted", "fail")
+            self.used += length
 
     def write_json(self, name, value, final=False):
         payload = encode(value)

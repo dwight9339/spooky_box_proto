@@ -2,6 +2,7 @@
 import json
 import math
 import os
+import re
 from pathlib import Path
 from .result import BenchError
 
@@ -49,7 +50,7 @@ def selector(value, name):
 def load_profile(path):
     try:
         value, raw = read_json(path)
-        if not isinstance(value, dict) or value.keys() - {"schema_version", "board_id", "artifact_root", "probe", "device", "limits"}:
+        if not isinstance(value, dict) or value.keys() - {"schema_version", "board_id", "artifact_root", "probe", "device", "limits", "openocd"}:
             raise BenchError("invalid_config", "Unknown profile fields")
         if type(value.get("schema_version")) is not int or value["schema_version"] != 1:
             raise BenchError("invalid_config", "Profile schema_version must be 1")
@@ -58,6 +59,26 @@ def load_profile(path):
             raise BenchError("invalid_config", "board_id must contain 1..64 ASCII letters/digits/-/_")
         for role in ("probe", "device"):
             selector(value.get(role), role)
+        if "openocd" in value:
+            control = value["openocd"]
+            if not isinstance(control, dict) or set(control) != {"executable", "scripts", "serial_number", "adapter_khz"}:
+                raise BenchError("invalid_config", "Invalid openocd fields")
+            serial = control["serial_number"]
+            if not isinstance(serial, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", serial):
+                raise BenchError("invalid_config", "OpenOCD serial must be an ASCII identifier")
+            if serial != value["probe"].get("serial_number"):
+                raise BenchError("invalid_config", "OpenOCD serial must match the probe CDC serial selector")
+            if type(control["adapter_khz"]) is not int:
+                raise BenchError("invalid_config", "adapter_khz must be an integer")
+            number(control["adapter_khz"], "adapter_khz", 50, 4000)
+            for field in ("executable", "scripts"):
+                text = control[field]
+                if not isinstance(text, str) or not text or len(text) > 2048 or any(ord(c) < 32 for c in text):
+                    raise BenchError("invalid_config", f"Invalid openocd.{field}")
+                location = Path(os.path.expandvars(text)).expanduser()
+                if not location.is_absolute() or str(location).startswith("\\\\"):
+                    raise BenchError("invalid_config", "OpenOCD paths must be absolute and local")
+                control[field] = str(location)
         root = value.get("artifact_root")
         if not isinstance(root, str) or not root or len(root) > 2048:
             raise BenchError("invalid_config", "artifact_root is required")

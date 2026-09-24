@@ -1,7 +1,9 @@
 # Spooky Bench host utility
 
 Phase 1A provides Windows serial discovery, bounded Pico UART capture and
-LOG/DIAG queries on the separate target CDC port. Run `spookybench --json ...`
+LOG/DIAG queries on the separate target CDC port. Phase 1B adds pinned Windows
+OpenOCD probe/reset and manifest-based paired flashing with integrated UART
+capture. See [controls](../docs/spooky-bench-controls.md). Run `spookybench --json ...`
 for a single machine-readable result. A successful query means the operation
 completed, not that the target passed a hardware test.
 

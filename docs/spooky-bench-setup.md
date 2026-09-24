@@ -1,9 +1,10 @@
-# Spooky Bench: Windows Phase 1A
+# Spooky Bench: Windows setup and observation
 
 Implemented 2026-09-24. This slice observes the bench: serial discovery/status,
-finite UART capture, and one LOG/DIAG request per invocation. Flash, reset,
-SWD probe, automated IPC tests, power, trace, and crash collection return
-`unsupported` and exit 3. No STM32 or Pico firmware changes are needed.
+finite UART capture, and one LOG/DIAG request per invocation. Version 0.2.0 also
+implements [Phase 1B SWD probe, reset and paired flash](spooky-bench-controls.md).
+Automated IPC tests, power, trace, and crash collection still return `unsupported`
+and exit 3. No STM32 or Pico firmware changes are needed to install the utility.
 
 Software tests run on Windows with spawned workers and fake serial transports.
 Configured discovery, all four LOG/DIAG command paths, and UART startup capture
@@ -112,8 +113,8 @@ not_checked/unknown instead of inferred from serial enumeration or silence.
 
 | Exit | Meaning |
 | --- | --- |
-| 0 | Requested observation/query completed |
-| 1 | Invalid protocol response, capture loss, or evidence cap reached |
+| 0 | Requested operation completed (not a target-health verdict) |
+| 1 | Invalid protocol response, OpenOCD/verify failure, capture loss, or evidence cap reached |
 | 2 | Invocation/configuration, dependency, missing/ambiguous device, port, storage, or timeout error |
 | 3 | Unsupported operation |
 | 130 | Interrupted |
@@ -167,9 +168,10 @@ A configured run contains:
 ```
 
 No-profile discovery returns its evidence only in the CLI result. OpenOCD is
-reported not_checked, and optional PyUSB probe counters unsupported in Phase 1A;
-neither blocks ordinary serial operations. Build manifests and target-reported
-firmware identities belong to later stages, not fabricated Phase-1A metadata.
+reported not_checked for serial-only operations; optional PyUSB probe counters
+remain unsupported. Neither blocks serial operations. Phase 1B archives supplied
+build manifests separately from target-reported firmware identity, which is
+still unavailable.
 
 ## Simulation and tests
 
@@ -206,6 +208,7 @@ Use the working SYSOFF/power arrangement recorded in the
 6. Verify a second bench operation reports bench_busy and that Ctrl+C/timeout
    releases ports and locks. Keep the PC awake for active tests.
 
-After Phase 1A acceptance, implement Phase 1B flash/reset/SWD controls and then
+After Phase 1A acceptance, validate the implemented
+[Phase 1B controls](spooky-bench-controls.md), then add
 the combined capture + IPC boot-smoke runner described in the plan. Linux/Pi
 deployment remains later work; its fallback locking path has not been bench-tested.

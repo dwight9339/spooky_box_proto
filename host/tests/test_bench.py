@@ -264,7 +264,8 @@ class BenchTests(unittest.TestCase):
                                   (["console", "--seconds", "inf"], 2, "invalid_invocation"),
                                   (["console", "--seconds", "-1"], 2, "invalid_invocation"),
                                   (["diag", "status"], 2, "invalid_invocation"),
-                                  (["reset"], 3, "not_implemented")):
+                                  (["reset"], 2, "invalid_invocation"),
+                                  (["power"], 3, "not_implemented")):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 actual = main(["--json", *argv])

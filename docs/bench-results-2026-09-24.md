@@ -173,4 +173,126 @@ expected, and subsequent queries/capture confirmed lock and port release.
 The basic Phase-1A live sequence is complete. Extended checks remain:
 mid-response/dump disconnect, timing and loss under sustained load, and hardware
 COM renumbering. Phase 1B controls and the automated IPC runner remain
-unimplemented.
+unimplemented at the Phase-1A checkpoint (`35b855f`). Phase-1B work follows below.
+
+## Phase 1B: initial SWD probe
+
+Version 0.2.0 adds control commands; these results use a newer source snapshot
+than the Phase-1A runs above. The local profile selects Pico serial
+E66540F0A345382D at 1000 kHz and pins PlatformIO OpenOCD 3.1200.0's actual
+executable, DLLs and board scripts.
+
+First attach run `2026-09-24T154842.702272_0000-e594e184` failed after 516 ms
+with tool_output_limit, correctly recording incomplete evidence. A burst of
+short OpenOCD writes filled the initial nonblocking output queue. The reader was
+changed to bounded pipe backpressure and a 2000-short-write regression was added.
+
+Run `2026-09-24T154935.414833_0000-c283f525` subsequently passed in 578 ms,
+with complete evidence, OpenOCD exit 0 and source hash
+`31364c5f4688dfa958c0083fcdaec64bbad3c2e5ee48e536d5c07da407c221a6`.
+The saved log identifies the intended CMSIS-DAPv2 serial, SWD DPIDR 0x6ba02477,
+Cortex-M7 r1p1 and SB_M7 running. M4 examination reported unrecognized PARTNO
+0x0 and SB_M4 unavailable. This is explicitly unavailable, not evidence that M4
+is faulty or that both cores are running. Sleeping/boot-held state versus access
+failure is unresolved by this check. No reset, halt or flash command was issued.
+The CMSIS-DAP FW Version string 2.0.0 is not a verified Pico firmware source hash.
+
+38 offline tests pass including installed-interpreter configuration/Tcl checks,
+manifest/ELF failures, integrated capture readiness and Windows descendant
+termination. All eight existing preset/core ELFs pass structural checks; no
+claim about their current build provenance was made. Reset acceptance follows
+below; paired flashing remains pending. No images were flashed in these tests.
+
+## Phase 1B: reset with UART capture and CDC recovery
+
+The user confirmed no recording or active sessions, both cables connected, and
+the working SYSOFF position. Reset run
+`2026-09-24T155741.727709_0000-f38e80ee` passed in 2766 ms using source hash
+`24de7a5bf3f5491017e157acc19a757ad6a95067ae204a9b31a8217a1620e97f`.
+OpenOCD exited 0, reported reset completion and final M7 state running.
+M4 was not directly examined; the paired final state remains unknown.
+
+Integrated UART capture received/archived 2792 bytes with zero host drops.
+Seven contiguous index rows cover the raw file with ordered monotonic timestamps;
+session metadata records a normal stop. The inspected text starts with the UART7
+banner and continues through successful USB CDC configuration, including the
+audio bridge and peripheral startup reports. This verifies capture was active
+in time for startup. It does not establish losslessness at the target/probe or
+full peripheral/audio health.
+
+Follow-up DIAG STATUS run `2026-09-24T155801.447372_0000-c495615f` passed in
+5734 ms with COUNT=3 and no recorded faults, overruns, SD or audio errors.
+DIAG DUMP run `2026-09-24T155818.422507_0000-30d76c99` passed in 5765 ms;
+the saved raw/decoded JSONL has BOOT at tick 0, IPC_LINK waiting at 689 ms,
+and IPC_LINK up at 791 ms, followed by END COUNT=3 GAPS=0.
+
+This passes the initial live reset/capture/CDC-recovery check and supplies an
+IPC startup-link transition. It is not a two-snapshot IPC counter-progress test
+or proof of every reset mode. Fresh paired-image flash/verify/reset acceptance
+remains the next Phase-1B hardware gate. Existing firmware images were preserved.
+
+## Phase 1B: fresh paired flash and IPC progress
+
+A fresh IpcSmoke M7/M4 pair was built from the working-tree snapshot at commit
+`35b855fc16d0119287d62e95dbd9d58e7f86816d`. Because the Phase-1B utility and
+documentation were uncommitted, the build is explicitly dirty. The archived
+source/dependency snapshot SHA-256 is
+`dc3533e074fbb315c4c05f018db0790fd537f14ebe98f2b336a4e67956980f28`.
+The compiler was GNU Tools for STM32 14.3.1; the manifest records the core flags,
+including SPOOKY_IPC_SMOKE=1 and M4 IPC_SMOKE_VERSION=1. A first build attempt
+stalled in sandboxed Ninja before compilation; only that build's verified
+CMake/Ninja processes were stopped. The retry outside the sandbox completed.
+
+Image hashes declared and rechecked against the staged run artifacts:
+
+| Core | SHA-256 |
+| --- | --- |
+| CM7 | `f55fc717ee615ca297e5f97e374c1064c88cf187dd1f0a6e7c70f74199901219` |
+| CM4 | `0d97e4b75bad4d2a5836a6cbec4d1efc8f583fa34bb9b73e27f3dd61d795a83c` |
+
+Flash run `2026-09-24T160557.372148_0000-e639966b` passed in 9890 ms with
+complete evidence. OpenOCD identified the configured Pico, attached to M7/AP0,
+halted M7, programmed and verified CM7 bank 0, then programmed and verified CM4
+bank 1. Only after both `verified_cm7` and `verified_cm4` markers did it issue
+reset/run. OpenOCD exited 0 and reported final M7 state running; M4 was not
+directly examined, so the aggregate final target state remains unknown.
+
+UART capture was ready before OpenOCD started. Its seven contiguous timestamped
+chunks cover all 2792 received/archived bytes, with zero host drops and a normal
+session stop. The readable boot log reaches successful target USB CDC
+configuration. Driver, Pico and target loss remain unknown independently.
+
+The immediate post-flash diagnostic request was initially blocked by account
+usage review and therefore not executed. When work resumed, DIAG STATUS run
+`2026-09-24T174300.335831_0000-1f59e7e1` passed with COUNT=3 and zero faults,
+overruns, SD errors or audio errors. A first one-off IPC acceptance invocation
+overlapped that query and was correctly rejected by the board lock; it performed
+no request and created no run evidence.
+
+Sequential IPC acceptance run `2026-09-24T174317.590213_0000-2d720857` passed.
+Both raw archived responses report LINK=UP, VERSION=1, PEER_VERSION=1,
+PEER_SEEN=1, ACK_SEEN=1, ERROR=0, PEER_ERROR=0 and BUSY=0. Over 1.2 seconds:
+
+| Counter | First | Second | Forward delta |
+| --- | ---: | ---: | ---: |
+| TX | 57327 | 57340 | 13 |
+| RX | 58513 | 58527 | 14 |
+| ACK | 57326 | 57339 | 13 |
+| ROUNDTRIPS | 57326 | 57339 | 13 |
+
+RX_AGE/ACK_AGE were 66/66 ms then 42/42 ms. This supports M4 liveness inferred
+from validated peer/ack progress; it is not a direct M4 debugger observation.
+The one-off acceptance helper is retained under the ignored build directory and
+is not presented as the still-planned Phase-2 product command.
+
+LOG STATUS run `2026-09-24T174359.664194_0000-fce2dd67` passed with queue idle,
+peak 1371/4096, TX_BYTES=4274, and zero dropped writes/bytes, transport loss,
+transport errors or invalid-context writes. DIAG DUMP run
+`2026-09-24T174413.742172_0000-7179eda9` passed with BOOT followed by IPC waiting
+at 689 ms and IPC up at 791 ms, then matching END COUNT=3 GAPS=0.
+
+This completes the initial Phase-1B live gate for SWD attach, reset with UART
+capture, fresh paired program/verify, target CDC recovery, logger/diagnostic
+integrity and IPC counter progress. Longer load tests, direct M4 observation in
+other power states, failure recovery on hardware, and the automated Phase-2
+boot-smoke command remain separate work.

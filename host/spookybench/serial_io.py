@@ -20,7 +20,7 @@ def open_serial(port):
         raise BenchError("serial_open", f"Cannot open {port}: {exc}") from exc
 
 
-def capture(serial, run, seconds, clock, stats=None):
+def capture(serial, run, seconds, clock, stats=None, stop=None, ready=None):
     from spookyprobe.capture import Archive, capture_session
 
     class CappedArchive(Archive):
@@ -44,11 +44,13 @@ def capture(serial, run, seconds, clock, stats=None):
             return accepted
 
     archive = CappedArchive()
+    if ready is not None:
+        ready.set()
     end = clock.now() + seconds
     if stats is None:
         stats = {}
     try:
-        capture_session(serial, archive, lambda: clock.now() >= end)
+        capture_session(serial, archive, lambda: clock.now() >= end or (stop is not None and stop.is_set()))
     finally:
         stats.update({"received_bytes": archive.received_bytes, "archived_bytes": archive.accepted_bytes,
              "host_dropped_bytes": archive.dropped_bytes, "host_dropped_chunks": archive.dropped_chunks,

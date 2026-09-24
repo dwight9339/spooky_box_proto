@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "board_id": "spooky-box-prototype",
+  "artifact_root": "%LOCALAPPDATA%/SpookyBench/runs",
+  "probe": {"serial_number": "REPLACE_WITH_PICO_SERIAL"},
+  "device": {"serial_number": "REPLACE_WITH_TARGET_SERIAL"},
+  "openocd": {
+    "executable": "%USERPROFILE%/.platformio/packages/tool-openocd/bin/openocd.exe",
+    "scripts": "%USERPROFILE%/.platformio/packages/tool-openocd/openocd/scripts",
+    "serial_number": "REPLACE_WITH_PICO_SERIAL",
+    "adapter_khz": 1000
+  }
+}

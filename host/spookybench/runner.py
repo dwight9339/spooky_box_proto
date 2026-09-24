@@ -6,7 +6,7 @@ import platform
 import time
 from pathlib import Path
 from . import __version__
-from . import fake, serial_io
+from . import fake, serial_io, openocd
 from .artifacts import JsonLines, Run
 from .config import load_profile
 from .dependency import verify_probe
@@ -19,7 +19,7 @@ def source_identity():
     digest = hashlib.sha256()
     root = Path(__file__).parent
     sources = {}
-    for path in sorted([*root.glob("*.py"), root / "probe-lock.json"]):
+    for path in sorted([*root.glob("*.py"), *root.glob("*-lock.json")]):
         raw = path.read_bytes().replace(b"\r\n", b"\n")
         digest.update(path.name.encode())
         digest.update(b"\0")
@@ -55,7 +55,7 @@ def execute(options, run_notice=lambda path: None):
         dependency = verify_probe()
         identity, sources = source_identity()
         metrics["tools"] = dict(identity, spookyprobe=dependency,
-                                openocd={"state": "not_checked", "reason": "phase_1a_serial_only"})
+                                openocd={"state": "not_checked", "reason": "not_requested"})
         metrics["capabilities"] = {"capture": True, "diagnostics": True,
             "flash": False, "reset": False, "ipc_test": False, "power": False,
             "trace": False, "crash": False, "probe_counters": False}
@@ -65,7 +65,10 @@ def execute(options, run_notice=lambda path: None):
             metrics["configured"] = False
             return finish(reason="simulated" if options["simulate"] else None)
         profile, profile_raw = load_profile(options["profile"])
-        required = ("probe", "device") if command == "status" else ("probe",) if command == "console" else ("device",)
+        metrics["capabilities"].update(probe="openocd" in profile,
+            flash="openocd" in profile, reset="openocd" in profile)
+        # Controls require the named probe, not an already-booted target CDC.
+        required = ("probe", "device") if command == "status" else ("probe",) if command == "console" or command in openocd.CONTROL_COMMANDS else ("device",)
         # Both board and artifact-root locks live outside the run root. The root
         # lock serializes quota reservations across different boards/profiles.
         root_key = str(Path(profile["artifact_root"]).resolve()).casefold()
@@ -82,6 +85,9 @@ def execute(options, run_notice=lambda path: None):
                 metrics.update(configured=True, selected=selected)
                 run.write_json("devices.json", selected)
                 if command == "status":
+                    return finish(reason="simulated" if options["simulate"] else None)
+                if command in openocd.CONTROL_COMMANDS:
+                    openocd.control(options, profile, run, metrics, artifacts)
                     return finish(reason="simulated" if options["simulate"] else None)
                 clock = fake.Clock() if options["simulate"] else serial_io.Clock()
                 role = "probe" if command == "console" else "device"

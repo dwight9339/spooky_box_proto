@@ -4,6 +4,13 @@ import multiprocessing
 import time
 from .result import outcome, utc_now
 from .runner import worker
+from .process_io import WindowsJob
+
+
+def guarded_worker(gate, target, args):
+    # Never launch a tool before the parent has assigned our Windows job.
+    gate.wait()
+    target(*args)
 
 
 def supervise(options, seconds, target=worker):
@@ -16,12 +23,18 @@ def supervise(options, seconds, target=worker):
     result_length = context.Value("I", 0, lock=False)
     notice_buffer = context.Array("B", 8192, lock=False)
     notice_length = context.Value("I", 0, lock=False)
-    process = context.Process(target=target, args=(options, result_buffer, result_length,
-                                                  notice_buffer, notice_length), daemon=True)
+    control = options["command"] in ("probe", "reset", "flash")
+    job = WindowsJob() if control else None
+    gate = context.Event()
+    args = (options, result_buffer, result_length, notice_buffer, notice_length)
+    process = context.Process(target=guarded_worker, args=(gate, target, args), daemon=True)
     reason = None
     cleanup = "not_needed"
     try:
         process.start()
+        if job:
+            job.assign(process.pid)
+        gate.set()
         while process.is_alive() and time.monotonic() < options["deadline"]:
             process.join(min(0.05, max(0, options["deadline"] - time.monotonic())))
         if process.is_alive() or time.monotonic() >= options["deadline"]:
@@ -36,6 +49,8 @@ def supervise(options, seconds, target=worker):
                 process.kill()
                 process.join(1.0)
             cleanup = "failed" if process.is_alive() else "terminated"
+        if job:
+            job.close()  # Kills OpenOCD descendants even if the worker was terminated.
     if reason is None and process.exitcode == 0 and result_length.value:
         value = json.loads(bytes(result_buffer[:result_length.value]))
     else:
@@ -45,7 +60,7 @@ def supervise(options, seconds, target=worker):
         value = outcome(options["command"], "simulated" if options["simulate"] else "hardware",
             started_at, started, result="error", reason=reason or "worker_failed", artifacts=artifacts,
             metrics={"cleanup": cleanup, "evidence_complete": False,
-                     "final_target_state": "unknown", "human_required": cleanup == "failed"},
+                     "final_target_state": "unknown", "human_required": cleanup == "failed" or options["command"] in ("flash", "reset")},
             detail="Operation stopped; any run without a final result must be treated as incomplete")
     if not process.is_alive():
         process.close()

@@ -1,0 +1,15 @@
+{
+  "package": "platformio/tool-openocd@3.1200.0",
+  "version": "xPack Open On-Chip Debugger 0.12.0-01004-g9ea7f3d64-dirty (2023-01-30-15:04)",
+  "binaries": {
+    "libftdi1.dll": "49285980826a7af6cdd517e53f1ca4dfd17188fe1bc6f96deef6a813bf8ffb96",
+    "libusb-1.0.dll": "7758571d01e7071b67925fcfa28b5b8d53073660cbfc7d9bee5503df5f2c5672",
+    "openocd.exe": "51ffb89ba2450673de1dfbad3332a7c23271f12b20d2ffceb39f0421902fcc09"
+  },
+  "scripts": {
+    "interface/cmsis-dap.cfg": "5ed9c067fe55b6c0ea04a8d9c1dd078a6afd4b8cafafcde39da211bcc175c657",
+    "target/stm32h7x.cfg": "7af442b5e64edd9dc864228d24bcce5c5afa4bdc894af862fc8438fafc81a3ae",
+    "target/swj-dp.tcl": "aad132008735bbafea3d18a304632c638f0fb99bfc19530c9f577eda2b10410a",
+    "mem_helper.tcl": "01794a37e9a8bdc20e2304ee64e9d70549c0872f5f6c40fa032a165bcbba1fd2"
+  }
+}
