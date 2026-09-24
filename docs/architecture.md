@@ -2,7 +2,7 @@
 
 This is the maintained high-level architecture for the STM32H755 Spooky Box
 prototype. It distinguishes **proven today**, **target direction**, and
-**decisions still open**. The detailed [pivot reference](../reference/spooky_box_architecture_stm32h745_pivot.md)
+**decisions still open**. The detailed [pivot reference](../reference/legacy_docs/spooky_box_architecture_stm32h745_pivot.md)
 is useful design history but its bring-up status predates the current
 three-track recording test.
 
@@ -25,9 +25,12 @@ inspected successfully; the user measured less than 130 mA peak through JP8
 for that workload. See [BRINGUP.md](../BRINGUP.md) for commands, wiring, and
 the limits of those tests.
 
-The M4 currently wakes through the generated dual-core synchronization
-sequence and then waits for interrupts. There is no application IPC or UI
-workload on it yet. The UI board is pending. Scan engines, full session
+In normal Debug/Release builds the M4 wakes through the generated dual-core
+synchronization sequence and then waits for interrupts. An opt-in diagnostic
+IPC build now exists but still requires bench validation; it is not application
+IPC. M7 has UI input, LED, matrix and OLED bring-up support, including the
+confirmed SSD1309 display mapping in BRINGUP. Product UI and M4 integration
+remain pending. Scan engines, full session
 lifecycle, and user-facing visual behavior are target features, not claimed
 capabilities of this firmware.
 
@@ -38,14 +41,23 @@ capabilities of this firmware.
 | Audio DMA, DSP/activity, recording, SD filesystem | M7 | M7 | Recording-critical work must not wait on UI work. |
 | Radio control, scan decisions, modes, session truth | M7 | M7 | Expose targets, state, and events rather than low-level UI actions. |
 | Magnetometer/EMF and power interpretation | M7 | M7 initially | Publish interpreted values with validity and age. |
-| USB CLI and diagnostics | M7 | M7 initially | CLI issues the same application commands as physical controls. |
-| Buttons, encoders, button LEDs, matrix, display | Not integrated | M4 where hardware permits | M4 reports behavior-neutral input events and renders semantic state. |
-| Inter-core transport | Boot synchronization only | Shared, versioned protocol | No arbitrary shared mutable application objects. |
+| USB CLI | M7 | M7 initially; transport placement revisited with services | CLI should issue the same application commands as physical controls. |
+| UART7 logging and numeric diagnostics | M7 bounded logger/history | M4 service/diagnostic aggregator after a separate validated handoff | Preserve current APIs and nonblocking M7 producers; never give both cores physical UART ownership. |
+| Buttons, encoders, button LEDs, matrix, display | M7 bring-up drivers | M4 where hardware permits | M4 reports behavior-neutral input events and renders semantic state. |
+| Inter-core transport | Boot sync; opt-in diagnostic mailbox awaiting bench test | Shared, versioned protocol | No arbitrary shared mutable application objects. |
 
 The target split is a starting point, not a requirement to move every visual
 peripheral immediately. Display ownership should follow the actual bus and
 timing measurements. A separate RP2040-style coprocessor is not part of the
-default plan.
+default plan. The current matrix, magnetometer and gauge share M7 I2C2.
+Assign the whole controller to one service/core before moving any of its
+clients; two independent HAL drivers must not own the same controller.
+
+The external Pico debugprobe is development-bench infrastructure, not an
+application coprocessor. The [Spooky Bench audit and plan](spooky-bench-plan.md)
+adds a Pi-hosted command surface around existing flashing, UART capture and
+target USB diagnostics before trace or M4 ownership migration. Current UART7
+is text output only; diagnostic commands use the target's separate USB CDC.
 
 ## Application model
 
@@ -76,11 +88,16 @@ behavior-neutral M4-to-M7 input events, and health/heartbeat in both directions.
 Packets need a version, size, sequence number, and validity information.
 Bounded queues need explicit overrun behavior; stale state must be detectable.
 
-The exact shared SRAM region, cache policy, memory barriers, hardware-semaphore
-doorbell, and interrupt priorities are **not yet decided**. These must be
-specified together with both linker scripts before implementation. The first
-milestone is M4 boot, protocol/version handshake, heartbeat, and state
-sequence acknowledgement visible through the CLI, with no UI board required.
+The first diagnostic experiment now reserves 256 bytes of SRAM4 in both
+linkers, uses an M7 noncacheable MPU region, and exchanges two frames under
+nonblocking HSEM 1 protection with memory barriers. It polls in foreground and
+does not add a doorbell IRQ. See the [contract and bench test](ipc-smoke-test.md).
+Normal builds leave it disabled. This must pass heartbeat, echo/acknowledgement,
+staleness and version-mismatch tests before application IPC is added.
+
+The product state/event/command ABI, bounded queues, restart behavior,
+doorbells/priorities, and power coordination remain open. Do not treat the
+diagnostic mailbox as the full UI transport.
 
 ## Reliability rules
 
@@ -102,8 +119,10 @@ after M4/UI integration.
 
 Keep CubeMX-generated startup, HAL integration, and linker material under
 `CM7/Core` and `CM4/Core` while extracting hand-maintained application code
-incrementally into core-specific `App/` directories. `Common/` can then hold
-only core-neutral models and IPC definitions. Refactor one service at a time
+incrementally into core-specific `App/` directories. `CM7/App` now contains
+console/battery diagnostics, charging-sleep policy and the IPC CLI adapter.
+`Common` separates portable IPC protocol/health code from the STM32 transport.
+Refactor one service at a time
 from the large M7 `main.c`, building and rerunning the known hardware checks
 after each extraction. Do not rename or move the working tree wholesale.
 
@@ -118,16 +137,19 @@ The passing recorder now has a version-controlled baseline. Debug and Release
 also have isolated output trees, with the generated/maintained file boundary
 documented in [repository-layout.md](repository-layout.md).
 
-1. Extract M7 board, radio/audio, recorder, sensor, power, and CLI services
-   without changing their observed behavior.
-2. Define shared state/event/command types and host tests for packet and
-   state-machine logic.
-3. Prove M7-to-M4 heartbeat and version mismatch handling.
-4. Integrate input/rendering drivers when the UI board is available, then
-   rerun long recording and SD stress under maximal UI activity.
+1. Bench-check the first extraction, then prove the prepared M7/M4 IPC
+   heartbeat and version-mismatch experiment.
+2. Continue radio/codec/audio/CLI/storage extraction and decide I2C2 ownership.
+3. Define product state/commands and host-test navigation, gestures and
+   recording safety using the new experience docs.
+4. Deliver Classic/Manual and monitor-only PTT, then measured rolling capture
+   and session storage. Integrate M4 input/rendering with recording stress.
 
-Open design decisions include the concrete IPC memory/cache scheme, display
-core/bus ownership, session file/metadata format, recovery from interrupted
+See [next-steps.md](next-steps.md) for evidence, dependencies and acceptance
+criteria rather than treating the whole feature vision as one milestone.
+
+Open design decisions include the product IPC queues/restart scheme, display
+and I2C2 ownership, session file/metadata format, recovery from interrupted
 recordings, scan algorithms, and measured timing budgets. They should be
 resolved with short decision records and tests, rather than silently embedded
 in drivers.

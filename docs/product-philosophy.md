@@ -75,7 +75,7 @@ a paranormal interpretation. Scan algorithms, UI timing targets, session
 metadata, exact control maps, and acceptance criteria need separate,
 testable requirements as those features are implemented.
 
-The original [STM32 pivot reference](../reference/spooky_box_architecture_stm32h745_pivot.md)
+The original [STM32 pivot reference](../reference/legacy_docs/spooky_box_architecture_stm32h745_pivot.md)
 contains more exploratory examples. The earlier
-[Teensy/RP2040 PDF](../reference/Spooky%20Box%20Design%20Philosophy%20Requirements%20Architecture.pdf)
+[Teensy/RP2040 PDF](../reference/legacy_docs/Spooky%20Box%20Design%20Philosophy%20Requirements%20Architecture.pdf)
 is retained as historical design context, not the current compute plan.

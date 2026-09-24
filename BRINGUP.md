@@ -1,5 +1,9 @@
 # Spooky Box radio/audio and USB prototype bring-up
 
+For the opt-in dual-core communication experiment and its separate build,
+see [IPC smoke test](docs/ipc-smoke-test.md). Normal builds retain the existing
+M4 sleep behavior; `IPC STATUS` reports whether the experiment is enabled.
+
 This checkout now extends the passed control-path smoke test into the first
 end-to-end audio experiment on the hardware that is currently installed:
 
@@ -47,10 +51,12 @@ STM32 GND            --- Pico GND
 
 The current bring-up firmware runs UART7 from CM7 and uses it for all `printf`
 logs. PE7 is configured as the receive side of the link, but the interactive
-CLI remains on the Spooky Box USB CDC port for now. This is intentionally a
-simple stock-debugprobe validation step; the planned M4-owned, nonblocking
-logging queue has not yet been implemented. On reset, the Pico UART terminal
-should begin with:
+CLI remains on the Spooky Box USB CDC port for now. The bounded, nonblocking
+M7 logger and numeric diagnostics are implemented; see
+[logger and diagnostics](docs/logger-diag.md). M4 UART ownership is still future
+work. The [Spooky Bench audit](docs/spooky-bench-plan.md) describes automation
+using these two separate serial paths. On reset, the Pico UART terminal should
+begin with:
 
 ```text
 [uart] Spooky Probe console on UART7: PE8 TX, PE7 RX, 115200 8N1
@@ -652,8 +658,9 @@ treated as production-ready yet:
   same 3.072 MHz PDM clock and 48 kHz PCM rate.
 - SDMMC initializes immediately in generated code and can stop boot when a
   card/path is unavailable. It is deferred here.
-- SPI6 is generated for 4-bit data. It is disabled here until the display
-  interface is checked.
+- SPI6 is generated for 4-bit data. Its generated initialization remains
+  deferred; `ui_board_test.c` configures the working 8-bit SSD1309 SPI path
+  explicitly. Preserve that override until the `.ioc` is reconciled.
 - The test explicitly reapplies the proven SAI1 48 kHz/MCLK setup before
   configuring the codec. PLL3P in the `.ioc` is now 24.576 MHz for the legal
   64 MHz PCLK2/SAI2 relationship, but the displayed CubeMX SAI timing remains
