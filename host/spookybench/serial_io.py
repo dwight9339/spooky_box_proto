@@ -65,25 +65,7 @@ def diagnostics(serial, command, emit, clock, deadline):
     from spookyprobe.protocol import Lines, parse_line
     from spookyprobe.client import Client
     emit({"kind": "session_start", "command": command, "host_receive_ns": time.time_ns()})
-    pending = Lines()
-    quiet = clock.now()
-    settle_until = quiet + 5.2
-    # Reserve time for the request; never let incoming text extend the deadline.
-    sync_end = min(deadline - 1.0, quiet + 6.5)
-    try:
-        while clock.now() < settle_until or clock.now() - quiet < 0.3:
-            if clock.now() >= sync_end:
-                raise BenchError("sync_timeout", "Device CDC did not become quiet; stop other streams")
-            data = serial.read(4096)
-            if data:
-                quiet = clock.now()
-                for raw, complete in pending.feed(data):
-                    emit(dict(parse_line(raw, complete), raw_base64=base64.b64encode(raw).decode("ascii"),
-                              phase="before_commands", host_receive_ns=time.time_ns()))
-    finally:
-        for raw, complete in pending.finish():
-            emit(dict(parse_line(raw, complete), raw_base64=base64.b64encode(raw).decode("ascii"),
-                      phase="before_commands", host_receive_ns=time.time_ns()))
+    settle(serial, emit, clock, deadline)
     remaining = deadline - clock.now()
     if remaining <= 0:
         raise BenchError("request_timeout", "No command budget remains")
@@ -112,3 +94,27 @@ def diagnostics(serial, command, emit, clock, deadline):
     finally:
         client.finish()
         emit({"kind": "session_end", "host_receive_ns": time.time_ns()})
+
+
+def settle(serial, emit, clock, deadline):
+    """Apply the CDC quiet rule and archive everything preceding one request."""
+    from spookyprobe.protocol import Lines, parse_line
+    pending = Lines()
+    quiet = clock.now()
+    settle_until = quiet + 5.2
+    # Reserve time for the request; never let incoming text extend the deadline.
+    sync_end = min(deadline - 1.0, quiet + 6.5)
+    try:
+        while clock.now() < settle_until or clock.now() - quiet < 0.3:
+            if clock.now() >= sync_end:
+                raise BenchError("sync_timeout", "Device CDC did not become quiet; stop other streams")
+            data = serial.read(4096)
+            if data:
+                quiet = clock.now()
+                for raw, complete in pending.feed(data):
+                    emit(dict(parse_line(raw, complete), raw_base64=base64.b64encode(raw).decode("ascii"),
+                              phase="before_commands", host_receive_ns=time.time_ns()))
+    finally:
+        for raw, complete in pending.finish():
+            emit(dict(parse_line(raw, complete), raw_base64=base64.b64encode(raw).decode("ascii"),
+                      phase="before_commands", host_receive_ns=time.time_ns()))

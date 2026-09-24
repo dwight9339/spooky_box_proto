@@ -3,8 +3,9 @@
 Implemented 2026-09-24. This slice observes the bench: serial discovery/status,
 finite UART capture, and one LOG/DIAG request per invocation. Version 0.2.0 also
 implements [Phase 1B SWD probe, reset and paired flash](spooky-bench-controls.md).
-Automated IPC tests, power, trace, and crash collection still return `unsupported`
-and exit 3. No STM32 or Pico firmware changes are needed to install the utility.
+Version 0.3.0 adds the [paired boot smoke](spooky-bench-boot-smoke.md). Power,
+trace, and crash collection still return `unsupported` and exit 3. No STM32 or
+Pico firmware changes are needed to install the utility.
 
 Software tests run on Windows with spawned workers and fake serial transports.
 Configured discovery, all four LOG/DIAG command paths, and UART startup capture
@@ -64,10 +65,11 @@ where the OS supplies it; it may be null on Windows.
 
 Alternatively a selector can be `{"port":"COM9"}` for a controlled setup.
 COM names can change; an identity-based selector discovers the current port on
-each new invocation. This slice does not reconnect within an active operation.
+each new standalone observation. Boot smoke also rediscovers it after reset.
 Missing/ambiguous matches and probe/device role collisions are explicit errors.
 Status with a profile requires both devices; console requires the probe;
-diagnostic commands require the target. No command chooses the first available
+diagnostic commands require the target. Boot smoke initially requires the probe
+and rediscovers the target identity after reset. No command chooses the first available
 COM port or silently ignores a supplied selector field.
 
 Set `artifact_root` to an absolute local directory outside the source checkout.
@@ -83,6 +85,7 @@ host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.j
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json diag status
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json diag last
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json diag dump
+host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test boot-smoke --manifest build/ipc-build-info.json
 ```
 
 Put global options before the command. Only one operation may own a board at a
@@ -95,7 +98,8 @@ Console is receive-only at 115200 8N1, without flow control. It saves arbitrary
 bytes, including invalid UTF-8 and partial lines. It never sends a command to
 the Pico UART bridge. Diagnostic commands use the separate target CDC, wait
 at least 5.2 seconds plus a quiet interval to discard no evidence but avoid
-stale replies, and send exactly one whitelisted command. Stop sensor/UI streams
+stale replies, and send exactly one whitelisted command. Boot smoke sequences
+these one-request sessions internally while retaining the board lock. Stop sensor/UI streams
 if they prevent the initial quiet interval. Original diagnostic bytes are saved
 as base64 alongside the existing Spookyprobe decoder output. Missing END stays
 incomplete; an error ends the session. No retry, automatic reset, or reconnect.
@@ -209,6 +213,6 @@ Use the working SYSOFF/power arrangement recorded in the
    releases ports and locks. Keep the PC awake for active tests.
 
 After Phase 1A acceptance, validate the implemented
-[Phase 1B controls](spooky-bench-controls.md), then add
-the combined capture + IPC boot-smoke runner described in the plan. Linux/Pi
+[Phase 1B controls](spooky-bench-controls.md), then run the
+[combined capture + IPC boot smoke](spooky-bench-boot-smoke.md). Linux/Pi
 deployment remains later work; its fallback locking path has not been bench-tested.

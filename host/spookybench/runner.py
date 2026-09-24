@@ -6,7 +6,7 @@ import platform
 import time
 from pathlib import Path
 from . import __version__
-from . import fake, serial_io, openocd
+from . import fake, serial_io, openocd, boot_smoke
 from .artifacts import JsonLines, Run
 from .config import load_profile
 from .dependency import verify_probe
@@ -66,9 +66,10 @@ def execute(options, run_notice=lambda path: None):
             return finish(reason="simulated" if options["simulate"] else None)
         profile, profile_raw = load_profile(options["profile"])
         metrics["capabilities"].update(probe="openocd" in profile,
-            flash="openocd" in profile, reset="openocd" in profile)
+            flash="openocd" in profile, reset="openocd" in profile,
+            ipc_test="openocd" in profile)
         # Controls require the named probe, not an already-booted target CDC.
-        required = ("probe", "device") if command == "status" else ("probe",) if command == "console" or command in openocd.CONTROL_COMMANDS else ("device",)
+        required = ("probe", "device") if command == "status" else ("probe",) if command == "console" or command in openocd.CONTROL_COMMANDS or command == "test boot-smoke" else ("device",)
         # Both board and artifact-root locks live outside the run root. The root
         # lock serializes quota reservations across different boards/profiles.
         root_key = str(Path(profile["artifact_root"]).resolve()).casefold()
@@ -88,6 +89,9 @@ def execute(options, run_notice=lambda path: None):
                     return finish(reason="simulated" if options["simulate"] else None)
                 if command in openocd.CONTROL_COMMANDS:
                     openocd.control(options, profile, run, metrics, artifacts)
+                    return finish(reason="simulated" if options["simulate"] else None)
+                if command == "test boot-smoke":
+                    boot_smoke.run(options, profile, run, metrics, artifacts)
                     return finish(reason="simulated" if options["simulate"] else None)
                 clock = fake.Clock() if options["simulate"] else serial_io.Clock()
                 role = "probe" if command == "console" else "device"

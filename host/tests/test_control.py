@@ -191,6 +191,47 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(result["result"], "pass", result)
         self.assertEqual(result["execution"], "simulated")
 
+    def test_boot_smoke_happy_path_and_evidence(self):
+        result = execute(self.options("test boot-smoke"))
+        self.assertEqual(result["result"], "pass", result)
+        self.assertEqual(result["metrics"]["target_health"], "healthy")
+        self.assertEqual(result["metrics"]["final_target_state"], "running")
+        self.assertEqual(result["metrics"]["ipc"]["deltas"],
+                         {"TX": 1, "RX": 1, "ACK": 1, "ROUNDTRIPS": 1})
+        self.assertEqual(result["metrics"]["ipc"]["liveness"],
+                         "M4 inferred from echo/ack progress")
+        self.assertGreater(result["metrics"]["capture"]["archived_bytes"], 0)
+        self.assertTrue(Path(result["artifacts"]["diagnostics"]).is_file())
+        self.assertTrue((Path(result["artifacts"]["uart"]) / "raw.bin").is_file())
+
+    def test_boot_smoke_rejects_non_ipc_manifest_before_control(self):
+        self.manifest["preset"] = "Debug"
+        self.save_manifest()
+        with patch("spookybench.openocd.control", side_effect=AssertionError("control started")):
+            result = execute(self.options("test boot-smoke"))
+        self.assertEqual(result["result"], "fail", result)
+        self.assertEqual(result["reason"], "ipc_disabled")
+        self.assertNotIn("openocd_log", result["artifacts"])
+
+    def test_boot_smoke_failure_verdicts(self):
+        cases = (("cdc-missing", "target_cdc_timeout"),
+                 ("uart-empty", "uart_evidence_missing"),
+                 ("ipc-disabled", "ipc_disabled"),
+                 ("ipc-stale", "ipc_no_progress"),
+                 ("ipc-error", "ipc_unhealthy"),
+                 ("diag-fault", "diag_unhealthy"))
+        for scenario, reason in cases:
+            with self.subTest(scenario=scenario):
+                result = execute(self.options("test boot-smoke", scenario))
+                self.assertEqual(result["result"], "fail", result)
+                self.assertEqual(result["reason"], reason, result)
+                self.assertFalse(result["metrics"]["evidence_complete"])
+
+    def test_boot_smoke_accepts_target_com_renumber(self):
+        result = execute(self.options("test boot-smoke", "com-renumber"))
+        self.assertEqual(result["result"], "pass", result)
+        self.assertEqual(result["metrics"]["selected_after_reset"]["device"]["port"], "COM104")
+
     def test_manifest_generator_records_explicit_provenance(self):
         helper = Path(__file__).resolve().parents[1] / "tools/make_manifest.py"
         output = self.root / "generated manifest.json"

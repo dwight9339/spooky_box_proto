@@ -1,9 +1,10 @@
 # Spooky Bench: current-state audit and implementation proposal
 
 Audit date: 2026-09-23 (America/Denver). Implementation update: 2026-09-24.
-**Phases 1A and 1B are implemented under `host/`; 38 offline tests pass on Windows.**
-Version 0.2.0 adds pinned OpenOCD controls, manifest/ELF validation, integrated
-reset/flash UART capture and Windows process-tree ownership. Live SWD probe
+**Phases 1A, 1B, and the Phase 2 host runner are implemented under `host/`; 42
+offline tests pass on Windows.** Version 0.3.0 includes pinned OpenOCD controls,
+manifest/ELF validation, integrated reset/flash UART capture, Windows process-tree
+ownership, and the supervised boot-smoke verdict. Live SWD probe
 passes, as do reset with captured boot output and a fresh paired program/verify.
 Post-flash CDC, logger and diagnostics are clean, and two IPC snapshots show
 forward peer/ack progress with no errors. The initial Phase-1B live gate is
@@ -19,8 +20,9 @@ a query after reconnect also passed. Concurrent-operation rejection and Ctrl+C
 termination behaved as expected, and post-interrupt query/capture verified lock
 and port release. Basic live checks are complete; mid-response disconnect,
 hardware COM renumbering, and sustained-load checks remain pending. See
-[setup and usage](spooky-bench-setup.md). Phase 2 boot-smoke
-remains planned. Raspberry Pi/Linux deployment is deferred. The original audit
+[setup and usage](spooky-bench-setup.md). The first Phase 2 boot-smoke hardware
+run passes; repeated and failure-path hardware gates remain. Raspberry Pi/Linux
+deployment is deferred. The original audit
 below records the state before implementation; its inventory and validation
 claims should be read in that historical context. This plan sets the
 absentee-debugging sequence; the product roadmap remains in
@@ -434,6 +436,10 @@ results and failure semantics, not decorative human output.
 
 ## Phase 2: smallest end-to-end smoke test
 
+Implemented in Spooky Bench 0.3.0. See the
+[boot-smoke usage and contract](spooky-bench-boot-smoke.md). Hardware acceptance
+of the combined command is recorded separately from the offline implementation.
+
 Proposed invocation: `spookybench --json test boot-smoke --manifest build-info.json`.
 Require a known matched **IpcSmoke** pair, PC-to-target CDC cable, validated flash
 and reset, and baseline peripheral wiring. This tests foreground boot + diagnostic
@@ -665,7 +671,7 @@ execute the repeatable portions unattended.
       never report boot success and do not intentionally run a mixed image pair.
 - [ ] Establish paired reset semantics, NRST wiring/muxing and both-core restart
       in normal/sleep/fault/held-core conditions; record unsupported cases.
-- [ ] Capture before reset; verify UART boot bytes, raw fidelity, host timestamps,
+- [x] Capture before reset; verify UART boot bytes, raw fidelity, host timestamps,
       session boundaries, target CDC re-enumeration and no wrong-port commands.
 - [ ] Run normal Debug regression: radio/headphones, volume/jack mute, sensors,
       short/long three-channel recordings and WAV checks; save diagnostic counters.
@@ -677,8 +683,10 @@ execute the repeatable portions unattended.
       current draw; experiment builds must continue to reject SLEEP START.
 - [ ] Run IpcSmoke handshake/progress/reset/cold-start and recording-load tests;
       halt/resume M4 for stale/recovery; IpcMismatch must fail as incompatible.
-- [ ] Prove one local PC `boot-smoke` invocation returns correct JSON/exit code and
-      complete evidence across repeated resets, absent probe/CDC and boot timeout.
+- [x] Prove one local PC hardware `boot-smoke` invocation returns the correct
+      JSON/exit code with complete UART, flash, CDC, diagnostic, and IPC evidence.
+- [ ] Repeat the hardware command across resets, absent probe/CDC, and boot timeout;
+      corresponding deterministic simulation cases already pass.
 - [ ] Run SWD attach/halt/resume/program while capturing UART; exercise USB
       reconnect, CDC line coding/break/autobaud with CMSIS-DAP regression checks.
 - [ ] On this PC, simulate slow/full storage in a bounded test area; verify queue/drop
@@ -716,21 +724,25 @@ commands, result semantics, limits, and first live acceptance.
 The implementation adds no target/Pico firmware changes, Pi setup, power control,
 trace or CI. No-profile status performs discovery without opening serial ports;
 with a profile, status validates both CDC selections. OpenOCD checks run only
-on Phase 1B control operations. Phase 1A holds one board lock per
-operation; combined capture/diagnostic orchestration belongs to the later runner.
+on control and boot-smoke operations. Standalone Phase 1A commands hold one board
+lock per operation; boot-smoke owns capture, control and diagnostics under one
+lock.
 
 **Phase 1B is implemented** for SWD probe, manifest-based paired-image
 validation/flash, and reset, using the existing AP0/AP2 workaround and testing
 partial-failure cleanup. See [controls](spooky-bench-controls.md) for deliberate
 differences from the proposed syntax and remaining hardware gates.
-Hardware acceptance is the corresponding Phase-1 checklist above. Implement
-Phase-2 boot-smoke separately after flash/reset/capture are proven. A dedicated
-Pi remains a later deployment choice, not a prerequisite for agent-accessible
-hardware testing.
+Hardware acceptance is the corresponding Phase-1 checklist above. **Phase 2 is
+implemented and has passed two complete live boot-smoke runs** with paired
+flash/verify, pre-reset capture, CDC recovery, clean diagnostics and forward IPC
+progress. A dedicated Pi remains a later deployment choice, not a prerequisite
+for agent-accessible hardware testing.
 
-Validation: 38/38 bench tests pass, including fake serial/decoder scenarios,
+Validation: 42/42 bench tests pass, including fake serial/decoder scenarios,
 storage refusal, Windows spawned CLI execution and forced worker termination
-with lock release. Package installation and `pip check` pass. The test environment
-uses Python 3.12.14 and pyserial 3.5. All four LOG/DIAG query paths and configured
-device selection passed initial live checks; remaining hardware checks are tracked in the
+with lock release, plus boot-smoke CDC, UART, IPC and diagnostic failure verdicts.
+Package installation and `pip check` pass. The test environment uses Python
+3.12.14 and pyserial 3.5. All four LOG/DIAG query paths, configured device
+selection, Phase 1B controls and the Phase 2 runner passed initial live checks;
+remaining hardware checks are tracked in the
 [live results](bench-results-2026-09-24.md). Discovery alone is not target health evidence.

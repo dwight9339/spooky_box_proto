@@ -295,4 +295,52 @@ This completes the initial Phase-1B live gate for SWD attach, reset with UART
 capture, fresh paired program/verify, target CDC recovery, logger/diagnostic
 integrity and IPC counter progress. Longer load tests, direct M4 observation in
 other power states, failure recovery on hardware, and the automated Phase-2
-boot-smoke command remain separate work.
+boot-smoke command remained separate work at this checkpoint.
+
+## Phase 2: single-command boot smoke
+
+Spooky Bench 0.3.0 implements the first-class command from the plan. All 42
+offline tests passed, including the boot-smoke happy path, CDC COM renumbering,
+missing CDC, empty UART, disabled/stale/error IPC, diagnostic fault, partial
+flash, process-tree cleanup, and the earlier serial/storage/protocol cases.
+The editable environment was reinstalled and `pip check` reported no broken
+requirements.
+
+Preflight status run `2026-09-24T180146.010803_0000-2b738a05` found the target
+on COM3 and Pico on COM6 by serial identity. An initial live boot-smoke passed;
+a cleanup-only hardening change was then made so its source hash was superseded.
+The exact final implementation was rerun as
+`2026-09-24T180428.411526_0000-da695dce` and passed in 42,281 ms using runner
+source hash `90801225ef940e05ed0d3572c8172f35765ffa108ae0749792d0a7fb0e1dd6b5`
+and the same declared IpcSmoke build pair and image hashes recorded above.
+
+Manifest preflight completed within timer resolution. The paired
+flash/verify/reset stage took 7437 ms;
+both cores verified before reset/run, OpenOCD exited 0, and final M7 state was
+running. UART capture was ready before tool start. Recorded host-nanosecond epoch
+markers place reset completion before tool completion, and the archive continued
+through all structured checks. It received and archived 2790 bytes in seven
+contiguous chunks with zero host drops and a normal stopped session.
+
+The target CDC serial identity returned on COM3 after five attempts and 1032 ms.
+Fresh DIAG STATUS established M7/schema-v1 liveness with COUNT=3 and zero fault,
+overrun, SD, or audio counters. One IPC pair reported LINK=UP, ABI 1/1, both seen
+flags, zero local/peer errors, and these forward deltas:
+
+| Counter | First | Second | Forward delta |
+| --- | ---: | ---: | ---: |
+| TX | 109 | 171 | 62 |
+| RX | 118 | 181 | 63 |
+| ACK | 108 | 170 | 62 |
+| ROUNDTRIPS | 108 | 170 | 62 |
+
+This supplies the command's labeled M4 liveness inference from echo/ack progress.
+LOG STATUS was idle with peak 1369, TX_BYTES=2790, and zero loss/error/context
+counters. DIAG LAST returned NONE. DIAG DUMP completed with three events, no
+gaps, BOOT followed by IPC waiting/up, and 791 ms of MCU event time. The final
+result reports target_health healthy, final_target_state running,
+human_required false, and complete evidence with all seven checks passing.
+
+This passes the initial Phase-2 hardware gate for one local PC invocation. It
+does not replace the pending repeated-reset, physical absence/timeout, sustained
+load, power-state, or deliberately interrupted hardware tests.

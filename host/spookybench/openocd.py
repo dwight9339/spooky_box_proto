@@ -126,8 +126,8 @@ def interpret(command, code, output, metrics):
         raise BenchError("reset_incomplete", "Reset/run completion missing", "fail")
 
 
-def control(options, profile, run, metrics, artifacts):
-    command = options["command"]
+def control(options, profile, run, metrics, artifacts, operation=None, keep_capture=False):
+    command = operation or options["command"]
     config = profile.get("openocd")
     if not config:
         raise BenchError("control_not_configured", "Add the openocd profile section before using controls")
@@ -138,6 +138,9 @@ def control(options, profile, run, metrics, artifacts):
     run.reserve(LOG_CAP)
     if command == "flash":
         metrics["firmware"] = stage_pair(options["manifest"], run)
+        required_preset = options.get("required_preset")
+        if required_preset and metrics["firmware"]["build"]["preset"] != required_preset:
+            raise BenchError("ipc_disabled", f"{required_preset} firmware is required for this test", "fail")
         artifacts["firmware"] = str(run.path / "firmware")
         artifacts["manifest"] = str(run.path / "build-info.json")
     metrics["tools"]["openocd"] = ({"state": "simulated", "version": "simulated"}
@@ -149,34 +152,48 @@ def control(options, profile, run, metrics, artifacts):
     metrics["human_required"] = False
     started_tool = False
     capture = None
+    succeeded = False
+    epochs = metrics.setdefault("epochs", {})
     try:
         if command in ("reset", "flash") and not simulated:
             capture = LiveCapture(run, metrics, artifacts, options["deadline"])
             capture.start(metrics["selected"]["probe"]["port"])
+            epochs["uart_capture_ready_host_ns"] = time.time_ns()
         with (run.path / "openocd.log").open("xb") as stream:
+            epoch_tail = bytearray()
             def emit(raw):
                 stream.write(raw)
                 stream.flush()
+                epoch_tail.extend(raw)
+                if b"SB_RESET completed" in epoch_tail and "reset_completed_host_ns" not in epochs:
+                    epochs["reset_completed_host_ns"] = time.time_ns()
+                if len(epoch_tail) > 256:
+                    del epoch_tail[:-256]
             if simulated:
+                epochs["tool_started_host_ns"] = time.time_ns()
                 code, raw = simulate(command, options["scenario"])
                 emit(raw)
             else:
                 argv = [config["executable"], "-s", "scripts", "-f", "operation.cfg"]
                 run.write_json("openocd-command.json", {"argv": argv, "cwd": str(run.path)})
                 started_tool = True
+                epochs["tool_started_host_ns"] = time.time_ns()
                 code, raw = run_process(argv, run.path,
                     options["deadline"] - (3.0 if capture else 1.0), emit)
+            epochs["tool_finished_host_ns"] = time.time_ns()
             interpret(command, code, raw, metrics)
-            if capture:
+            if capture and not keep_capture:
                 # Preserve a bounded boot-log tail; this is not a boot/IPC verdict.
                 time.sleep(min(2.0, max(0, options["deadline"] - time.monotonic() - 0.8)))
+            succeeded = True
+            return capture if keep_capture else None
     except BaseException:
         if command in ("flash", "reset") and (started_tool or simulated):
             metrics["human_required"] = True
             metrics["final_target_state"] = "unknown"
         raise
     finally:
-        if capture:
+        if capture and (not keep_capture or not succeeded):
             try:
                 capture.close()
             except BaseException:

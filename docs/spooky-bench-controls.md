@@ -1,8 +1,9 @@
 # Spooky Bench Phase 1B: Windows SWD controls
 
 Implemented in version 0.2.0, 2026-09-24. Phase 1A observation commands remain
-available. `probe`, `reset`, and `flash --manifest` now use the pinned Windows
-OpenOCD installation. Automated boot/IPC verdicts remain Phase 2 work.
+available. `probe`, `reset`, and `flash --manifest` use the pinned Windows
+OpenOCD installation. The combined automated verdict is documented in the
+[Phase 2 boot smoke guide](spooky-bench-boot-smoke.md).
 
 ## Setup
 
@@ -138,7 +139,7 @@ acceptance evidence.
 
 ## Validation and remaining bench work
 
-38 offline tests pass, including all prior Phase 1A cases, hostile path/serial
+42 offline tests pass, including all prior Phase 1A cases, hostile path/serial
 handling, malformed ELF/hash/provenance rejection, partial verification failure,
 short-output bursts, timeouts, disk failures, integrated UART readiness, spawned
 controls, and real Windows descendant termination. The installed OpenOCD parses
@@ -154,7 +155,7 @@ errors, plus clean logger counters and a complete diagnostic dump.
 
 The initial Phase-1B live gate is complete. Remaining extended work includes
 sleeping-M4 variants, direct M4 observation where possible, sustained traffic,
-real failure recovery and a first-class Phase-2 boot-smoke command. Do not
+and real failure recovery. Do not
 deliberately interrupt real flash merely to test cleanup on this prototype;
 partial-flash control flow is covered offline.
-Phase 2 boot-smoke automation can now build on the accepted flash/reset path.
+Phase 2 boot-smoke automation now builds on this accepted flash/reset path.
