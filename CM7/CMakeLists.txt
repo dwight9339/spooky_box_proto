@@ -76,6 +76,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/sd_diskio.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/sd_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/ui_board_test.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/wav_transfer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/USB_Device/Src/usb_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/USB_Device/Src/usbd_conf.c
     ${CMAKE_CURRENT_SOURCE_DIR}/USB_Device/Src/usbd_desc.c

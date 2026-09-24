@@ -436,6 +436,25 @@ write. `RECORD STOP` requests a clean stop after the next matched radio/mic
 block. SD maintenance/stress commands and radio band/tuning changes are
 rejected while recording is active.
 
+With Spooky Bench 0.5.0 firmware, leave the card inserted and retrieve a finished
+recording through the target CDC with:
+
+```powershell
+host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json wav inspect --file REC000.WAV --timeout 600
+```
+
+The target command behind this utility is `WAV FETCH REC###.WAV`. It emits a
+versioned binary stream and is intended for the bench client rather than a text
+terminal. Each data frame requires an offset acknowledgement, has its own CRC32,
+and contributes to a final whole-file CRC32. The target accepts only `REC###.WAV`,
+rejects transfer during recording, limits files to 256 MiB, and closes the file
+after ten seconds without an acknowledgement. `WAV ABORT` closes an active
+transfer explicitly. Do not issue other CLI commands during the binary exchange.
+
+The host saves the exact WAV plus SHA-256, validates RIFF sizes and PCM format,
+and reports per-channel range, peak, mean, RMS, zero/clipped sample counts, and
+correlations. A structurally valid file with a constant channel fails inspection.
+
 A pass requires `OK RECORD PASS`, no DMA/write/queue-overrun abort, nonzero
 peaks for every source that had an audible signal, and queue high-water marks
 below 8. The important timing margin is `max-write`: it should normally be
@@ -444,9 +463,9 @@ measure JP8 with the meter's 10 A current input during `RECORD START 600`; a
 ten-minute run also exercises filesystem growth beyond the initial 60-second
 contiguous preallocation. Keep the host reading the CDC output during the run.
 
-After removing the card cleanly, `ffprobe REC000.WAV` should report 48,000 Hz,
-three channels, and signed 16-bit PCM. Individual tracks can be extracted on
-a computer with:
+The retrieved artifact can be cross-checked with `ffprobe`, which should report
+48,000 Hz, three channels, and signed 16-bit PCM. Individual tracks can be
+extracted on a computer with:
 
 ```text
 ffmpeg -i REC000.WAV -map_channel 0.0.0 radio-left.wav

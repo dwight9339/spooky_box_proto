@@ -39,6 +39,7 @@
 #include "sd_test.h"
 #include "ui_board_test.h"
 #include "usb_test.h"
+#include "wav_transfer.h"
 
 /* USER CODE END Includes */
 
@@ -1437,6 +1438,14 @@ static void UsbCliCommand(const char *line)
   }
   command[length] = '\0';
 
+  /* A WAV transfer is a framed binary exchange. Do not interleave replies from
+   * other command handlers while its host is waiting for a frame. */
+  if (WavTransfer_IsActive())
+  {
+    (void)WavTransfer_HandleCommand(command);
+    return;
+  }
+
   if (Diagnostics_HandleCommand(command))
   {
     return;
@@ -1462,6 +1471,20 @@ static void UsbCliCommand(const char *line)
   }
   if (UiBoardTest_HandleCommand(command))
   {
+    return;
+  }
+  if ((strncmp(command, "WAV", 3U) == 0) &&
+      ((command[3] == '\0') || (command[3] == ' ') ||
+       (command[3] == '\t')))
+  {
+    if (RadioRecorder_IsActive())
+    {
+      (void)UsbTest_SendText("ERR WAV unavailable while recording\r\n");
+    }
+    else
+    {
+      (void)WavTransfer_HandleCommand(command);
+    }
     return;
   }
   if (RadioRecorder_HandleCommand(command, radio_audio_running))
@@ -1845,6 +1868,7 @@ Error_Handler();
   Bringup_Run();
   SdTest_Start(&hsd1);
   RadioRecorder_Init(&hdfsdm1_filter0);
+  WavTransfer_Init(&hsd1);
   if (!FuelGaugeTest_Start(&hi2c2))
   {
     BSP_LED_On(LED_RED);
@@ -1875,6 +1899,7 @@ Error_Handler();
     RadioRecorder_Service();
     FuelGaugeTest_Service();
     UsbTest_Service();
+    WavTransfer_Service();
     TargetLogger_Service();
     Diagnostics_Service();
     UiBoardTest_Service();

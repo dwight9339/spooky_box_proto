@@ -6,7 +6,7 @@ import platform
 import time
 from pathlib import Path
 from . import __version__
-from . import fake, serial_io, openocd, boot_smoke, ipc_load
+from . import fake, serial_io, openocd, boot_smoke, ipc_load, wav_inspect
 from .artifacts import JsonLines, Run
 from .config import load_profile
 from .dependency import verify_probe
@@ -67,7 +67,7 @@ def execute(options, run_notice=lambda path: None):
         profile, profile_raw = load_profile(options["profile"])
         metrics["capabilities"].update(probe="openocd" in profile,
             flash="openocd" in profile, reset="openocd" in profile,
-            ipc_test=True)
+            ipc_test=True, wav_inspect=True)
         # Controls require the named probe, not an already-booted target CDC.
         required = ("probe", "device") if command == "status" else ("probe",) if command == "console" or command in openocd.CONTROL_COMMANDS or command == "test boot-smoke" else ("device",)
         # Both board and artifact-root locks live outside the run root. The root
@@ -95,6 +95,9 @@ def execute(options, run_notice=lambda path: None):
                     return finish(reason="simulated" if options["simulate"] else None)
                 if command == "test ipc-load":
                     ipc_load.run(options, profile, run, metrics, artifacts)
+                    return finish(reason="simulated" if options["simulate"] else None)
+                if command == "wav inspect":
+                    wav_inspect.run(options, profile, run, metrics, artifacts)
                     return finish(reason="simulated" if options["simulate"] else None)
                 clock = fake.Clock() if options["simulate"] else serial_io.Clock()
                 role = "probe" if command == "console" else "device"

@@ -384,6 +384,65 @@ transport, and context errors with empty queues. DIAG LAST returned NONE.
 
 This passes the first automated Phase-3 load gate: IPC foreground progress and
 target-reported recording health are established throughout one 60-second run.
-The WAV was not copied or inspected on the host, so audio content/channel quality,
-the ten-minute run, deliberate failure hardware cases, and broader SD/peripheral
-tests remain pending.
+The load command itself did not copy or inspect the WAV; the separate follow-up
+inspection is recorded below. The ten-minute run, deliberate failure hardware
+cases, and broader SD/peripheral tests remain pending.
+
+## Phase 3: host-side WAV inspection
+
+Spooky Bench 0.5.0 and target binary protocol v1 add bounded retrieval and local
+analysis of `REC###.WAV`. The target uses 1008-byte acknowledged data frames with
+per-frame CRC32, a whole-file CRC32 end frame, a 256 MiB limit, strict filename
+selection, and a ten-second missing-ACK timeout. The host reserves the declared
+artifact size, retains `.partial` evidence, calculates SHA-256, and requires
+strict RIFF/PCM accounting plus nonconstant data on all three channels.
+
+All four CM7 presets build with the new firmware. The paired IpcSmoke deployment
+used build ID `wav-inspect-20260924-01`, dirty source snapshot SHA-256
+`49045304b3c739313f51947b62e7333bfb0a90aa1798777be544ffd6f567ec0c`,
+CM7 image SHA-256 `a70137aa11fb4a714e7f2adbdb4b25239c66ed700c137d19ee6af5a83efa7506`,
+and the prior matching CM4 image SHA-256
+`8f6e005ffefdf6896fcaf85d5a51554aa64e97ecae3672b412a94ed29ba377cc`.
+Boot-smoke run `2026-09-24T190022.631255_0000-015546c3` passed in 42,422 ms
+with all seven checks, clean logger/diagnostics, forward IPC progress, and zero
+host UART drops.
+
+An intentionally interrupted first retrieval left a bounded partial artifact.
+The target's missing-ACK timeout released the file; a subsequent direct two-frame
+check validated the frame CRC and exact-offset ACK, and a new fetch began without
+reset or manual recovery. This supplies initial hardware evidence for abandoned
+host cleanup, though deliberate cable removal and storage failure remain.
+
+Final run `2026-09-24T190727.483624_0000-a961b406` passed with exact host source
+hash `bd48fa4dcfdcc2842c3bec6d48c032295c019e756cc4df121b4cb91b04c83995`.
+It transferred `REC004.WAV` in 17,165 frames and 267,469 ms:
+
+| Evidence | Value |
+| --- | --- |
+| File bytes | 17,301,548 |
+| Audio bytes / frames | 17,301,504 / 2,883,584 |
+| PCM format | 48,000 Hz, signed 16-bit, 3 channels, 6-byte alignment |
+| Duration | 60.074667 seconds |
+| Transfer CRC32 | `eb92c866` |
+| SHA-256 | `fdedb2b5d885afe37865b007d84890f64ca7c4b730025358142ea78f13798098` |
+
+Channel results were:
+
+| Channel | Range | Peak | RMS | Mean | Zero samples | Clipped |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Radio left | -1643..1513 | 1643 | 322.129 | -5.395 | 3,578 | 0 |
+| Radio right | -1640..1514 | 1640 | 322.181 | -7.454 | 3,608 | 0 |
+| Microphone | -672..62 | 672 | 8.514 | 0.0001 | 141,312 | 0 |
+
+The peaks exactly match the earlier target `RECORD DIAG`. No channel was constant;
+one-second follow-up windows had minimum peaks 1087, 1085, and 31 respectively,
+with no constant window. Radio left/right correlation was 0.999971, consistent
+with essentially mono program content in this capture; radio/microphone
+correlations were near zero. This is reported evidence, not a stereo-separation
+failure criterion. `ffprobe` independently confirmed `pcm_s16le`, 48 kHz, three
+channels, 16 bits, 60.074667 seconds, and 17,301,548 bytes.
+
+Post-transfer DIAG STATUS remained schema 1/core 7 with all fault, overrun, SD,
+and audio counters zero. LOG STATUS had empty queues and zero drop, transport,
+and context errors. The ten-minute recording, listening tests, known stereo
+material, cable-removal transfer recovery, and SD/peripheral runners remain.

@@ -5,7 +5,9 @@ capture, and LOG/DIAG requests. Version 0.2.0 also
 implements [Phase 1B SWD probe, reset and paired flash](spooky-bench-controls.md).
 Version 0.3.0 adds the [paired boot smoke](spooky-bench-boot-smoke.md), and
 version 0.4.0 adds the supervised
-[IPC recording-load test](spooky-bench-ipc-load.md). Power, trace, and crash
+[IPC recording-load test](spooky-bench-ipc-load.md). Version 0.5.0 adds
+[CRC-verified WAV retrieval and host inspection](spooky-bench-wav-inspection.md).
+Power, trace, and crash
 collection still return `unsupported` and exit 3. No STM32 or Pico firmware
 changes are needed to install the utility.
 
@@ -21,7 +23,8 @@ and console runs confirmed lock and port release. Basic live checks are complete
 mid-response disconnect, COM renumbering, and deliberate transport-overload
 testing still require bench acceptance. A 60-second recording-load test has
 passed with IPC progress throughout. Enumeration
-alone does not establish a working target.
+alone does not establish a working target. `REC004.WAV` has also passed the
+first complete retrieval and host-analysis run.
 
 ## Install in this repo
 
@@ -90,6 +93,7 @@ host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.j
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json diag dump
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test boot-smoke --manifest build/ipc-build-info.json
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test ipc-load --seconds 60
+host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json wav inspect --file REC004.WAV --timeout 600
 ```
 
 Put global options before the command. Only one operation may own a board at a
@@ -97,6 +101,8 @@ time, including console capture. Stop console before running a separate bench
 diagnostic invocation. Boot smoke owns capture, controls, and diagnostics under
 one lock. IPC load owns one target CDC session for recording progress and its
 in-load IPC requests, then uses bounded diagnostic sessions before and after it.
+WAV inspection owns the target CDC and SD reader for the full acknowledged
+binary transfer; it cannot run during recording or another bench operation.
 Close other terminal applications before opening their COM ports here;
 Spooky Bench does not terminate unrelated applications or steal their handles.
 
@@ -144,6 +150,14 @@ cleanup. It refuses to disturb an already active recording. If a recording that
 it started fails or loses evidence, it issues one bounded `RECORD STOP`; an
 incomplete cleanup is reported with `human_required=true`.
 
+WAV inspection defaults to a 600-second total deadline and accepts an explicit
+finite `--timeout` up to 3600 seconds. The target limits files to 256 MiB and
+stops a transfer after ten seconds without the next host acknowledgement. The
+host reserves the declared file size before accepting data, keeps an interrupted
+file with a `.partial` suffix, and publishes the final `.WAV` only after every
+frame and the whole-file CRC pass. See the dedicated guide for format and signal
+criteria.
+
 Worker supervision uses Windows-compatible `spawn`, bounded shared result memory,
 and terminate/kill/reap rather than unbounded thread joins in the CLI process.
 Python documents that [forced process termination skips cleanup](https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Process.terminate).
@@ -181,6 +195,8 @@ A configured run contains:
   test-results.json             # authoritative completed operation result
   uart/raw.bin, chunks.jsonl, session.json    # console only, under uart/
   diagnostics.jsonl             # diagnostic query only
+  audio/REC###.WAV              # completed WAV inspection only
+  wav-transfer.jsonl            # transfer start/end identity and checksums
 ```
 
 No-profile discovery returns its evidence only in the CLI result. OpenOCD is

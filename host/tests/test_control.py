@@ -268,6 +268,38 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(result["result"], "pass", result)
         self.assertEqual(result["execution"], "simulated")
 
+    def test_wav_inspect_happy_path(self):
+        options = dict(self.options("wav inspect"), filename="REC004.WAV",
+                       deadline=time.monotonic() + 30)
+        result = execute(options)
+        self.assertEqual(result["result"], "pass", result)
+        self.assertEqual(result["metrics"]["wav"]["frames"], 128)
+        self.assertEqual(result["metrics"]["wav"]["channels"], 3)
+        self.assertGreater(result["metrics"]["wav"]["signal"]["microphone"]["peak"], 0)
+        self.assertTrue(Path(result["artifacts"]["wav"]).exists())
+        self.assertNotIn("wav_partial", result["artifacts"])
+
+    def test_wav_inspect_failure_verdicts(self):
+        cases = (("wav-missing", "wav_unavailable"),
+                 ("wav-corrupt-frame", "transfer_crc"),
+                 ("wav-truncated", "request_timeout"),
+                 ("wav-silent", "wav_silent_channel"),
+                 ("wav-bad-header", "wav_invalid"))
+        for scenario, reason in cases:
+            with self.subTest(scenario=scenario):
+                options = dict(self.options("wav inspect", scenario), filename="REC004.WAV",
+                               deadline=time.monotonic() + 30)
+                result = execute(options)
+                self.assertEqual(result["reason"], reason, result)
+                self.assertNotEqual(result["result"], "pass")
+                self.assertFalse(result["metrics"]["evidence_complete"])
+
+    def test_spawned_simulated_wav_inspect(self):
+        options = dict(self.options("wav inspect"), filename="REC004.WAV")
+        result = supervise(options, 30)
+        self.assertEqual(result["result"], "pass", result)
+        self.assertEqual(result["execution"], "simulated")
+
     def test_manifest_generator_records_explicit_provenance(self):
         helper = Path(__file__).resolve().parents[1] / "tools/make_manifest.py"
         output = self.root / "generated manifest.json"

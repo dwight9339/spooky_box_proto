@@ -10,6 +10,7 @@
 #include "sd_test.h"
 #include "ui_board_test.h"
 #include "usb_test.h"
+#include "wav_transfer.h"
 
 #define SLEEP_REPORT_PERIOD_SECONDS    300U
 #define SLEEP_WAKE_SELF_TEST_SECONDS   10U
@@ -141,6 +142,7 @@ static void PrototypeSleepRun(void (*stop_radio_audio)(void))
   (void)MagnetometerTest_Sleep();
   UiBoardTest_SafeOff();
   RadioRecorder_Stop();
+  WavTransfer_Stop();
   SdTest_Stop();
   stop_radio_audio();
   BSP_LED_Off(LED_GREEN);

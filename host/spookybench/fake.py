@@ -1,4 +1,21 @@
 """Deterministic simulated devices. No hardware calls or real-time sleeps."""
+import struct
+import zlib
+
+
+def _wav_bytes(scenario):
+    frames = 128
+    payload = bytearray()
+    for index in range(frames):
+        values = (0, 0, 0) if scenario == "wav-silent" else (
+            ((index % 32) - 16) * 100,
+            ((index % 29) - 14) * 90,
+            ((index % 13) - 6) * 50)
+        payload.extend(struct.pack("<hhh", *values))
+    riff = b"RIFF" + struct.pack("<I", 36 + len(payload)) + b"WAVE"
+    fmt = b"fmt " + struct.pack("<IHHIIHH", 16, 1, 3, 48000, 288000, 6, 16)
+    wav = riff + fmt + b"data" + struct.pack("<I", len(payload)) + payload
+    return (b"NOPE" + wav[4:]) if scenario == "wav-bad-header" else wav
 class Clock:
     def __init__(self):
         self.value = 0.0
@@ -46,6 +63,25 @@ class Serial:
             return (b"simulated UART\r\n\xffpartial" * 200)[:size] if self.reads == 1 else b""
         if self.scenario == "record-disconnect" and self.state.get("recording_active"):
             raise OSError("simulated target disconnect during recording")
+        if not self.pending and self.state.get("wav_active"):
+            offset = self.state["wav_offset"]
+            data = self.state["wav_data"]
+            if self.scenario == "wav-truncated" and offset:
+                return b""
+            if not self.state.get("wav_waiting_ack"):
+                if offset < len(data):
+                    payload = data[offset:offset + self.state["wav_chunk"]]
+                    crc = zlib.crc32(payload) & 0xffffffff
+                    if self.scenario == "wav-corrupt-frame" and offset == 0:
+                        crc ^= 1
+                    self.pending = struct.pack("<4sIHHI", b"WV01", offset,
+                                               len(payload), 1, crc) + payload
+                    self.state["wav_next"] = offset + len(payload)
+                    self.state["wav_waiting_ack"] = True
+                else:
+                    crc = zlib.crc32(data) & 0xffffffff
+                    self.pending = struct.pack("<4sIHHI", b"WV01", offset, 0, 2, crc)
+                    self.state["wav_active"] = False
         if not self.pending and self.state.get("recording_active"):
             elapsed = self.clock.now() - self.state["recording_started"]
             if self.state.get("stop_requested"):
@@ -59,12 +95,34 @@ class Serial:
                 self.pending = (f"RECORD progress={whole}.0s queues=0/8,0/8 "
                                 "max-write=25ms\r\n").encode()
                 self.state["next_record_progress"] += 5.0
-        out, self.pending = self.pending[:17], self.pending[17:]
+        take = min(size, 17)
+        out, self.pending = self.pending[:take], self.pending[take:]
         return out
 
     def write(self, data):
         self.writes.append(data)
         command = data.decode().strip()
+        if command.startswith("WAV FETCH "):
+            name = command[10:]
+            if self.scenario == "wav-missing":
+                self.pending = b"ERR WAV open failed result=4\r\n"
+            else:
+                wav = _wav_bytes(self.scenario)
+                self.state.update(wav_active=True, wav_data=wav, wav_offset=0,
+                                  wav_chunk=73, wav_waiting_ack=False)
+                self.pending = (f"OK WAV START file={name} bytes={len(wav)} "
+                                "chunk=73 protocol=1\r\n").encode()
+            return len(data)
+        if command.startswith("WAV ACK "):
+            acknowledged = int(command[8:])
+            if self.state.get("wav_waiting_ack") and acknowledged == self.state.get("wav_next"):
+                self.state["wav_offset"] = acknowledged
+                self.state["wav_waiting_ack"] = False
+            return len(data)
+        if command == "WAV ABORT":
+            self.state["wav_active"] = False
+            self.pending = b"OK WAV ABORT\r\n"
+            return len(data)
         answers = {
             "LOG STATUS": b"OK LOG QUEUED=0 PEAK=128 DROP_WRITES=0 DROP_BYTES=0 TX_LOST=0 TX_BYTES=2048 TX_ERRORS=0 CONTEXT=0 FLIGHT=0\r\n",
             "DIAG STATUS": b"OK DIAG V=1 CORE=7 COUNT=1 OVERWRITTEN=0 SD_MAX_MS=25 LOOP_MAX_MS=0 RADIO_OVR=0 PDM_OVR=0 SD_ERR=0 AUDIO_ERR=0 HAS_FAULT=0\r\n",

@@ -211,11 +211,12 @@ static void test_cli(void)
   cli_reset();
   CHECK(Diagnostics_HandleCommand("HELP"));
   for (uint32_t i = 0; i < 10U; ++i) Diagnostics_Service();
-  CHECK(usb_count == 8U);
+  CHECK(usb_count == 9U);
   CHECK(strstr(usb_lines[2], "LOG STATUS") != NULL);
+  CHECK(strstr(usb_lines[6], "WAV FETCH") != NULL);
   CHECK(Diagnostics_HandleCommand("LOG STATUS"));
   Diagnostics_Service();
-  CHECK(strstr(usb_lines[8], "TX_ERRORS=4") != NULL);
+  CHECK(strstr(usb_lines[9], "TX_ERRORS=4") != NULL);
   CHECK(test_primask == 0U);
 }
 

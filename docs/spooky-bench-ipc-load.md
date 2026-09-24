@@ -64,9 +64,11 @@ health, and parsed diagnostic history. Original device lines are preserved as
 base64 in the JSONL evidence.
 
 This test validates target-reported recording accounting and continued
-foreground IPC service. It does not copy, decode, listen to, or inspect the WAV
-file on the PC, and it does not establish audio quality or channel correctness.
-Those remain part of the broader audio-basic acceptance work.
+foreground IPC service. It does not itself copy, decode, listen to, or inspect
+the WAV file. Follow it with Spooky Bench 0.5.0
+[`wav inspect`](spooky-bench-wav-inspection.md) for CRC-verified retrieval,
+container validation, and channel statistics. Listening and subjective audio
+quality remain part of broader audio acceptance.
 
 Simulation covers successful execution plus `record-abort`, `record-overrun`,
 `record-ipc-stale`, `record-disconnect`, and `record-busy` failure semantics.

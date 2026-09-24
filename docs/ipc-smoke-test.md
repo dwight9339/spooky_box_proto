@@ -86,7 +86,8 @@ cannot acknowledge packets. Follow the existing power/wiring procedure in
 3. Run `RECORD START 60`, inspect `RECORD STATUS` and `IPC STATUS`, then inspect
    the resulting WAV as in BRINGUP. Require no recorder overrun or abort and
    continued IPC progress. The automated 60-second counter/progress portion has
-   passed; host-side WAV inspection and the ten-minute recording test remain.
+   passed. `REC004.WAV` also passed host-side transfer and inspection; the
+   ten-minute recording test remains.
 4. If the debugger can halt only M4 while M7 continues, halt M4 and wait over
    two seconds. Require `STALE`; resume M4 and require recovery. If halted
    inside HSEM 1, BUSY may rise until resume. Do not force-unlock it while

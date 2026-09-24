@@ -11,7 +11,7 @@
 #define USB_TEST_RX_BUFFER_SIZE  CDC_DATA_FS_OUT_PACKET_SIZE
 #define USB_TEST_RX_QUEUE_SIZE   256U
 #define USB_TEST_LINE_SIZE       64U
-#define USB_TEST_TX_BUFFER_SIZE  256U
+#define USB_TEST_TX_BUFFER_SIZE 1024U
 
 extern USBD_DescriptorsTypeDef VCP_Desc;
 extern volatile uint32_t usb_diag_irq_count;
@@ -386,7 +386,7 @@ static void UsbPrintDiagnostics(void)
   }
 }
 
-static bool UsbSend(const uint8_t *data, uint32_t length)
+bool UsbTest_SendData(const uint8_t *data, uint16_t length)
 {
   if ((data == NULL) || (length == 0U) ||
       (length > USB_TEST_TX_BUFFER_SIZE) || usb_tx_busy)
@@ -418,7 +418,9 @@ bool UsbTest_SendText(const char *message)
   {
     return false;
   }
-  return UsbSend((const uint8_t *)message, strlen(message));
+  size_t length = strlen(message);
+  return (length <= UINT16_MAX) &&
+         UsbTest_SendData((const uint8_t *)message, (uint16_t)length);
 }
 
 static void UsbProcessNextLine(void)
@@ -531,7 +533,8 @@ void UsbTest_Service(void)
   {
     return;
   }
-  if (usb_banner_pending && UsbSend(banner, sizeof(banner) - 1U))
+  if (usb_banner_pending &&
+      UsbTest_SendData(banner, (uint16_t)(sizeof(banner) - 1U)))
   {
     usb_banner_pending = false;
     return;
