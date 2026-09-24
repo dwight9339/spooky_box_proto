@@ -4,13 +4,14 @@ Phase 1A provides Windows serial discovery, bounded Pico UART capture and
 LOG/DIAG queries on the separate target CDC port. Phase 1B adds pinned Windows
 OpenOCD probe/reset and manifest-based paired flashing with integrated UART
 capture. Phase 2 adds a supervised `test boot-smoke` verdict for an IpcSmoke
-pair. Phase 3 begins with a supervised `test ipc-load` recording workload that
-proves IPC progress before, during, and after the load, plus `wav inspect` for
-CRC-verified retrieval and local three-channel analysis. See
+pair. Phase 3 adds a supervised `test ipc-load` recording workload,
+`wav inspect` for CRC-verified retrieval and local three-channel analysis, and
+`test sd-basic` for bounded scratch-file write/read verification with cleanup. See
 [controls](../docs/spooky-bench-controls.md),
 [boot smoke](../docs/spooky-bench-boot-smoke.md), and
 [IPC load](../docs/spooky-bench-ipc-load.md), and
-[WAV inspection](../docs/spooky-bench-wav-inspection.md). Run
+[WAV inspection](../docs/spooky-bench-wav-inspection.md), and
+[SD basic](../docs/spooky-bench-sd-basic.md). Run
 `spookybench --json ...` for one machine-readable result.
 
 See [installation and usage](../docs/spooky-bench-setup.md) and the

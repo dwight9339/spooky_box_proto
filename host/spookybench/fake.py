@@ -63,6 +63,8 @@ class Serial:
             return (b"simulated UART\r\n\xffpartial" * 200)[:size] if self.reads == 1 else b""
         if self.scenario == "record-disconnect" and self.state.get("recording_active"):
             raise OSError("simulated target disconnect during recording")
+        if self.scenario == "sd-disconnect" and self.state.get("sd_active"):
+            raise OSError("simulated target disconnect during SD test")
         if not self.pending and self.state.get("wav_active"):
             offset = self.state["wav_offset"]
             data = self.state["wav_data"]
@@ -95,6 +97,35 @@ class Serial:
                 self.pending = (f"RECORD progress={whole}.0s queues=0/8,0/8 "
                                 "max-write=25ms\r\n").encode()
                 self.state["next_record_progress"] += 5.0
+        if not self.pending and self.state.get("sd_active"):
+            if self.scenario == "sd-timeout":
+                return b""
+            current = self.state["sd_pass"]
+            passes = self.state["sd_passes"]
+            if self.state["sd_stage"] == "write":
+                self.pending = f"SD STRESS pass={current}/{passes} phase=VERIFY\r\n".encode()
+                self.state["sd_stage"] = "verify"
+            elif self.scenario == "sd-corrupt":
+                self.pending = (b"ERR SD STRESS failed result=FR_INT_ERR(2) offset=4096 "
+                                b"hal=0x00000000; SDTEST.BIN retained\r\n")
+                self.state["sd_active"] = False
+            elif current < passes:
+                self.state["sd_pass"] = current + 1
+                self.state["sd_stage"] = "write"
+                self.pending = (f"SD STRESS pass={current + 1}/{passes} "
+                                "phase=WRITE\r\n").encode()
+            else:
+                size = self.state["sd_size_mib"]
+                transferred = size * passes * 1024 * 1024
+                if self.scenario == "sd-cleanup":
+                    self.pending = (b"ERR SD test passed but cleanup failed "
+                                    b"result=FR_DISK_ERR(1); use SD CLEAN\r\n")
+                else:
+                    self.pending = (f"OK SD STRESS PASS size={size}MiB passes={passes} "
+                        f"written={transferred} verified={transferred} elapsed=42ms "
+                        "write-max=7ms read-max=3ms aggregate=380.9MiB/s "
+                        "file-removed=1\r\n").encode()
+                self.state["sd_active"] = False
         take = min(size, 17)
         out, self.pending = self.pending[:take], self.pending[take:]
         return out
@@ -102,6 +133,35 @@ class Serial:
     def write(self, data):
         self.writes.append(data)
         command = data.decode().strip()
+        if command == "SD STATUS":
+            if self.scenario == "sd-no-card":
+                self.pending = b"ERR SD no card detected\r\n"
+            else:
+                count = self.state.get("sd_status_count", 0) + 1
+                self.state["sd_status_count"] = count
+                blocks = 61440001 if self.scenario == "sd-card-changed" and count > 1 else 61440000
+                self.pending = (f"OK SD PRESENT=1 MOUNTED=1 TYPE=SDHC/SDXC "
+                    f"CAPACITY=30000MiB FREE=4096MiB BLOCKS={blocks} "
+                    "BUS=4 CLOCKDIV=0\r\n").encode()
+            return len(data)
+        if command.startswith("SD STRESS ") and command != "SD STRESS STOP":
+            if self.scenario == "sd-existing":
+                self.pending = (b"ERR SD SDTEST.BIN already exists; "
+                                b"manual SD CLEAN required\r\n")
+            else:
+                _, _, size, passes = command.split()
+                self.state.update(sd_active=True, sd_size_mib=int(size),
+                                  sd_passes=int(passes), sd_pass=1, sd_stage="write")
+                self.pending = (f"OK SD STRESS START size={size}MiB passes={passes} "
+                    "file=SDTEST.BIN chunk=16384; do not remove card\r\n"
+                    f"SD STRESS pass=1/{passes} phase=WRITE\r\n").encode()
+            return len(data)
+        if command == "SD STRESS STOP":
+            if self.scenario == "sd-disconnect" and self.state.get("sd_active"):
+                raise OSError("simulated disconnect prevented SD cleanup")
+            self.state["sd_active"] = False
+            self.pending = b"OK SD STRESS STOP cleaned=1 written=16384 verified=0\r\n"
+            return len(data)
         if command.startswith("WAV FETCH "):
             name = command[10:]
             if self.scenario == "wav-missing":

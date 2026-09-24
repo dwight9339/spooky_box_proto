@@ -445,4 +445,57 @@ channels, 16 bits, 60.074667 seconds, and 17,301,548 bytes.
 Post-transfer DIAG STATUS remained schema 1/core 7 with all fault, overrun, SD,
 and audio counters zero. LOG STATUS had empty queues and zero drop, transport,
 and context errors. The ten-minute recording, listening tests, known stereo
-material, cable-removal transfer recovery, and SD/peripheral runners remain.
+material, cable-removal transfer recovery, peripheral runners, and extended SD
+failure gates remain.
+
+## Phase 3: bounded SD scratch test
+
+Spooky Bench 0.6.0 adds `test sd-basic`. The target `SD STRESS` implementation
+was changed from one command-handler-sized blocking operation to a state machine
+that performs one 16 KiB filesystem call per foreground service iteration. It
+now exposes `SD STRESS STOP`, exact written/verified counts, and maximum measured
+write/read call times. Recording start and WAV fetch cannot take SD ownership
+while the test is active.
+
+The deployed pair used build ID `sd-basic-20260924-01`, source revision
+`1b68e309bdfce0fc0a8be7ac2aaeab068478a15b`, dirty firmware snapshot SHA-256
+`ca17e9176b848d2f0cc5ba99b3f54ee99044c1a687615bdf373f11254cdf21c3`,
+CM7 SHA-256 `2cd3a923b90d3b5596d563db9a19b0f26f6effa2c92efac268fb757a5d75a375`,
+and CM4 SHA-256 `3e92497cd71b3f827dd933488ea18e64ac6b9944e2d968fb2497099ed896b593`.
+Boot-smoke run `2026-09-24T232620.911922_0000-1ddf4c39` passed all seven checks
+in 42,156 ms with clean diagnostics/logger, zero UART drops, and IPC deltas
+TX +62, RX +63, ACK +62, and ROUNDTRIPS +62.
+
+Success run `2026-09-24T232713.310059_0000-04e1521a` used an 8 MiB file and one
+pass. It reported:
+
+| Evidence | Result |
+| --- | ---: |
+| Bytes written | 8,388,608 |
+| Bytes verified | 8,388,608 |
+| Target elapsed | 27,725 ms |
+| Maximum 16 KiB write | 15 ms |
+| Maximum 16 KiB read | 7 ms |
+| Aggregate read plus write | 0.5 MiB/s |
+| Scratch file removed | yes |
+
+The SDHC/SDXC identity remained 59,344 MiB and 121,536,512 logical blocks, with
+59,152 MiB reported free before and after. Baseline and final diagnostics had no
+fault, overrun, SD, or audio errors; logger queues and all loss/error counters
+were zero.
+
+The first 30-second cancellation attempt correctly refused to start because its
+health checks left less than the required test-and-cleanup reserve. Run
+`2026-09-24T232853.955391_0000-43ee7515` then exercised the actual timeout path
+with a 45-second envelope and 64 MiB request. It stopped during the write phase
+after 11,993,088 bytes. The target acknowledged `cleaned=1`; Spooky Bench returned
+the expected `sd_timeout` non-pass with `cleanup=stopped_and_removed`,
+`final_target_state=running`, and `human_required=false`.
+
+Follow-up run `2026-09-24T232941.048402_0000-cb0576a4` immediately passed a new
+1 MiB write/verify cycle: 1,048,576 bytes each direction, 3,473 ms elapsed,
+9 ms maximum write and 7 ms maximum read. Card identity/free space and clean
+health counters were unchanged. This proves initial success, bounded cancellation,
+scratch cleanup, and reuse without reset. Removal during I/O, retained-file
+inspection, card-full behavior, and longer multi-pass endurance remain hardware
+gates.

@@ -139,7 +139,7 @@ acceptance evidence.
 
 ## Validation and remaining bench work
 
-48 offline tests pass, including all prior Phase 1A cases, hostile path/serial
+The current 51-test suite passes, including all prior Phase 1A cases, hostile path/serial
 handling, malformed ELF/hash/provenance rejection, partial verification failure,
 short-output bursts, timeouts, disk failures, integrated UART readiness, spawned
 controls, and real Windows descendant termination. The installed OpenOCD parses

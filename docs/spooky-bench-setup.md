@@ -7,6 +7,8 @@ Version 0.3.0 adds the [paired boot smoke](spooky-bench-boot-smoke.md), and
 version 0.4.0 adds the supervised
 [IPC recording-load test](spooky-bench-ipc-load.md). Version 0.5.0 adds
 [CRC-verified WAV retrieval and host inspection](spooky-bench-wav-inspection.md).
+Version 0.6.0 adds the bounded
+[SD scratch write/read test](spooky-bench-sd-basic.md).
 Power, trace, and crash
 collection still return `unsupported` and exit 3. No STM32 or Pico firmware
 changes are needed to install the utility.
@@ -93,6 +95,7 @@ host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.j
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json diag dump
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test boot-smoke --manifest build/ipc-build-info.json
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test ipc-load --seconds 60
+host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test sd-basic --size-mib 8 --passes 1 --timeout 180
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json wav inspect --file REC004.WAV --timeout 600
 ```
 
@@ -103,6 +106,9 @@ one lock. IPC load owns one target CDC session for recording progress and its
 in-load IPC requests, then uses bounded diagnostic sessions before and after it.
 WAV inspection owns the target CDC and SD reader for the full acknowledged
 binary transfer; it cannot run during recording or another bench operation.
+SD basic refuses an active recording and a pre-existing `SDTEST.BIN`, verifies
+card identity before and after the test, and never issues `SD CLEAN` on unknown
+scratch data. Its explicit stop path removes only the file created by that run.
 Close other terminal applications before opening their COM ports here;
 Spooky Bench does not terminate unrelated applications or steal their handles.
 
@@ -157,6 +163,13 @@ host reserves the declared file size before accepting data, keeps an interrupted
 file with a `.partial` suffix, and publishes the final `.WAV` only after every
 frame and the whole-file CRC pass. See the dedicated guide for format and signal
 criteria.
+
+SD basic defaults to an 8 MiB file, one pass, and a 180-second deadline. The host
+limits size to 1..64 MiB, passes to 1..4, and size times passes to 128 MiB. Each
+pass writes and verifies the complete file. The target reports exact byte counts,
+elapsed time, and maximum individual 16 KiB write/read times. A host deadline
+reserves time for `SD STRESS STOP`; successful cancellation is still a non-pass,
+but reports `human_required=false` after the scratch file is removed.
 
 Worker supervision uses Windows-compatible `spawn`, bounded shared result memory,
 and terminate/kill/reap rather than unbounded thread joins in the CLI process.
@@ -215,8 +228,10 @@ host/.venv/Scripts/python.exe -B -m unittest discover -s host/tests -v
 ```
 
 Simulation uses virtual time and fake device identities, writes real bounded
-artifacts, and never opens hardware ports. Scenarios include happy, missing,
-ambiguous, disconnect, incomplete dump, invalid schema, and no response. A happy
+artifacts, and never opens hardware ports. Scenarios include happy, discovery and
+transport failures, malformed diagnostics, recording/IPC failures, WAV corruption,
+and SD absence, retained data, mismatch, cleanup, timeout, disconnect, card change,
+and recording-busy cases. A happy
 console simulation supplies one raw byte burst rather than a real-time load.
 Tests also inject queue loss, disk errors, quota/free-space failures, changed COM
 numbers, role collisions, lock contention, and a hung worker. The worker-timeout

@@ -1,11 +1,12 @@
 # Spooky Bench: current-state audit and implementation proposal
 
 Audit date: 2026-09-23 (America/Denver). Implementation update: 2026-09-24.
-**Phases 1A, 1B, Phase 2, and the first two Phase 3 slices are implemented under
-`host/`; 48 offline tests pass on Windows.** Version 0.5.0 includes pinned OpenOCD controls,
+**Phases 1A, 1B, Phase 2, and the first three Phase 3 slices are implemented under
+`host/`; 51 offline tests pass on Windows.** Version 0.6.0 includes pinned OpenOCD controls,
 manifest/ELF validation, integrated reset/flash UART capture, Windows process-tree
 ownership, the supervised boot-smoke verdict, and a bounded IPC/recording-load
-verdict plus CRC-verified WAV retrieval and host analysis. Live SWD probe
+verdict, CRC-verified WAV retrieval and host analysis, and bounded SD scratch
+write/read verification with cleanup. Live SWD probe
 passes, as do reset with captured boot output and a fresh paired program/verify.
 Post-flash CDC, logger and diagnostics are clean, and two IPC snapshots show
 forward peer/ack progress with no errors. The initial Phase-1B live gate is
@@ -23,7 +24,8 @@ and port release. Basic live checks are complete; mid-response disconnect,
 hardware COM renumbering, and deliberate overload checks remain pending. See
 [setup and usage](spooky-bench-setup.md). The first Phase 2 boot-smoke hardware
 run passes, a 60-second IPC recording-load run passes with progress before,
-during, and after recording, and its WAV has passed complete host inspection.
+during, and after recording, its WAV has passed complete host inspection, and
+the SD basic success, timeout-cleanup, and post-timeout recovery gates pass.
 Repeated and failure-path hardware gates remain. Raspberry Pi/Linux
 deployment is deferred. The original audit
 below records the state before implementation; its inventory and validation
@@ -550,12 +552,13 @@ run. Spooky Bench 0.5.0 adds the separate
 [WAV inspection command](spooky-bench-wav-inspection.md): acknowledged binary
 CDC frames, per-frame and whole-file CRC, bounded artifact admission, strict
 RIFF/PCM validation, and per-channel signal statistics. `REC004.WAV` passed the
-initial live inspection. SD basic adapts existing
-`SD STRESS` write/verify work with a dedicated scratch filename, capacity check,
-bounded size/passes, known card and no active recording; never blanket `SD CLEAN`.
-Report bytes written/verified, mismatch offset, duration and measured write
-latencies where available; do not relabel existing millisecond maxima as
-microseconds or claim CRC metrics that are not implemented. Audio basic requires
+initial live inspection. Spooky Bench 0.6.0 adds
+[SD basic](spooky-bench-sd-basic.md), which adapts `SD STRESS` with a dedicated
+scratch filename, capacity and card-identity checks, bounded size/passes, an idle
+recorder prerequisite, exact byte accounting, measured chunk latencies, and an
+explicit stop-and-remove path. It never invokes `SD CLEAN` on pre-existing data.
+The target now advances one 16 KiB filesystem call per service iteration instead
+of occupying the foreground for the whole test. Audio basic requires
 installed radio/codec/mic hardware, bounded recording, queue/error deltas and WAV
 inspection. Peripheral tests require explicit wiring/expected IDs and restore
 mute/display/radio state as documented. Existing blocking bring-up calls require
@@ -697,6 +700,8 @@ execute the repeatable portions unattended.
       recording, with clean recorder/logger/diagnostic counters and bounded evidence.
 - [x] Retrieve that recording with acknowledged CRC-protected frames and validate
       its RIFF accounting, PCM format, duration, and all three channels on the PC.
+- [x] Write, byte-verify and remove a bounded SD scratch file; prove an in-progress
+      timeout stops and removes its file, then pass a new run without resetting.
 - [ ] Repeat paired reset/cold-start and longer recording-load tests; halt/resume
       M4 for stale/recovery; IpcMismatch must fail as incompatible.
 - [x] Prove one local PC hardware `boot-smoke` invocation returns the correct
@@ -710,7 +715,7 @@ execute the repeatable portions unattended.
 - [ ] Validate Windows lock contention, process timeout/termination, released
       serial handles, and interrupted-run reporting; account for host sleep and
       USB disconnects without misclassifying them as measured target failures.
-- [ ] Validate future SD scratch cleanup/card-full/removal failures; audio and
+- [ ] Validate SD card-full/removal and retained-file failure paths on hardware; audio and
       peripheral tests only with their prerequisites and measured counter criteria.
 - [ ] Before ownership migration, validate M4 UART service and M7 nonblocking
       forwarding, saturation/restart behavior, and whole-controller ownership.
@@ -755,22 +760,26 @@ flash/verify, pre-reset capture, CDC recovery, clean diagnostics and forward IPC
 progress. A dedicated Pi remains a later deployment choice, not a prerequisite
 for agent-accessible hardware testing.
 
-**The first two Phase 3 slices are implemented and live-tested.** `test ipc-load`
+**The first three Phase 3 slices are implemented and live-tested.** `test ipc-load`
 refuses a pre-existing recording, starts one bounded recording, samples IPC twice
 under load, verifies final recorder accounting and queue headroom, and checks
 post-load IPC, logger, diagnostics, last fault, and history. `wav inspect` then
 retrieves a selected recording and produces strict container/format, duration,
 per-channel range, peak, mean, RMS, zero/clipping, and correlation evidence.
-SD scratch testing, longer audio runs, and peripheral tests remain.
+`test sd-basic` verifies bounded scratch writes and byte-for-byte reads, card
+identity, cleanup, and health counters. Its live timeout gate also proved bounded
+stop/remove recovery followed by a successful new run. Longer audio runs and
+peripheral tests remain.
 
-Validation: 48/48 bench tests pass, including fake serial/decoder scenarios,
+Validation: 51/51 bench tests pass, including fake serial/decoder scenarios,
 storage refusal, Windows spawned CLI execution and forced worker termination
 with lock release, boot-smoke CDC, UART, IPC and diagnostic failure verdicts,
 IPC-load abort, overrun, stalled IPC, disconnect, and busy-recording cases, plus
-WAV missing/corrupt/truncated/invalid/silent cases and spawned transfer execution.
+WAV missing/corrupt/truncated/invalid/silent cases, plus SD missing/existing/
+corrupt/cleanup/timeout/disconnect/card-change/busy cases and spawned execution.
 Package installation and `pip check` pass. The test environment uses Python
 3.12.14 and pyserial 3.5. All four LOG/DIAG query paths, configured device
 selection, Phase 1B controls and the Phase 2 runner passed initial live checks;
-the Phase 3 IPC-load and WAV-inspection runners passed live checks;
+the Phase 3 IPC-load, WAV-inspection, and SD-basic runners passed live checks;
 remaining hardware checks are tracked in the
 [live results](bench-results-2026-09-24.md). Discovery alone is not target health evidence.

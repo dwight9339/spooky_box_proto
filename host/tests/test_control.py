@@ -300,6 +300,45 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(result["result"], "pass", result)
         self.assertEqual(result["execution"], "simulated")
 
+    def test_sd_basic_happy_path(self):
+        options = dict(self.options("test sd-basic"), size_mib=8, passes=2,
+                       deadline=time.monotonic() + 30)
+        result = execute(options)
+        self.assertEqual(result["result"], "pass", result)
+        sd = result["metrics"]["sd"]
+        self.assertEqual(sd["result"]["written_bytes"], 16 * 1024 * 1024)
+        self.assertEqual(sd["result"]["verified_bytes"], 16 * 1024 * 1024)
+        self.assertEqual([item["phase"] for item in sd["phases"]],
+                         ["write", "verify", "write", "verify"])
+        self.assertEqual(sd["cleanup"], "target_removed")
+        self.assertEqual(result["metrics"]["target_health"], "healthy")
+        self.assertFalse(result["metrics"]["human_required"])
+
+    def test_sd_basic_failure_verdicts_and_cleanup(self):
+        cases = (("sd-no-card", "sd_unavailable", "not_needed", False),
+                 ("sd-existing", "sd_scratch_exists", "manual_required", True),
+                 ("sd-corrupt", "sd_verify_failed", "manual_required", True),
+                 ("sd-cleanup", "sd_cleanup", "manual_required", True),
+                 ("sd-timeout", "sd_timeout", "stopped_and_removed", False),
+                 ("sd-disconnect", "io_error", "failed", True),
+                 ("sd-card-changed", "sd_card_changed", "target_removed", False),
+                 ("record-busy", "recording_busy", "not_needed", False))
+        for scenario, reason, cleanup, human in cases:
+            with self.subTest(scenario=scenario):
+                options = dict(self.options("test sd-basic", scenario), size_mib=1, passes=1,
+                               deadline=time.monotonic() + 30)
+                result = execute(options)
+                self.assertEqual(result["reason"], reason, result)
+                self.assertNotEqual(result["result"], "pass")
+                self.assertEqual(result["metrics"]["sd"]["cleanup"], cleanup)
+                self.assertEqual(result["metrics"]["human_required"], human)
+
+    def test_spawned_simulated_sd_basic(self):
+        options = dict(self.options("test sd-basic"), size_mib=1, passes=1)
+        result = supervise(options, 30)
+        self.assertEqual(result["result"], "pass", result)
+        self.assertEqual(result["execution"], "simulated")
+
     def test_manifest_generator_records_explicit_provenance(self):
         helper = Path(__file__).resolve().parents[1] / "tools/make_manifest.py"
         output = self.root / "generated manifest.json"

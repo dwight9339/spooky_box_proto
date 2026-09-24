@@ -31,12 +31,30 @@ def load_duration(text):
     return int(value)
 
 
+def bounded_integer(text, name, minimum, maximum):
+    try:
+        value = int(text)
+        if str(value) != text.strip() or not minimum <= value <= maximum:
+            raise ValueError()
+        return value
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"{name} must be a whole number in [{minimum}, {maximum}]") from exc
+
+
+def sd_timeout(text):
+    value = duration(text)
+    if not 30 <= value <= 1800:
+        raise argparse.ArgumentTypeError("SD timeout must be in [30, 1800] seconds")
+    return value
+
+
 def parser():
     p = Parser(description="Spooky Bench: local observation and bounded SWD controls")
     p.add_argument("--json", action="store_true", help="emit one machine-readable result")
     p.add_argument("--profile", help="JSON bench profile; optional only for discovery status")
     p.add_argument("--simulate", action="store_true", help="use fake devices; never hardware acceptance")
-    p.add_argument("--scenario", choices=("happy", "missing", "ambiguous", "disconnect", "incomplete", "invalid-schema", "no-response", "m4-unavailable", "tool-timeout", "tool-failure", "partial-flash", "cdc-missing", "com-renumber", "uart-empty", "ipc-disabled", "ipc-stale", "ipc-error", "diag-fault", "record-abort", "record-overrun", "record-ipc-stale", "record-disconnect", "record-busy", "wav-missing", "wav-corrupt-frame", "wav-truncated", "wav-silent", "wav-bad-header"), default="happy")
+    p.add_argument("--scenario", choices=("happy", "missing", "ambiguous", "disconnect", "incomplete", "invalid-schema", "no-response", "m4-unavailable", "tool-timeout", "tool-failure", "partial-flash", "cdc-missing", "com-renumber", "uart-empty", "ipc-disabled", "ipc-stale", "ipc-error", "diag-fault", "record-abort", "record-overrun", "record-ipc-stale", "record-disconnect", "record-busy", "wav-missing", "wav-corrupt-frame", "wav-truncated", "wav-silent", "wav-bad-header", "sd-no-card", "sd-existing", "sd-corrupt", "sd-cleanup", "sd-timeout", "sd-disconnect", "sd-card-changed"), default="happy")
     commands = p.add_subparsers(dest="action", required=True)
     commands.add_parser("status", help="list ports; with profile, validate both selections")
     capture = commands.add_parser("console", help="bounded receive-only Pico UART capture")
@@ -56,6 +74,13 @@ def parser():
     load = tests.add_parser("ipc-load", help="prove IPC progress during a bounded recording")
     load.add_argument("--seconds", type=load_duration, required=True,
                       help="recording duration, whole seconds in [10, 600]")
+    sd = tests.add_parser("sd-basic", help="write, verify, and remove one SD scratch file")
+    sd.add_argument("--size-mib", type=lambda text: bounded_integer(text, "size-mib", 1, 64),
+                    default=8, help="scratch file size in MiB, 1..64 (default 8)")
+    sd.add_argument("--passes", type=lambda text: bounded_integer(text, "passes", 1, 4),
+                    default=1, help="write/verify passes, 1..4 (default 1)")
+    sd.add_argument("--timeout", type=sd_timeout, default=180.0,
+                    help="whole-operation deadline in seconds, 30..1800 (default 180)")
     wav = commands.add_parser("wav", help="retrieve and inspect a recorded WAV")
     wav_commands = wav.add_subparsers(dest="query", required=True)
     inspect = wav_commands.add_parser("inspect", help="CRC-transfer and analyze one REC###.WAV")
@@ -77,6 +102,8 @@ def main(argv=None):
         command = args.action + (" " + args.query if hasattr(args, "query") else "")
         if args.scenario != "happy" and not args.simulate:
             raise BenchError("invalid_invocation", "--scenario requires --simulate")
+        if command == "test sd-basic" and args.size_mib * args.passes > 128:
+            raise BenchError("invalid_invocation", "SD size-mib times passes must not exceed 128")
         if args.action in ("power", "trace", "crash"):
             raise BenchError("not_implemented", "This operation is not implemented", "unsupported")
         if not args.profile and args.action != "status":
@@ -84,8 +111,10 @@ def main(argv=None):
         options = {"command": command, "profile": args.profile, "simulate": args.simulate,
                    "scenario": args.scenario, "seconds": getattr(args, "seconds", None),
                    "manifest": getattr(args, "manifest", None),
-                   "filename": getattr(args, "filename", None)}
-        seconds = args.timeout if command == "wav inspect" else args.seconds + 60.0 if command == "test ipc-load" else 240.0 if command == "test boot-smoke" else 120.0 if command == "flash" else 10.0 if command == "status" else args.seconds + 12.0 if command == "console" else 15.0
+                   "filename": getattr(args, "filename", None),
+                   "size_mib": getattr(args, "size_mib", None),
+                   "passes": getattr(args, "passes", None)}
+        seconds = args.timeout if command in ("wav inspect", "test sd-basic") else args.seconds + 60.0 if command == "test ipc-load" else 240.0 if command == "test boot-smoke" else 120.0 if command == "flash" else 10.0 if command == "status" else args.seconds + 12.0 if command == "console" else 15.0
         value = supervise(options, seconds)
     except BenchError as exc:
         value = outcome(command, execution, started_at, started, result=exc.result, reason=exc.reason, detail=str(exc))

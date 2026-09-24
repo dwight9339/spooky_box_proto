@@ -1477,7 +1477,11 @@ static void UsbCliCommand(const char *line)
       ((command[3] == '\0') || (command[3] == ' ') ||
        (command[3] == '\t')))
   {
-    if (RadioRecorder_IsActive())
+    if (SdTest_IsActive())
+    {
+      (void)UsbTest_SendText("ERR WAV unavailable while SD test active\r\n");
+    }
+    else if (RadioRecorder_IsActive())
     {
       (void)UsbTest_SendText("ERR WAV unavailable while recording\r\n");
     }
@@ -1485,6 +1489,13 @@ static void UsbCliCommand(const char *line)
     {
       (void)WavTransfer_HandleCommand(command);
     }
+    return;
+  }
+  if (SdTest_IsActive() && (strncmp(command, "RECORD START", 12U) == 0) &&
+      ((command[12] == '\0') || (command[12] == ' ') ||
+       (command[12] == '\t')))
+  {
+    (void)UsbTest_SendText("ERR RECORD unavailable while SD test active\r\n");
     return;
   }
   if (RadioRecorder_HandleCommand(command, radio_audio_running))

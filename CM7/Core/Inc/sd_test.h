@@ -10,6 +10,7 @@ extern "C" {
 
 void SdTest_Start(SD_HandleTypeDef *sd);
 bool SdTest_HandleCommand(const char *command);
+bool SdTest_IsActive(void);
 void SdTest_Service(void);
 void SdTest_Stop(void);
 

@@ -25,6 +25,21 @@ static bool sd_mounted;
 static bool sd_card_was_present;
 static uint8_t sd_io_buffer[SD_IO_BUFFER_BYTES];
 static uint8_t sd_expected_buffer[SD_IO_BUFFER_BYTES];
+typedef enum {SD_STRESS_IDLE, SD_STRESS_WRITE, SD_STRESS_VERIFY} SdStressState;
+static SdStressState sd_stress_state;
+static FIL sd_stress_file;
+static bool sd_stress_file_open;
+static uint32_t sd_stress_size_mib;
+static uint32_t sd_stress_passes;
+static uint32_t sd_stress_pass;
+static uint32_t sd_stress_remaining;
+static uint32_t sd_stress_offset;
+static uint32_t sd_stress_chunk;
+static uint32_t sd_stress_started_ms;
+static uint32_t sd_stress_written;
+static uint32_t sd_stress_verified;
+static uint32_t sd_stress_write_max_ms;
+static uint32_t sd_stress_read_max_ms;
 
 static const char *SdResultName(FRESULT result)
 {
@@ -228,82 +243,146 @@ static void SdFillPattern(uint32_t pass, uint32_t chunk_index)
   }
 }
 
-static FRESULT SdWritePass(FIL *file, uint32_t size_mib, uint32_t pass)
+static void SdStressPhase(const char *phase)
 {
-  uint32_t bytes_remaining = size_mib * 1024U * 1024U;
-  uint32_t chunk_index = 0U;
-  FRESULT result = f_lseek(file, 0U);
+  char response[80];
 
-  while ((result == FR_OK) && (bytes_remaining > 0U))
-  {
-    UINT request = (bytes_remaining > sizeof(sd_io_buffer))
-      ? (UINT)sizeof(sd_io_buffer) : (UINT)bytes_remaining;
-    UINT written = 0U;
-
-    SdFillPattern(pass, chunk_index++);
-    result = f_write(file, sd_io_buffer, request, &written);
-    if ((result == FR_OK) && (written != request))
-    {
-      result = FR_DISK_ERR;
-    }
-    bytes_remaining -= written;
-  }
-
-  return (result == FR_OK) ? f_sync(file) : result;
+  (void)snprintf(response, sizeof(response),
+                 "SD STRESS pass=%lu/%lu phase=%s\r\n",
+                 (unsigned long)(sd_stress_pass + 1U),
+                 (unsigned long)sd_stress_passes, phase);
+  SdSend(response);
 }
 
-static FRESULT SdVerifyPass(FIL *file, uint32_t size_mib, uint32_t pass,
-                            uint32_t *bad_offset)
+static void SdStressIdle(void)
 {
-  uint32_t bytes_remaining = size_mib * 1024U * 1024U;
-  uint32_t file_offset = 0U;
-  uint32_t chunk_index = 0U;
-  FRESULT result = f_lseek(file, 0U);
-
-  while ((result == FR_OK) && (bytes_remaining > 0U))
-  {
-    UINT request = (bytes_remaining > sizeof(sd_io_buffer))
-      ? (UINT)sizeof(sd_io_buffer) : (UINT)bytes_remaining;
-    UINT read = 0U;
-
-    SdFillPattern(pass, chunk_index++);
-    memcpy(sd_expected_buffer, sd_io_buffer, request);
-    result = f_read(file, sd_io_buffer, request, &read);
-    if ((result == FR_OK) && (read != request))
-    {
-      result = FR_DISK_ERR;
-    }
-    if ((result == FR_OK) &&
-        (memcmp(sd_io_buffer, sd_expected_buffer, request) != 0))
-    {
-      for (UINT index = 0U; index < request; ++index)
-      {
-        if (sd_io_buffer[index] != sd_expected_buffer[index])
-        {
-          *bad_offset = file_offset + index;
-          break;
-        }
-      }
-      result = FR_INT_ERR;
-    }
-    bytes_remaining -= read;
-    file_offset += read;
-  }
-
-  return result;
+  sd_stress_state = SD_STRESS_IDLE;
+  sd_stress_file_open = false;
 }
 
-static void SdStress(uint32_t size_mib, uint32_t passes)
+static void SdStressFailed(FRESULT result, uint32_t bad_offset)
 {
-  FIL file;
+  FRESULT close_result = FR_OK;
+  char response[192];
+
+  if (sd_stress_file_open)
+  {
+    close_result = f_close(&sd_stress_file);
+  }
+  SdStressIdle();
+  if ((result == FR_OK) && (close_result != FR_OK))
+  {
+    result = close_result;
+  }
+  (void)snprintf(response, sizeof(response),
+                 "ERR SD STRESS failed result=%s(%u) offset=%lu "
+                 "hal=0x%08lX; %s retained\r\n",
+                 SdResultName(result), (unsigned int)result,
+                 (unsigned long)bad_offset,
+                 (unsigned long)((sd_handle != NULL)
+                   ? HAL_SD_GetError(sd_handle) : 0U),
+                 SD_TEST_FILE_NAME);
+  SdSend(response);
+}
+
+static void SdStressPassed(void)
+{
+  FRESULT result = FR_OK;
+  uint32_t elapsed_ms;
+  uint64_t io_bytes;
+  uint32_t mib_per_second_x10;
+  char response[224];
+
+  if (sd_stress_file_open)
+  {
+    result = f_close(&sd_stress_file);
+  }
+  SdStressIdle();
+  if (result == FR_OK)
+  {
+    result = f_unlink(SD_TEST_FILE_NAME);
+  }
+  if (result != FR_OK)
+  {
+    (void)snprintf(response, sizeof(response),
+                   "ERR SD test passed but cleanup failed result=%s(%u); "
+                   "use SD CLEAN\r\n",
+                   SdResultName(result), (unsigned int)result);
+    SdSend(response);
+    return;
+  }
+
+  elapsed_ms = HAL_GetTick() - sd_stress_started_ms;
+  if (elapsed_ms == 0U)
+  {
+    elapsed_ms = 1U;
+  }
+  io_bytes = (uint64_t)sd_stress_size_mib * 1024U * 1024U *
+             sd_stress_passes * 2U;
+  mib_per_second_x10 =
+    (uint32_t)((io_bytes * 10000U) / elapsed_ms / (1024U * 1024U));
+  (void)snprintf(response, sizeof(response),
+                 "OK SD STRESS PASS size=%luMiB passes=%lu written=%lu "
+                 "verified=%lu elapsed=%lums write-max=%lums read-max=%lums "
+                 "aggregate=%lu.%luMiB/s file-removed=1\r\n",
+                 (unsigned long)sd_stress_size_mib,
+                 (unsigned long)sd_stress_passes,
+                 (unsigned long)sd_stress_written,
+                 (unsigned long)sd_stress_verified,
+                 (unsigned long)elapsed_ms,
+                 (unsigned long)sd_stress_write_max_ms,
+                 (unsigned long)sd_stress_read_max_ms,
+                 (unsigned long)(mib_per_second_x10 / 10U),
+                 (unsigned long)(mib_per_second_x10 % 10U));
+  SdSend(response);
+}
+
+static void SdStressAbort(bool announce)
+{
+  FRESULT result = FR_OK;
+  uint32_t written = sd_stress_written;
+  uint32_t verified = sd_stress_verified;
+  char response[144];
+
+  if (sd_stress_file_open)
+  {
+    result = f_close(&sd_stress_file);
+  }
+  SdStressIdle();
+  if ((result == FR_OK) && sd_mounted)
+  {
+    result = f_unlink(SD_TEST_FILE_NAME);
+  }
+  if (!announce)
+  {
+    if ((result != FR_OK) && (result != FR_NO_FILE))
+    {
+      printf("[sd] stress cleanup failed result=%s(%u)\r\n",
+             SdResultName(result), (unsigned int)result);
+    }
+    return;
+  }
+  if ((result == FR_OK) || (result == FR_NO_FILE))
+  {
+    (void)snprintf(response, sizeof(response),
+                   "OK SD STRESS STOP cleaned=1 written=%lu verified=%lu\r\n",
+                   (unsigned long)written, (unsigned long)verified);
+  }
+  else
+  {
+    (void)snprintf(response, sizeof(response),
+                   "ERR SD STRESS STOP cleanup failed result=%s(%u)\r\n",
+                   SdResultName(result), (unsigned int)result);
+  }
+  SdSend(response);
+}
+
+static void SdStressStart(uint32_t size_mib, uint32_t passes)
+{
   FILINFO info;
   FRESULT result;
-  FRESULT close_result;
   uint64_t free_bytes;
   uint64_t requested_bytes = (uint64_t)size_mib * 1024U * 1024U;
-  uint32_t start_ms;
-  uint32_t elapsed_ms;
-  uint32_t bad_offset = 0U;
   char response[160];
 
   result = SdMount();
@@ -317,11 +396,10 @@ static void SdStress(uint32_t size_mib, uint32_t passes)
     SdSend(response);
     return;
   }
-
   result = f_stat(SD_TEST_FILE_NAME, &info);
   if (result == FR_OK)
   {
-    SdSend("ERR SD SDTEST.BIN already exists; use SD CLEAN first\r\n");
+    SdSend("ERR SD SDTEST.BIN already exists; manual SD CLEAN required\r\n");
     return;
   }
   if (result != FR_NO_FILE)
@@ -337,8 +415,7 @@ static void SdStress(uint32_t size_mib, uint32_t passes)
     SdSend("ERR SD insufficient or unknown free space\r\n");
     return;
   }
-
-  result = f_open(&file, SD_TEST_FILE_NAME,
+  result = f_open(&sd_stress_file, SD_TEST_FILE_NAME,
                   FA_CREATE_NEW | FA_READ | FA_WRITE);
   if (result != FR_OK)
   {
@@ -349,80 +426,26 @@ static void SdStress(uint32_t size_mib, uint32_t passes)
     return;
   }
 
+  sd_stress_file_open = true;
+  sd_stress_size_mib = size_mib;
+  sd_stress_passes = passes;
+  sd_stress_pass = 0U;
+  sd_stress_remaining = size_mib * 1024U * 1024U;
+  sd_stress_offset = 0U;
+  sd_stress_chunk = 0U;
+  sd_stress_written = 0U;
+  sd_stress_verified = 0U;
+  sd_stress_write_max_ms = 0U;
+  sd_stress_read_max_ms = 0U;
+  sd_stress_started_ms = HAL_GetTick();
+  sd_stress_state = SD_STRESS_WRITE;
   (void)snprintf(response, sizeof(response),
                  "OK SD STRESS START size=%luMiB passes=%lu "
-                 "file=%s; do not remove card\r\n",
+                 "file=%s chunk=%u; do not remove card\r\n",
                  (unsigned long)size_mib, (unsigned long)passes,
-                 SD_TEST_FILE_NAME);
+                 SD_TEST_FILE_NAME, (unsigned int)SD_IO_BUFFER_BYTES);
   SdSend(response);
-  start_ms = HAL_GetTick();
-
-  for (uint32_t pass = 0U; (pass < passes) && (result == FR_OK); ++pass)
-  {
-    (void)snprintf(response, sizeof(response),
-                   "SD STRESS pass=%lu/%lu phase=WRITE\r\n",
-                   (unsigned long)(pass + 1U), (unsigned long)passes);
-    SdSend(response);
-    result = SdWritePass(&file, size_mib, pass);
-    if (result == FR_OK)
-    {
-      (void)snprintf(response, sizeof(response),
-                     "SD STRESS pass=%lu/%lu phase=VERIFY\r\n",
-                     (unsigned long)(pass + 1U), (unsigned long)passes);
-      SdSend(response);
-      result = SdVerifyPass(&file, size_mib, pass, &bad_offset);
-    }
-  }
-
-  close_result = f_close(&file);
-  if ((result == FR_OK) && (close_result != FR_OK))
-  {
-    result = close_result;
-  }
-  elapsed_ms = HAL_GetTick() - start_ms;
-
-  if (result != FR_OK)
-  {
-    (void)snprintf(response, sizeof(response),
-                   "ERR SD STRESS failed result=%s(%u) offset=%lu "
-                   "hal=0x%08lX; %s retained\r\n",
-                   SdResultName(result), (unsigned int)result,
-                   (unsigned long)bad_offset,
-                   (unsigned long)HAL_SD_GetError(sd_handle),
-                   SD_TEST_FILE_NAME);
-    SdSend(response);
-    return;
-  }
-
-  result = f_unlink(SD_TEST_FILE_NAME);
-  if (result != FR_OK)
-  {
-    (void)snprintf(response, sizeof(response),
-                   "ERR SD test passed but cleanup failed result=%s(%u); "
-                   "use SD CLEAN\r\n",
-                   SdResultName(result), (unsigned int)result);
-    SdSend(response);
-    return;
-  }
-
-  if (elapsed_ms == 0U)
-  {
-    elapsed_ms = 1U;
-  }
-  {
-    uint64_t io_bytes = requested_bytes * passes * 2U;
-    uint32_t mib_per_second_x10 =
-      (uint32_t)((io_bytes * 10000U) / elapsed_ms / (1024U * 1024U));
-
-    (void)snprintf(response, sizeof(response),
-                   "OK SD STRESS PASS size=%luMiB passes=%lu elapsed=%lums "
-                   "aggregate=%lu.%luMiB/s file-removed=1\r\n",
-                   (unsigned long)size_mib, (unsigned long)passes,
-                   (unsigned long)elapsed_ms,
-                   (unsigned long)(mib_per_second_x10 / 10U),
-                   (unsigned long)(mib_per_second_x10 % 10U));
-    SdSend(response);
-  }
+  SdStressPhase("WRITE");
 }
 
 static void SdClean(void)
@@ -451,6 +474,7 @@ void SdTest_Start(SD_HandleTypeDef *sd)
   sd_handle = sd;
   sd_mounted = false;
   sd_card_was_present = SD_CARD_IS_PRESENT();
+  SdStressIdle();
   SdDiskIo_Reset();
 
   if (sd_handle == NULL)
@@ -479,6 +503,23 @@ bool SdTest_HandleCommand(const char *command)
         (command[2] != '\t'))))
   {
     return false;
+  }
+  if (strcmp(command, "SD STRESS STOP") == 0)
+  {
+    if (sd_stress_state == SD_STRESS_IDLE)
+    {
+      SdSend("OK SD STRESS already idle\r\n");
+    }
+    else
+    {
+      SdStressAbort(true);
+    }
+    return true;
+  }
+  if (sd_stress_state != SD_STRESS_IDLE)
+  {
+    SdSend("ERR SD stress active; use SD STRESS STOP\r\n");
+    return true;
   }
   if ((strcmp(command, "SD") == 0) ||
       (strcmp(command, "SD STATUS") == 0))
@@ -535,27 +576,150 @@ bool SdTest_HandleCommand(const char *command)
              "size*passes<=8192MiB\r\n");
       return true;
     }
-    SdStress(size_mib, passes);
+    SdStressStart(size_mib, passes);
     return true;
   }
 
-  SdSend("ERR usage: SD STATUS|REINIT|STRESS [size-MiB] [passes]|CLEAN\r\n");
+  SdSend("ERR usage: SD STATUS|REINIT|STRESS [size-MiB] [passes]|STRESS STOP|CLEAN\r\n");
   return true;
+}
+
+bool SdTest_IsActive(void)
+{
+  return sd_stress_state != SD_STRESS_IDLE;
 }
 
 void SdTest_Service(void)
 {
   bool present = SD_CARD_IS_PRESENT();
+  FRESULT result;
+  uint32_t started_ms;
+  uint32_t elapsed_ms;
+  UINT request;
+  UINT transferred = 0U;
 
   if (!present && sd_card_was_present)
   {
+    if (sd_stress_state != SD_STRESS_IDLE)
+    {
+      SdStressFailed(FR_NOT_READY, sd_stress_offset);
+    }
     SdUnmount();
     printf("[sd] card removed; filesystem unmounted\r\n");
   }
   sd_card_was_present = present;
+  if ((sd_stress_state == SD_STRESS_IDLE) || !present)
+  {
+    return;
+  }
+
+  request = (sd_stress_remaining > sizeof(sd_io_buffer))
+    ? (UINT)sizeof(sd_io_buffer) : (UINT)sd_stress_remaining;
+  if (sd_stress_state == SD_STRESS_WRITE)
+  {
+    SdFillPattern(sd_stress_pass, sd_stress_chunk++);
+    started_ms = HAL_GetTick();
+    result = f_write(&sd_stress_file, sd_io_buffer, request, &transferred);
+    elapsed_ms = HAL_GetTick() - started_ms;
+    if (elapsed_ms > sd_stress_write_max_ms)
+    {
+      sd_stress_write_max_ms = elapsed_ms;
+    }
+    if ((result == FR_OK) && (transferred != request))
+    {
+      result = FR_DISK_ERR;
+    }
+    if (result != FR_OK)
+    {
+      SdStressFailed(result, sd_stress_offset + transferred);
+      return;
+    }
+    sd_stress_remaining -= transferred;
+    sd_stress_offset += transferred;
+    sd_stress_written += transferred;
+    if (sd_stress_remaining == 0U)
+    {
+      result = f_sync(&sd_stress_file);
+      if (result == FR_OK)
+      {
+        result = f_lseek(&sd_stress_file, 0U);
+      }
+      if (result != FR_OK)
+      {
+        SdStressFailed(result, sd_stress_offset);
+        return;
+      }
+      sd_stress_state = SD_STRESS_VERIFY;
+      sd_stress_remaining = sd_stress_size_mib * 1024U * 1024U;
+      sd_stress_offset = 0U;
+      sd_stress_chunk = 0U;
+      SdStressPhase("VERIFY");
+    }
+    return;
+  }
+
+  SdFillPattern(sd_stress_pass, sd_stress_chunk++);
+  memcpy(sd_expected_buffer, sd_io_buffer, request);
+  started_ms = HAL_GetTick();
+  result = f_read(&sd_stress_file, sd_io_buffer, request, &transferred);
+  elapsed_ms = HAL_GetTick() - started_ms;
+  if (elapsed_ms > sd_stress_read_max_ms)
+  {
+    sd_stress_read_max_ms = elapsed_ms;
+  }
+  if ((result == FR_OK) && (transferred != request))
+  {
+    result = FR_DISK_ERR;
+  }
+  if ((result == FR_OK) &&
+      (memcmp(sd_io_buffer, sd_expected_buffer, request) != 0))
+  {
+    for (UINT index = 0U; index < request; ++index)
+    {
+      if (sd_io_buffer[index] != sd_expected_buffer[index])
+      {
+        SdStressFailed(FR_INT_ERR, sd_stress_offset + index);
+        return;
+      }
+    }
+  }
+  if (result != FR_OK)
+  {
+    SdStressFailed(result, sd_stress_offset + transferred);
+    return;
+  }
+  sd_stress_remaining -= transferred;
+  sd_stress_offset += transferred;
+  sd_stress_verified += transferred;
+  if (sd_stress_remaining != 0U)
+  {
+    return;
+  }
+
+  ++sd_stress_pass;
+  if (sd_stress_pass >= sd_stress_passes)
+  {
+    SdStressPassed();
+    return;
+  }
+  result = f_lseek(&sd_stress_file, 0U);
+  if (result != FR_OK)
+  {
+    SdStressFailed(result, sd_stress_offset);
+    return;
+  }
+  sd_stress_state = SD_STRESS_WRITE;
+  sd_stress_remaining = sd_stress_size_mib * 1024U * 1024U;
+  sd_stress_offset = 0U;
+  sd_stress_chunk = 0U;
+  SdStressPhase("WRITE");
 }
 
 void SdTest_Stop(void)
 {
+  if (sd_stress_state != SD_STRESS_IDLE)
+  {
+    SdStressAbort(false);
+  }
   SdUnmount();
 }

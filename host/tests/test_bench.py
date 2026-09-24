@@ -266,6 +266,8 @@ class BenchTests(unittest.TestCase):
                                   (["diag", "status"], 2, "invalid_invocation"),
                                   (["reset"], 2, "invalid_invocation"),
                                   (["test", "ipc-load", "--seconds", "9"], 2, "invalid_invocation"),
+                                  (["test", "sd-basic", "--size-mib", "65"], 2, "invalid_invocation"),
+                                  (["test", "sd-basic", "--size-mib", "64", "--passes", "3"], 2, "invalid_invocation"),
                                   (["wav", "inspect", "--file", "other.wav"], 2, "invalid_invocation"),
                                   (["power"], 3, "not_implemented")):
             output = io.StringIO()

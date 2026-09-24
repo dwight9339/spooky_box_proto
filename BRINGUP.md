@@ -486,18 +486,22 @@ card initialization/mounting, and `ClockDiv=0` for file transfers.
 overwrites `SDTEST.BIN` with a changing pseudorandom pattern in 16 KiB chunks,
 syncs it to the card, reads the whole file back, and compares every byte. A
 successful run deletes the test file and reports elapsed time and aggregate
-read-plus-write throughput. For example:
+read-plus-write throughput, exact written/verified byte counts, and maximum
+individual write/read call times. For example:
 
 ```text
 SD STRESS 256 4
-OK SD STRESS START size=256MiB passes=4 file=SDTEST.BIN; do not remove card
+OK SD STRESS START size=256MiB passes=4 file=SDTEST.BIN chunk=16384; do not remove card
 ...
-OK SD STRESS PASS size=256MiB passes=4 ... file-removed=1
+OK SD STRESS PASS size=256MiB passes=4 written=1073741824 verified=1073741824 ... file-removed=1
 ```
 
-The stress command occupies the foreground loop until it finishes; interrupt-
-driven USB and audio transfers continue, but periodic sensor and control
-services wait. If a transfer, verification, or cleanup step fails,
+The test advances by one 16 KiB filesystem call from `SdTest_Service()` on each
+foreground iteration. USB, IPC, audio, sensor, and control services continue
+between chunks. `SD STRESS STOP` closes and removes an in-progress scratch file;
+it reports the bytes written and verified before cancellation. Recording start
+and WAV transfer are rejected while the test owns the card. If a transfer,
+verification, or cleanup step fails,
 `SDTEST.BIN` is retained for inspection and the next stress command refuses to
 overwrite it. `SD CLEAN` removes only that fixed test file. Back up valuable
 card contents first: the test does not intentionally touch other files, but an
