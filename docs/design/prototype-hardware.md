@@ -20,6 +20,9 @@ Schematics are in [`reference/`](../../reference/). Command behavior is in the
   Zio 3.3 V pin
 - `3V3_MCU` and `3V3_VSYS` are not connected; JP9 connects the Nucleo's
   onboard 3.3 V rail only to the UI board pull-ups
+- Spooky Probe (Raspberry Pi Pico running CMSIS-DAP debugprobe firmware) providing
+  SWD for flashing and debugging and the UART7 log console; the Nucleo's on-board
+  ST-LINK USB is not used
 - UI board with two standalone buttons, four RGB push encoders, an IS31FL3741
   LED matrix and a 2.42-inch SSD1309 OLED
 
@@ -114,8 +117,8 @@ PA10 -> Si4735 reset only (never configured as USB ID)
 ```
 
 The USB peripheral uses HSI48 at 48 MHz and clock recovery synchronized to
-USB2 SOF. It advertises the prototype as self-powered because the MCU can run
-from ST-LINK or the battery-backed internal rail without VBUS. Its descriptor
+USB2 SOF. It advertises the prototype as self-powered because the MCU runs from
+the external 5 V or battery-backed supply, not from VBUS. Its descriptor
 advertises a maximum VBUS draw of 500 mA (`bMaxPower = 0xFA`, in 2 mA units)
 for the battery babysitter's USB500 setting. The device uses ST's example CDC
 VID/PID `0483:5740` and the product string `Spooky Box USB Test`; obtain a

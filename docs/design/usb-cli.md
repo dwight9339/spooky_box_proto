@@ -10,7 +10,7 @@ Diagnostic commands (`LOG`, `DIAG`) are specified in
 
 ## Transport
 
-The port enumerates as a CDC ACM device, distinct from the ST-LINK virtual COM port.
+The port enumerates as a CDC ACM device, distinct from the Spooky Probe's serial port.
 Windows may display it as `USB Serial Device`. The baud-rate setting is ignored. On
 connection it prints:
 

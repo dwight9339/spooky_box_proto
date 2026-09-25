@@ -38,8 +38,7 @@ Copy-Item host/examples/bench.windows.example.json host/bench.local.json
 The first command lists COM ports without opening them. Edit `host/bench.local.json`
 to use the reported USB serial numbers. The probe is normally VID 11914/PID 12;
 the target application CDC is VID 1155/PID 22336. Match serial numbers as well:
-these VID/PID pairs alone do not identify your individual boards. The Nucleo
-ST-LINK VCP is not the target application CDC port. `interface` can be matched
+these VID/PID pairs alone do not identify your individual boards. `interface` can be matched
 where the OS supplies it; it may be null on Windows.
 
 Set `artifact_root` to an absolute local directory outside the source checkout.

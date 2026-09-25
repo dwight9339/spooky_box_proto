@@ -16,8 +16,8 @@ Beads (`full_spooky_proto-jjy`).
 
 ## Unpowered checks
 
-Disconnect ST-LINK USB and any other cables before resistance/continuity
-checks.
+Disconnect the Spooky Probe USB, the battery babysitter USB and any other cables
+before resistance/continuity checks.
 
 1. Confirm `3V3_MCU` and `3V3_VSYS` are isolated. If JP9 is fitted, confirm it
    connects `3V3_MCU` only to the UI pull-ups.
@@ -36,8 +36,8 @@ checks.
 
 ## Initial powered checks
 
-Apply the intended external 5 V source with JP8 fitted; ST-LINK may also be
-connected for programming/debugging. Before flashing the test, verify these
+Apply the intended external 5 V source with JP8 fitted; the Spooky Probe may also be
+connected for flashing and UART capture. Before flashing the test, verify these
 DC points with respect to a nearby GND test point:
 
 | Point | Expected result |
@@ -97,7 +97,7 @@ speaker-amplifier behavior, or final power integrity.
    switch 2 ON).
 3. Connect the babysitter USB connector through a powered hub or a port known to
    support 500 mA, using a data-capable cable.
-4. Confirm Windows creates a second COM port, distinct from the ST-LINK virtual COM
+4. Confirm Windows creates a second COM port, distinct from the Spooky Probe's serial
    port, and that opening it prints the CLI banner.
 
 Pass: the yellow Nucleo LED turns on and UART7 prints:
@@ -208,8 +208,8 @@ automated bounded variant is the [SD basic procedure](docs/procedures/spooky-ben
    including `RTC wake self-test passed`.
 5. Measure `3V3_VSYS` after sleep entry and confirm it falls near 0 V; it pulses
    on briefly at each five-minute report. Compare the fuel-gauge current before
-   and after entry. Nucleo debug hardware, the always-on 5 V converter, and
-   ST-LINK remain part of that measurement.
+   and after entry. The Nucleo's on-board debug hardware, the always-on 5 V
+   converter, and the connected Spooky Probe remain part of that measurement.
 6. Press the blue Nucleo USER button or RESET to return to the normal image.
 
 ## Fuel-gauge configuration boot
@@ -217,7 +217,8 @@ automated bounded variant is the [SD basic procedure](docs/procedures/spooky-ben
 Use this procedure the first time the gauge must learn this prototype's cell (see
 [prototype hardware](docs/design/prototype-hardware.md#i2c2-devices)):
 
-1. Leave the LiPo and ST-LINK connected but unplug the battery babysitter USB cable.
+1. Leave the LiPo and the Spooky Probe connected but unplug the battery babysitter
+   USB cable.
    This removes charge current during the gauge's OCV measurement and resimulation.
 2. Boot and wait for `[fuel] CONFIG PASS` on UART7.
 3. Reconnect the babysitter USB cable.
