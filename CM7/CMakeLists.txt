@@ -68,6 +68,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/target_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/diagnostics.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/board_diagnostics.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/codec_volume_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/prototype_power.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/ipc_smoke_cli.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/fuel_gauge_test.c

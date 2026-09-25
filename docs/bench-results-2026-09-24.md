@@ -499,3 +499,29 @@ health counters were unchanged. This proves initial success, bounded cancellatio
 scratch cleanup, and reuse without reset. Removal during I/O, retained-file
 inspection, card-full behavior, and longer multi-pass endurance remain hardware
 gates.
+
+## Codec and volume service extraction regression
+
+Beads task `full_spooky_proto-8lw.1` moved SGTL5000 control, SAI1 MCLK setup,
+ADC3 volume sampling and jack detection from M7 `main.c` into
+`CM7/App/codec_volume_service.*` without changing the register sequence, volume
+mapping or 10 ms polling cadence. The normal Debug pair was built from a dirty
+tree on `0ec5615` and flashed with the PlatformIO Deploy task: CM7 SHA-256
+`836a9cab61b2f3a8e410966a2448258e7dbb23a3abea201c759f429c66627944`, CM4
+SHA-256 `d5ab1687e85e3d5a975b5e5c98bdfa8ca445b7aa8bbabc11c6dd008f94a91809`.
+The operator-run check was manual, not a Spooky Bench run; the
+[raw transcript](evidence/2026-09-24-codec-volume-regression.md) is preserved.
+
+| Check | Result |
+| --- | --- |
+| Boot | CHIP_ID `0xA011`, MCLK 12,288,025 Hz, SAI2/bridge FS 47,994 Hz, path configured muted then routed |
+| Jack detect | Repeated insert/remove muted and restored output |
+| Volume pot | Swept -11.5 to -51.5 dB both ways; muted at ADC <= 1024 and recovered |
+| Band switch | AM/FM with headphones in, with pot muted, and with headphones out then reinserted; audio restored with no codec errors |
+| Recording | `REC005.WAV` PASS, 60.074 s, 2,883,584 frames; pot and jack changes during capture |
+| Recording health | Queues at most 1/8; max SD write 23 ms (44 ms in the earlier 60-second run); peaks 1781, 1780, 6069 |
+| Recording guard | `BAND AM` rejected while recording |
+
+No `[audio] FAIL` line appeared. The `VOLUME` CLI status reply, whose formatting
+now reads the service status, was not exercised. Headphone audibility was
+confirmed by ear only.

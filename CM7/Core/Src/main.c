@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "board_diagnostics.h"
+#include "codec_volume_service.h"
 #include "target_logger.h"
 #include "diagnostics.h"
 #include "ipc_smoke_cli.h"
@@ -84,8 +85,6 @@ typedef struct
 /* USER CODE BEGIN PD */
 
 #define SPOOKY_MINIMAL_BRINGUP
-#define SGTL5000_I2C_ADDRESS_HAL       (0x0AU << 1U)
-#define SGTL5000_CHIP_ID_REGISTER      0x0000U
 #define SI4735_I2C_ADDRESS_HAL         (0x11U << 1U)
 #define SI4735_STATUS_CTS              0x80U
 #define SI4735_STATUS_ERR              0x40U
@@ -100,11 +99,6 @@ typedef struct
 #define RADIO_AUDIO_FREQUENCY_KHZ      99100U
 #define RADIO_AUDIO_BUFFER_SAMPLES     2048U
 #define RADIO_AUDIO_START_TIMEOUT_MS   500U
-#define RADIO_AUDIO_HP_VOLUME_CODE     0x54U /* -30 dB; 0x18 is 0 dB. */
-#define VOLUME_SAMPLE_PERIOD_MS        10U
-#define VOLUME_MUTE_THRESHOLD          1024U
-#define HP_VOLUME_0DB_CODE             0x18U
-#define HP_VOLUME_MIN_CODE             0x7FU
 
 #define SI4735_CMD_SET_PROPERTY        0x12U
 #define SI4735_CMD_GET_INT_STATUS      0x14U
@@ -121,19 +115,6 @@ typedef struct
 #define SI4735_PROP_REFCLK_PRESCALE    0x0202U
 #define SI4735_PROP_RX_VOLUME          0x4000U
 #define SI4735_PROP_RX_HARD_MUTE       0x4001U
-
-#define SGTL5000_CHIP_DIG_POWER        0x0002U
-#define SGTL5000_CHIP_CLK_CTRL         0x0004U
-#define SGTL5000_CHIP_I2S_CTRL         0x0006U
-#define SGTL5000_CHIP_SSS_CTRL         0x000AU
-#define SGTL5000_CHIP_ADCDAC_CTRL      0x000EU
-#define SGTL5000_CHIP_DAC_VOL          0x0010U
-#define SGTL5000_CHIP_ANA_HP_CTRL      0x0022U
-#define SGTL5000_CHIP_ANA_CTRL         0x0024U
-#define SGTL5000_CHIP_LINREG_CTRL      0x0026U
-#define SGTL5000_CHIP_REF_CTRL         0x0028U
-#define SGTL5000_CHIP_ANA_POWER        0x0030U
-#define SGTL5000_CHIP_SHORT_CTRL       0x003CU
 
 /* DUAL_CORE_BOOT_SYNC_SEQUENCE: Define for dual core boot synchronization    */
 /*                             demonstration code based on hardware semaphore */
@@ -189,13 +170,7 @@ static volatile uint32_t radio_audio_rx_full_count;
 static volatile uint32_t radio_audio_error_flags;
 static volatile bool radio_audio_copy_enabled;
 static bool radio_audio_running;
-static bool radio_audio_headphones_unmuted;
 static RadioTuneStatus radio_tune_status;
-static bool volume_ready;
-static uint32_t volume_filtered;
-static uint32_t volume_last_sample_tick;
-static uint8_t volume_last_code = RADIO_AUDIO_HP_VOLUME_CODE;
-static bool volume_last_muted = true;
 static RadioBand radio_band = RADIO_BAND_FM;
 static const RadioBandConfig radio_band_configs[RADIO_BAND_COUNT] =
 {
@@ -243,8 +218,6 @@ static void MX_SAI2_Init(void);
 static void MX_SPI6_Init(void);
 /* USER CODE BEGIN PFP */
 
-static HAL_StatusTypeDef Bringup_CodecStartClock(uint32_t *mclk_hz);
-static bool Bringup_CodecProbe(void);
 static HAL_StatusTypeDef Bringup_RadioWaitCts(uint8_t *status);
 static HAL_StatusTypeDef Bringup_RadioCommand(const uint8_t *command,
                                                uint16_t command_length,
@@ -254,8 +227,6 @@ static bool Bringup_RadioProbe(void);
 static void Bringup_Run(void);
 static bool RadioTuneFrequency(RadioBand band, uint32_t frequency_khz,
                                RadioTuneStatus *tune_status);
-static bool VolumeControlInit(void);
-static bool VolumeControlService(bool force);
 static void UsbCliCommand(const char *line);
 static void RadioAudio_Service(void);
 static uint32_t RadioAudioMeasureFs(GPIO_TypeDef *port, uint32_t pin);
@@ -264,88 +235,6 @@ static uint32_t RadioAudioMeasureFs(GPIO_TypeDef *port, uint32_t pin);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-static HAL_StatusTypeDef Bringup_CodecStartClock(uint32_t *mclk_hz)
-{
-  uint32_t sai_clock_hz;
-
-  if (mclk_hz == NULL)
-  {
-    return HAL_ERROR;
-  }
-
-  /* SYS_MCLK must be running before the SGTL5000 control port responds. */
-  __HAL_SAI_DISABLE(&hsai_BlockA1);
-  hsai_BlockA1.Init.NoDivider = SAI_MASTERDIVIDER_ENABLE;
-  hsai_BlockA1.Init.MckOverSampling = SAI_MCK_OVERSAMPLING_DISABLE;
-  hsai_BlockA1.Init.OutputDrive = SAI_OUTPUTDRIVE_ENABLE;
-  hsai_BlockA1.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_1QF;
-  hsai_BlockA1.Init.AudioFrequency = SAI_AUDIO_FREQUENCY_48K;
-  hsai_BlockA1.Init.MckOutput = SAI_MCK_OUTPUT_ENABLE;
-  if (HAL_SAI_InitProtocol(&hsai_BlockA1, SAI_I2S_STANDARD,
-                           SAI_PROTOCOL_DATASIZE_16BIT, 2U) != HAL_OK)
-  {
-    return HAL_ERROR;
-  }
-
-  __HAL_SAI_ENABLE(&hsai_BlockA1);
-  HAL_Delay(1U);
-
-  sai_clock_hz = HAL_RCCEx_GetPeriphCLKFreq(RCC_PERIPHCLK_SAI1);
-  *mclk_hz = (hsai_BlockA1.Init.Mckdiv != 0U)
-               ? sai_clock_hz / hsai_BlockA1.Init.Mckdiv
-               : sai_clock_hz;
-  return HAL_OK;
-}
-
-static bool Bringup_CodecProbe(void)
-{
-  uint8_t data[2] = {0U, 0U};
-  uint16_t chip_id;
-  uint32_t mclk_hz = 0U;
-
-  printf("\r\n[audio] SGTL5000 control-path smoke test\r\n");
-  printf("[audio] I2C4 PF14/PF15; expected address 0x0A\r\n");
-
-  if (Bringup_CodecStartClock(&mclk_hz) != HAL_OK)
-  {
-    printf("[audio] FAIL: could not start SAI1 MCLK\r\n");
-    return false;
-  }
-  printf("[audio] PE2 MCLK approximately %lu Hz\r\n",
-         (unsigned long)mclk_hz);
-
-  if (HAL_I2C_IsDeviceReady(&hi2c4, SGTL5000_I2C_ADDRESS_HAL, 3U,
-                            BRINGUP_I2C_TIMEOUT_MS) != HAL_OK)
-  {
-    printf("[audio] FAIL: no ACK at 0x0A; I2C error=0x%08lX\r\n",
-           (unsigned long)HAL_I2C_GetError(&hi2c4));
-    __HAL_SAI_DISABLE(&hsai_BlockA1);
-    return false;
-  }
-
-  if (HAL_I2C_Mem_Read(&hi2c4, SGTL5000_I2C_ADDRESS_HAL,
-                       SGTL5000_CHIP_ID_REGISTER, I2C_MEMADD_SIZE_16BIT,
-                       data, sizeof(data), BRINGUP_I2C_TIMEOUT_MS) != HAL_OK)
-  {
-    printf("[audio] FAIL: CHIP_ID read; I2C error=0x%08lX\r\n",
-           (unsigned long)HAL_I2C_GetError(&hi2c4));
-    __HAL_SAI_DISABLE(&hsai_BlockA1);
-    return false;
-  }
-
-  chip_id = ((uint16_t)data[0] << 8) | data[1];
-  __HAL_SAI_DISABLE(&hsai_BlockA1);
-  if ((chip_id >> 8) != 0xA0U)
-  {
-    printf("[audio] FAIL: CHIP_ID=0x%04X, expected 0xA0xx\r\n", chip_id);
-    return false;
-  }
-
-  printf("[audio] PASS: CHIP_ID=0x%04X; MCLK stopped; outputs unchanged\r\n",
-         chip_id);
-  return true;
-}
 
 static HAL_StatusTypeDef Bringup_RadioWaitCts(uint8_t *status)
 {
@@ -495,264 +384,6 @@ done:
   HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
   printf("[radio] reset asserted after smoke test\r\n");
   return passed;
-}
-
-typedef struct
-{
-  uint16_t reg;
-  uint16_t value;
-} CodecRegisterValue;
-
-static bool CodecWriteChecked(uint16_t reg, uint16_t value)
-{
-  uint8_t data[2] = {(uint8_t)(value >> 8), (uint8_t)value};
-  uint8_t readback_data[2] = {0U, 0U};
-  uint16_t readback;
-  uint16_t verify_mask = 0xFFFFU;
-
-  if (HAL_I2C_Mem_Write(&hi2c4, SGTL5000_I2C_ADDRESS_HAL, reg,
-                        I2C_MEMADD_SIZE_16BIT, data, sizeof(data),
-                        BRINGUP_I2C_TIMEOUT_MS) != HAL_OK ||
-      HAL_I2C_Mem_Read(&hi2c4, SGTL5000_I2C_ADDRESS_HAL, reg,
-                       I2C_MEMADD_SIZE_16BIT, readback_data,
-                       sizeof(readback_data), BRINGUP_I2C_TIMEOUT_MS) != HAL_OK)
-  {
-    printf("[audio] FAIL: codec register 0x%04X I2C access\r\n", reg);
-    return false;
-  }
-
-  readback = ((uint16_t)readback_data[0] << 8) | readback_data[1];
-  if (reg == SGTL5000_CHIP_ADCDAC_CTRL)
-  {
-    /* DAC volume-ramp busy flags are live read-only bits. */
-    verify_mask = 0xCFFFU;
-  }
-  if ((readback & verify_mask) != (value & verify_mask))
-  {
-    printf("[audio] FAIL: codec reg 0x%04X wrote 0x%04X read 0x%04X\r\n",
-           reg, value, readback);
-    return false;
-  }
-  return true;
-}
-
-static bool CodecSetHeadphoneMute(bool mute)
-{
-  const bool effective_mute = mute || (volume_ready && volume_last_muted);
-  const uint8_t volume_code = volume_ready
-    ? volume_last_code : RADIO_AUDIO_HP_VOLUME_CODE;
-
-  if (effective_mute)
-  {
-    if (!CodecWriteChecked(SGTL5000_CHIP_ANA_CTRL, 0x0133U) ||
-        !CodecWriteChecked(SGTL5000_CHIP_ADCDAC_CTRL, 0x020CU))
-    {
-      return false;
-    }
-  }
-
-  if (!CodecWriteChecked(SGTL5000_CHIP_ANA_HP_CTRL,
-                         ((uint16_t)volume_code << 8) | volume_code))
-  {
-    return false;
-  }
-
-  if (!effective_mute)
-  {
-    return CodecWriteChecked(SGTL5000_CHIP_ADCDAC_CTRL, 0x0200U) &&
-           CodecWriteChecked(SGTL5000_CHIP_ANA_CTRL, 0x0123U);
-  }
-  return true;
-}
-
-static bool VolumeReadRaw(uint16_t *raw)
-{
-  if ((raw == NULL) || (HAL_ADC_Start(&hadc3) != HAL_OK) ||
-      (HAL_ADC_PollForConversion(&hadc3, 2U) != HAL_OK))
-  {
-    (void)HAL_ADC_Stop(&hadc3);
-    return false;
-  }
-  *raw = (uint16_t)HAL_ADC_GetValue(&hadc3);
-  (void)HAL_ADC_Stop(&hadc3);
-  return true;
-}
-
-static bool VolumeControlInit(void)
-{
-  uint32_t initial_sum = 0U;
-
-  volume_ready = false;
-  if (HAL_ADCEx_Calibration_Start(&hadc3, ADC_CALIB_OFFSET_LINEARITY,
-                                  ADC_SINGLE_ENDED) != HAL_OK)
-  {
-    printf("[audio] FAIL: ADC3 calibration for volume pot\r\n");
-    return false;
-  }
-  for (uint32_t index = 0U; index < 8U; ++index)
-  {
-    uint16_t raw;
-    if (!VolumeReadRaw(&raw))
-    {
-      printf("[audio] FAIL: volume-pot ADC conversion\r\n");
-      return false;
-    }
-    initial_sum += raw;
-  }
-  volume_filtered = initial_sum / 8U;
-  volume_last_sample_tick = HAL_GetTick();
-  volume_last_code = RADIO_AUDIO_HP_VOLUME_CODE;
-  volume_last_muted = true;
-  volume_ready = true;
-  printf("[audio] volume pot PF10/ADC3 ready; initial ADC=%lu\r\n",
-         (unsigned long)volume_filtered);
-  return true;
-}
-
-static bool VolumeControlService(bool force)
-{
-  const uint32_t now = HAL_GetTick();
-  uint32_t scaled;
-  uint32_t code_delta;
-  uint16_t raw;
-  uint8_t code;
-  bool muted;
-  uint8_t previous_code;
-  bool previous_muted;
-
-  if (!volume_ready)
-  {
-    return false;
-  }
-  if (!force && ((now - volume_last_sample_tick) < VOLUME_SAMPLE_PERIOD_MS))
-  {
-    return true;
-  }
-  volume_last_sample_tick = now;
-  if (!VolumeReadRaw(&raw))
-  {
-    printf("[audio] FAIL: volume-pot ADC conversion\r\n");
-    return false;
-  }
-
-  /* A 1/8 IIR filter rejects wiper noise without making the knob sluggish. */
-  volume_filtered = ((volume_filtered * 7U) + raw + 4U) / 8U;
-  muted = volume_filtered <= VOLUME_MUTE_THRESHOLD;
-  if (muted)
-  {
-    code = HP_VOLUME_MIN_CODE;
-  }
-  else
-  {
-    scaled = ((volume_filtered - VOLUME_MUTE_THRESHOLD) *
-              (HP_VOLUME_MIN_CODE - HP_VOLUME_0DB_CODE)) /
-             (65535U - VOLUME_MUTE_THRESHOLD);
-    code = (uint8_t)(HP_VOLUME_MIN_CODE - scaled);
-  }
-
-  code_delta = (code > volume_last_code) ? (code - volume_last_code)
-                                         : (volume_last_code - code);
-  /* One-dB hysteresis plus the codec zero-cross detector limits zipper noise. */
-  if (!force && (muted == volume_last_muted) && (code_delta < 2U))
-  {
-    return true;
-  }
-
-  previous_code = volume_last_code;
-  previous_muted = volume_last_muted;
-  volume_last_code = code;
-  volume_last_muted = muted;
-  if (muted != previous_muted)
-  {
-    if (!CodecSetHeadphoneMute(!radio_audio_headphones_unmuted))
-    {
-      volume_last_code = previous_code;
-      volume_last_muted = previous_muted;
-      return false;
-    }
-  }
-  else if (!CodecWriteChecked(SGTL5000_CHIP_ANA_HP_CTRL,
-                              ((uint16_t)code << 8) | code))
-  {
-    volume_last_code = previous_code;
-    volume_last_muted = previous_muted;
-    return false;
-  }
-
-  if (muted)
-  {
-    printf("[audio] volume ADC=%lu MUTED\r\n",
-           (unsigned long)volume_filtered);
-  }
-  else
-  {
-    const uint32_t attenuation_half_db = code - HP_VOLUME_0DB_CODE;
-    printf("[audio] volume ADC=%lu -%lu.%lu dB\r\n",
-           (unsigned long)volume_filtered,
-           (unsigned long)(attenuation_half_db / 2U),
-           (unsigned long)((attenuation_half_db & 1U) ? 5U : 0U));
-  }
-  return true;
-}
-
-static bool CodecStartDigitalHeadphones(void)
-{
-  static const CodecRegisterValue startup[] =
-  {
-    {SGTL5000_CHIP_ANA_CTRL,    0x0133U},
-    {SGTL5000_CHIP_ADCDAC_CTRL, 0x020CU},
-    {SGTL5000_CHIP_ANA_POWER,   0x4260U},
-    {SGTL5000_CHIP_LINREG_CTRL, 0x006CU},
-    {SGTL5000_CHIP_REF_CTRL,    0x01EFU},
-    {SGTL5000_CHIP_SHORT_CTRL,  0x1106U},
-    {SGTL5000_CHIP_CLK_CTRL,    0x0008U},
-    {SGTL5000_CHIP_I2S_CTRL,    0x0130U},
-    {SGTL5000_CHIP_SSS_CTRL,    0x0010U},
-    {SGTL5000_CHIP_DAC_VOL,     0x3C3CU},
-    {SGTL5000_CHIP_ANA_HP_CTRL, 0x7F7FU},
-    {SGTL5000_CHIP_DIG_POWER,   0x0021U},
-    {SGTL5000_CHIP_ANA_POWER,   0x42FCU}
-  };
-  uint8_t chip_id_data[2];
-  uint16_t chip_id;
-  uint32_t mclk_hz = 0U;
-
-  printf("\r\n[audio] SGTL5000 I2S -> DAC -> headphone setup\r\n");
-  if (Bringup_CodecStartClock(&mclk_hz) != HAL_OK)
-  {
-    printf("[audio] FAIL: SAI1 MCLK start\r\n");
-    return false;
-  }
-  printf("[audio] PE2 MCLK approximately %lu Hz\r\n",
-         (unsigned long)mclk_hz);
-
-  if (HAL_I2C_Mem_Read(&hi2c4, SGTL5000_I2C_ADDRESS_HAL,
-                       SGTL5000_CHIP_ID_REGISTER, I2C_MEMADD_SIZE_16BIT,
-                       chip_id_data, sizeof(chip_id_data),
-                       BRINGUP_I2C_TIMEOUT_MS) != HAL_OK)
-  {
-    printf("[audio] FAIL: CHIP_ID read\r\n");
-    return false;
-  }
-  chip_id = ((uint16_t)chip_id_data[0] << 8) | chip_id_data[1];
-  if ((chip_id >> 8) != 0xA0U)
-  {
-    printf("[audio] FAIL: CHIP_ID=0x%04X\r\n", chip_id);
-    return false;
-  }
-
-  for (uint32_t index = 0U; index < sizeof(startup) / sizeof(startup[0]);
-       ++index)
-  {
-    if (!CodecWriteChecked(startup[index].reg, startup[index].value))
-    {
-      return false;
-    }
-  }
-  HAL_Delay(450U);
-  printf("[audio] PASS: CHIP_ID=0x%04X; headphone path configured muted\r\n",
-         chip_id);
-  return true;
 }
 
 static bool RadioSetProperty(uint16_t property, uint16_t value)
@@ -1124,15 +755,13 @@ static bool RadioSwitchBand(RadioBand band, RadioTuneStatus *tune_status)
   const uint8_t power_down = SI4735_CMD_POWER_DOWN;
   const RadioBandConfig *config;
   uint8_t status;
-  bool restore_headphones;
 
   if ((band >= RADIO_BAND_COUNT) || (tune_status == NULL))
   {
     return false;
   }
   config = &radio_band_configs[band];
-  restore_headphones = radio_audio_headphones_unmuted;
-  if (!CodecSetHeadphoneMute(true))
+  if (!CodecVolume_SetTransitionMuted(true))
   {
     goto failed;
   }
@@ -1152,7 +781,7 @@ static bool RadioSwitchBand(RadioBand band, RadioTuneStatus *tune_status)
   }
 
   radio_audio_copy_enabled = true;
-  if (restore_headphones && !CodecSetHeadphoneMute(false))
+  if (!CodecVolume_SetTransitionMuted(false))
   {
     goto failed;
   }
@@ -1165,8 +794,7 @@ static bool RadioSwitchBand(RadioBand band, RadioTuneStatus *tune_status)
 failed:
   radio_audio_copy_enabled = false;
   radio_audio_running = false;
-  radio_audio_headphones_unmuted = false;
-  (void)CodecSetHeadphoneMute(true);
+  (void)CodecVolume_SetTransitionMuted(true);
   HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
   BSP_LED_Off(LED_GREEN);
   BSP_LED_On(LED_RED);
@@ -1264,12 +892,11 @@ static bool RadioAudioBridgeStart(void)
 static bool RadioAudioStart(void)
 {
   radio_audio_running = false;
-  radio_audio_headphones_unmuted = false;
-  if (!VolumeControlInit() || !CodecStartDigitalHeadphones() ||
-      !VolumeControlService(true) || !RadioSai2Start() ||
+  if (!CodecVolume_Init(&hi2c4, &hadc3, &hsai_BlockA1) ||
+      !RadioSai2Start() ||
       !RadioTuneAndEnableDigital() || !RadioAudioBridgeStart())
   {
-    (void)CodecSetHeadphoneMute(true);
+    (void)CodecVolume_SetTransitionMuted(true);
     HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
     return false;
   }
@@ -1371,32 +998,32 @@ static void RadioUsbSendBand(void)
 
 static void VolumeUsbSendStatus(void)
 {
+  CodecVolumeStatus status;
   char response[112];
   uint32_t level_percent;
 
-  if (!volume_ready)
+  if (!CodecVolume_GetStatus(&status) || !status.ready)
   {
     (void)UsbTest_SendText("ERR VOLUME pot unavailable\r\n");
     return;
   }
-  level_percent = (volume_filtered * 100U + 32767U) / 65535U;
-  if (volume_last_muted)
+  level_percent = (status.volume_adc * 100U + 32767U) / 65535U;
+  if (status.volume_muted)
   {
     (void)snprintf(response, sizeof(response),
                    "OK VOLUME ADC=%lu LEVEL=%lu%% MUTED=1\r\n",
-                   (unsigned long)volume_filtered,
+                   (unsigned long)status.volume_adc,
                    (unsigned long)level_percent);
   }
   else
   {
-    const uint32_t attenuation_half_db =
-      volume_last_code - HP_VOLUME_0DB_CODE;
     (void)snprintf(response, sizeof(response),
                    "OK VOLUME ADC=%lu LEVEL=%lu%% ATTEN=-%lu.%lu dB MUTED=0\r\n",
-                   (unsigned long)volume_filtered,
+                   (unsigned long)status.volume_adc,
                    (unsigned long)level_percent,
-                   (unsigned long)(attenuation_half_db / 2U),
-                   (unsigned long)((attenuation_half_db & 1U) ? 5U : 0U));
+                   (unsigned long)(status.attenuation_half_db / 2U),
+                   (unsigned long)((status.attenuation_half_db & 1U) ?
+                                   5U : 0U));
   }
   (void)UsbTest_SendText(response);
 }
@@ -1542,7 +1169,7 @@ static void UsbCliCommand(const char *line)
       (strcmp(command, "VOLUME READ") == 0) ||
       (strcmp(command, "VOLUME STATUS") == 0))
   {
-    if (!VolumeControlService(true))
+    if (!CodecVolume_RefreshVolume())
     {
       (void)UsbTest_SendText("ERR VOLUME ADC read failed\r\n");
       return;
@@ -1643,7 +1270,7 @@ static void UsbCliCommand(const char *line)
 
 static void RadioAudio_Service(void)
 {
-  bool inserted;
+  CodecVolumeStatus codec_status;
 
   if (!radio_audio_running)
   {
@@ -1651,7 +1278,7 @@ static void RadioAudio_Service(void)
   }
   if (radio_audio_error_flags != 0U)
   {
-    (void)CodecSetHeadphoneMute(true);
+    (void)CodecVolume_SetTransitionMuted(true);
     radio_audio_running = false;
     BSP_LED_Off(LED_GREEN);
     BSP_LED_On(LED_RED);
@@ -1660,31 +1287,18 @@ static void RadioAudio_Service(void)
     return;
   }
 
-  if (!VolumeControlService(false))
+  if (!CodecVolume_Service())
   {
-    radio_audio_error_flags |= 8U;
-    return;
-  }
-
-  inserted = HAL_GPIO_ReadPin(HEADPHONE_JACK_DETECT_GPIO_Port,
-                              HEADPHONE_JACK_DETECT_Pin) == GPIO_PIN_RESET;
-  if (inserted != radio_audio_headphones_unmuted)
-  {
-    if (!CodecSetHeadphoneMute(!inserted))
-    {
-      radio_audio_error_flags |= 4U;
-      return;
-    }
-    radio_audio_headphones_unmuted = inserted;
-    printf("[audio] headphones %s; output %s\r\n",
-           inserted ? "inserted" : "removed",
-           inserted ? (volume_last_muted ? "muted by volume pot" :
-                         "enabled under volume-pot control") : "muted");
+    (void)CodecVolume_GetStatus(&codec_status);
+    radio_audio_error_flags |=
+      (codec_status.last_error == CODEC_VOLUME_ERROR_OUTPUT) ? 4U : 8U;
   }
 }
 
 static void Bringup_Run(void)
 {
+  CodecVolumeStatus codec_status;
+
   BSP_LED_Off(LED_GREEN);
   BSP_LED_Off(LED_YELLOW);
   BSP_LED_Off(LED_RED);
@@ -1692,13 +1306,10 @@ static void Bringup_Run(void)
   printf("\r\n========================================\r\n");
   printf("Spooky Box radio-to-headphone bring-up\r\n");
   printf("CM7 64 MHz HSI; FM/AM/SW/LW USB-tunable, 48 kHz stereo\r\n");
+  (void)CodecVolume_GetStatus(&codec_status);
   printf("Jack detect: line-in PA5=%s, headphone PE0=%s\r\n",
-         HAL_GPIO_ReadPin(LINE_IN_JACK_DETECT_GPIO_Port,
-                          LINE_IN_JACK_DETECT_Pin) == GPIO_PIN_RESET
-           ? "inserted" : "empty",
-         HAL_GPIO_ReadPin(HEADPHONE_JACK_DETECT_GPIO_Port,
-                          HEADPHONE_JACK_DETECT_Pin) == GPIO_PIN_RESET
-           ? "inserted" : "empty");
+         codec_status.line_in_inserted ? "inserted" : "empty",
+         codec_status.headphone_inserted ? "inserted" : "empty");
   printf("========================================\r\n");
 
   if (RadioAudioStart())
@@ -1741,13 +1352,12 @@ static void SleepStopRadioAudio(void)
 
   if (radio_audio_running)
   {
-    (void)CodecSetHeadphoneMute(true);
+    (void)CodecVolume_SetTransitionMuted(true);
     (void)Bringup_RadioCommand(&power_down, sizeof(power_down), &status,
                                sizeof(status));
   }
   radio_audio_copy_enabled = false;
   radio_audio_running = false;
-  radio_audio_headphones_unmuted = false;
   (void)HAL_SAI_DMAStop(&hsai_BlockA1);
   (void)HAL_SAI_DMAStop(&hsai_BlockA2);
   HAL_NVIC_DisableIRQ(DMA1_Stream0_IRQn);
