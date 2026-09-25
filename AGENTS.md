@@ -23,6 +23,25 @@ bd close <id>         # Complete work
 bd dolt push          # Push beads data to remote
 ```
 
+## Progress Notes for Handoff
+
+Any agent may be interrupted (usage limits, crashes) and another may resume the
+task. Keep the claimed issue's notes current enough that a successor can
+continue without reverse-engineering the working tree:
+
+```bash
+bd update <id> --append-notes "<what is done, what was validated, what remains>"
+```
+
+- Append after each meaningful step: code change complete, build/test result,
+  known behavior deltas, and the next step. Use `--append-notes`, not
+  `--notes`, which replaces earlier entries.
+- Name the files belonging to the task, and call out unrelated uncommitted
+  changes in the tree so they are not bundled into the task's commit.
+- On resuming another agent's task, read `bd show <id>` notes first, verify
+  its unvalidated work (rebuild if sources are newer than build outputs), then
+  append a handoff note before continuing.
+
 ## Non-Interactive Shell Commands
 
 **ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.

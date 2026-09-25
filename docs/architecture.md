@@ -27,8 +27,10 @@ the limits of those tests.
 
 In normal Debug/Release builds the M4 wakes through the generated dual-core
 synchronization sequence and then waits for interrupts. An opt-in diagnostic
-IPC build now exists but still requires bench validation; it is not application
-IPC. M7 has UI input, LED, matrix and OLED bring-up support, including the
+IPC build has initial heartbeat, version-rejection and 60-second recording-load
+evidence; longer runs and stale-peer/reset qualification remain. See the
+[current IPC status](ipc-smoke-test.md). It is not application IPC.
+M7 has UI input, LED, matrix and OLED bring-up support, including the
 confirmed SSD1309 display mapping in BRINGUP. Product UI and M4 integration
 remain pending. Scan engines, full session
 lifecycle, and user-facing visual behavior are target features, not claimed
@@ -40,23 +42,59 @@ capabilities of this firmware.
 | --- | --- | --- | --- |
 | Audio DMA, DSP/activity, recording, SD filesystem | M7 | M7 | Recording-critical work must not wait on UI work. |
 | Radio control, scan decisions, modes, session truth | M7 | M7 | Expose targets, state, and events rather than low-level UI actions. |
-| Magnetometer/EMF and power interpretation | M7 | M7 initially | Publish interpreted values with validity and age. |
+| I2C2, matrix, magnetometer and fuel gauge | M7 | M7 for the first product slice | One M7 service owns the controller and all three clients. Publish interpreted sensor values with validity and age. |
 | USB CLI | M7 | M7 initially; transport placement revisited with services | CLI should issue the same application commands as physical controls. |
-| UART7 logging and numeric diagnostics | M7 bounded logger/history | M4 service/diagnostic aggregator after a separate validated handoff | Preserve current APIs and nonblocking M7 producers; never give both cores physical UART ownership. |
-| Buttons, encoders, button LEDs, matrix, display | M7 bring-up drivers | M4 where hardware permits | M4 reports behavior-neutral input events and renders semantic state. |
-| Inter-core transport | Boot sync; opt-in diagnostic mailbox awaiting bench test | Shared, versioned protocol | No arbitrary shared mutable application objects. |
+| UART7 logging and numeric diagnostics | M7 bounded logger/history | M7 until a separate handoff decision and test | Preserve current APIs and nonblocking M7 producers; never give both cores physical UART ownership. |
+| Buttons, encoders and direct LEDs | M7 bring-up driver | M4 after product IPC and driver split | M4 reports debounced transitions and encoder detents; M7 resolves contextual gestures and commands. |
+| SSD1309 display on SPI6 | M7 bring-up driver | M4 after product IPC and driver split | M4 renders versioned semantic state into a core-local framebuffer. |
+| Inter-core transport | Boot sync; opt-in diagnostic mailbox with initial live evidence | Shared, versioned protocol | No arbitrary shared mutable application objects. |
 
-The target split is a starting point, not a requirement to move every visual
-peripheral immediately. Display ownership should follow the actual bus and
-timing measurements. A separate RP2040-style coprocessor is not part of the
-default plan. The current matrix, magnetometer and gauge share M7 I2C2.
-Assign the whole controller to one service/core before moving any of its
-clients; two independent HAL drivers must not own the same controller.
+### Initial UI and bus ownership decision
+
+For the first product slice, M7 remains the sole owner of I2C2, PB10/PB11, the
+matrix at `0x30`, the magnetometer at `0x35`, and the fuel gauge at `0x55`.
+Matrix enable and magnetometer interrupt pins belong to that M7 service as
+well. The matrix therefore remains a bounded M7 renderer driven directly from
+authoritative semantic state. Moving only the matrix would create two HAL
+owners for one controller; moving the whole I2C2 domain would also move sensor
+acquisition across the core boundary before the product protocol is proven.
+
+After the UI bring-up module is split and product IPC passes its restart and
+staleness gates, M4 takes ownership of the button and encoder GPIOs, the direct
+LED GPIOs, and the SSD1309 display including SPI6, chip select, data/command and
+reset. This is a staged build-time transfer, not a runtime handoff: a peripheral
+and its pins have exactly one owner in any image pair. Until that milestone,
+the current M7 bring-up driver owns all of them. The generated M4 TIM16/PF6
+configuration currently overlaps the M7 BTN0 LED bring-up and must be removed
+or reassigned as part of CubeMX reconciliation before M4 UI integration.
+
+M4 owns electrical input processing only: 1 kHz sampling, switch debounce,
+quadrature decoding, monotonic event sequence/time, and current held-state
+reporting. It emits press/release transitions and signed encoder detents. M7 is
+the sole gesture resolver. It uses the context in which a press began to decide
+clicks, holds, Shift and multi-button chords, then routes the resulting product
+command. Peer restart, queue overflow or stale input must cause a release-all
+reconciliation so Shift or PTT cannot remain latched.
+
+I2C2 currently uses polling HAL calls from the foreground and has no IRQ or DMA
+ownership to transfer. Its D2PCLK1 clock selection, peripheral reset and GPIO
+alternate functions remain M7 responsibilities. The M4 UI build must keep a
+1 kHz time base active instead of the normal sleeping-M4 tick policy. SPI6 uses
+D3PCLK1 and blocking foreground transfers today; its M4 renderer must bound
+update work and lower frame rate before it can affect recording. The framebuffer
+stays local to M4. Cross-core state and events use the versioned IPC region and
+its explicit barriers/cache policy rather than shared driver objects or buffers.
+
+A later measurement may justify moving the entire I2C2 domain to M4, including
+sensor acquisition and matrix output, but that is a new ownership decision with
+sensor-publication and recovery tests. A separate RP2040-style coprocessor is
+not part of the default plan.
 
 The external Pico debugprobe is development-bench infrastructure, not an
 application coprocessor. The [Spooky Bench audit and plan](spooky-bench-plan.md)
-adds a Pi-hosted command surface around existing flashing, UART capture and
-target USB diagnostics before trace or M4 ownership migration. Current UART7
+provides a Windows-hosted command surface around flashing, UART capture and
+target USB diagnostics. A Pi/Linux host is a later option, after local
+qualification, rather than a prerequisite. Current UART7
 is text output only; diagnostic commands use the target's separate USB CDC.
 
 ## Application model
@@ -137,19 +175,21 @@ The passing recorder now has a version-controlled baseline. Debug and Release
 also have isolated output trees, with the generated/maintained file boundary
 documented in [repository-layout.md](repository-layout.md).
 
-1. Bench-check the first extraction, then prove the prepared M7/M4 IPC
-   heartbeat and version-mismatch experiment.
-2. Continue radio/codec/audio/CLI/storage extraction and decide I2C2 ownership.
+1. Extend the initial recording/IPC evidence with ten-minute recording,
+   normal-build sleep, stale-peer recovery and explicit reset-state checks.
+2. Continue radio/codec/audio/CLI/storage extraction and implement the staged
+   UI ownership decision above.
 3. Define product state/commands and host-test navigation, gestures and
    recording safety using the new experience docs.
 4. Deliver Classic/Manual and monitor-only PTT, then measured rolling capture
    and session storage. Integrate M4 input/rendering with recording stress.
 
-See [next-steps.md](next-steps.md) for evidence, dependencies and acceptance
-criteria rather than treating the whole feature vision as one milestone.
+See [next-steps.md](next-steps.md) for design rationale and `bd graph --all --open`
+for current dependencies. Beads tasks carry acceptance criteria and status;
+the dated bench results preserve the evidence behind completed checks.
 
-Open design decisions include the product IPC queues/restart scheme, display
-and I2C2 ownership, session file/metadata format, recovery from interrupted
-recordings, scan algorithms, and measured timing budgets. They should be
+Open design decisions include the product IPC queues/restart scheme, session
+file/metadata format, recovery from interrupted recordings, scan algorithms,
+and measured timing budgets. They should be
 resolved with short decision records and tests, rather than silently embedded
 in drivers.

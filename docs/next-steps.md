@@ -6,10 +6,19 @@ architecture/bring-up docs, current firmware, linker maps, and build/deploy
 configuration. This is an implementation sequence; proposed product decisions
 below do not override the input documents.
 
+Status reconciled with the 2026-09-24 evidence during the Beads audit. This
+document preserves the implementation rationale; Beads now owns executable
+tasks, dependencies and status (`bd ready`, `bd graph --all --open`). See the
+[README tracking guide](../README.md#development-tracking) for epic IDs.
+The original review's validation section below is historical, not a summary of
+everything subsequently tested.
+
 The [Spooky Bench plan](spooky-bench-plan.md) now defines the parallel development
 infrastructure sequence: current-state audit, host command surface, unattended
 boot smoke test, incremental target tests, recovery, trace, then remote/agent
-automation. Prove flash/reset/capture locally on the Pi before adding CI or trace.
+automation. Flash/reset/capture and boot smoke now have local Windows evidence;
+a Pi/Linux host is an optional later port. Extend local qualification before CI
+or trace.
 This uses the existing M7 logger/diagnostics and opt-in IPC experiment; it does
 not require moving UART or UI ownership to M4 first.
 
@@ -69,6 +78,15 @@ heartbeat/challenge/acknowledgements; missing/stale/version-mismatched peers
 are visible; recording still passes with IPC active. Do this before moving
 input sampling, UART, or buses to M4.
 
+Current evidence: initial heartbeat/version rejection, paired flash/reset and
+boot smoke have passed, as have IPC progress during one 60-second recording,
+CRC-verified WAV inspection and bounded SD success/cancellation. See
+[September 24 results](bench-results-2026-09-24.md) and
+[IPC status](ipc-smoke-test.md). Remaining gates include ten-minute recording,
+normal-build sleep, M4 halt/stale/resume, explicit cold starts and failure cases.
+These are tracked under `full_spooky_proto-jjy`; do not recreate the implemented
+bench runners as pending features.
+
 ### 2. Finish service boundaries and ownership decisions
 
 The initial extraction moves console/battery diagnostics and prototype sleep
@@ -92,12 +110,15 @@ or passing one giant main-context object. Preserve peripheral setup, callback
 cadence and buffer placement during each extraction. Build Debug and Release,
 then rerun the relevant bench regression before stacking timing-sensitive work.
 
-Decide I2C2 ownership explicitly. The least disruptive interim choice is to
-keep I2C2 on M7, let M4 handle input/OLED/direct LEDs first, and retain a bounded
-matrix service on M7. Alternatively move the whole I2C2 service to M4 and
-publish sensor readings to M7 for interpretation. Neither choice has been
-implemented by this review. Keep UART7 on M7 until its queue/ownership handoff
-has a separate test.
+The initial ownership decision is now explicit: keep the whole I2C2 domain on
+M7, including matrix, magnetometer and fuel gauge. After the UI driver split
+and product IPC qualification, transfer buttons, encoders, direct LEDs and the
+SPI6 OLED to M4 as a build-time ownership change. Do not dynamically hand off
+peripherals or let both cores configure the same pins. The current generated
+M4 TIM16/PF6 setup overlaps the M7 BTN0 LED driver and must be reconciled before
+that transfer. See [architecture](architecture.md#initial-ui-and-bus-ownership-decision)
+for clock, input-event, gesture and cache boundaries. Keep UART7 on M7 until a
+separate handoff decision and test.
 
 ### 3. Build the interaction model on the host
 
@@ -111,9 +132,11 @@ Test page wrap, Manual entry/return, utility return context, selector
 commit/cancel, click-versus-hold exclusion, Shift release after a command, and
 both orders of the Shift+0+1 chord. Include lost release/queue overflow and
 stale UI state: a dropped event must not leave PTT or Shift latched forever.
-Choose one owner for gesture resolution so M4-generated clicks cannot race
-M7's hold/chord policy. A proposed starting point is M4 debounce/quadrature,
-M7 context-aware holds/chords, with configurable timing until bench trials.
+M4 owns debounce and quadrature decoding and sends physical press/release plus
+encoder-detent events. M7 alone resolves clicks, holds and chords using the
+press-origin context, with configurable timing until bench trials. Event epochs,
+held-state reconciliation and release-all recovery must prevent a dropped event
+or M4 restart from leaving PTT or Shift latched.
 
 Agree only the decisions needed for the next slice:
 
@@ -159,7 +182,7 @@ Only after reliable playback and capture should Effects, modulation editors,
 presets, Macros, and Sequencer expand. This keeps the central Field-to-Instrument
 workflow credible without requiring the full product to exist at once.
 
-## What this pass changes
+## Historical 2026-09-23 review changes
 
 - Extracted roughly 300 lines of board diagnostics/power policy from M7 main.
 - Added opt-in matching and deliberately mismatched IPC builds and CLI status.

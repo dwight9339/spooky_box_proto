@@ -431,11 +431,11 @@ Visual work must remain subordinate to audio and recording reliability. The UI m
 
 ## State Ownership and Software Boundary
 
-The Cortex M7 side should own the authoritative operating mode, active engine, utility-space state, engine state, recording state, rolling audio and sensor buffers, storage transactions, audio behavior, and mapping from decoded input events to product actions. The Cortex M4 UI and service side should own input scanning, chord detection support, display and matrix rendering, button-light behavior, and other presentation work.
+The Cortex M7 side should own the authoritative operating mode, active engine, utility-space state, engine state, recording state, rolling audio and sensor buffers, storage transactions, audio behavior, contextual gesture resolution, and mapping from resolved gestures to product actions. For the first product slice, M7 also remains the sole owner of I2C2 and therefore the matrix, magnetometer, and fuel gauge. After product IPC is qualified, the Cortex M4 UI side should own button and encoder scanning, debounce and quadrature decoding, the direct button/encoder LEDs, and SSD1309 rendering over SPI6.
 
-The M4 should report behavior-neutral inputs such as encoder movement, press, release, click, and hold events. It should not decide that a particular encoder movement means tuning, changing grain size, or navigating a menu.
+The M4 should report behavior-neutral physical inputs: signed encoder detents and debounced press/release transitions with sequence/time and current held-state information. It should not emit click, hold or chord actions, or decide that movement means tuning, changing grain size, or navigating a menu. M7 derives clicks, holds, Shift and chords from those transitions and the context where each press began. Restart, stale-peer and overflow recovery must reconcile held state so a release cannot be lost permanently.
 
-The M7 should publish semantic state and one-shot events. The M4 should decide how to render them. Mode state should be versioned so the two cores cannot silently disagree about the active operating mode, engine, view, parameter page, Shift state, or utility space.
+The M7 should publish semantic state and one-shot events. The M4 should decide how to render them on its OLED and direct LEDs; the bounded M7 matrix service renders the same authoritative state while I2C2 remains on M7. Mode state should be versioned so the two cores cannot silently disagree about the active operating mode, engine, view, parameter page, Shift state, or utility space. The detailed staged ownership, clock and cache contract is in [architecture](architecture.md#initial-ui-and-bus-ownership-decision).
 
 ## Initial Implementation Scope
 

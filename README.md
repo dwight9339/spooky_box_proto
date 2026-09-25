@@ -26,8 +26,10 @@ not yet the complete product firmware.
   deliberate version mismatch, and bench acceptance procedure.
 - [Logger and diagnostics](docs/logger-diag.md) - bounded UART logging,
   diagnostic history, tests, and bench acceptance.
-- [Bench results](docs/bench-results-2026-09-23.md) - supplied hardware transcripts,
-  source checkpoints, power observations, and remaining validation.
+- [Latest bench results](docs/bench-results-2026-09-24.md) - automated boot,
+  recording-load, WAV inspection, SD tests, and remaining validation.
+  [September 23 results](docs/bench-results-2026-09-23.md) retain the earlier
+  supplied transcripts, power observations, and IPC mismatch evidence.
 - [Spooky Bench setup](docs/spooky-bench-setup.md) - installed Windows Phase-1A CLI
   for discovery, bounded UART capture, LOG/DIAG queries, and JSON run evidence.
 - [Spooky Bench controls](docs/spooky-bench-controls.md) - Phase-1B SWD probe,
@@ -100,9 +102,33 @@ inter-core boundary. Input, LEDs, matrix and OLED have M7 bring-up support;
 product interaction and M4 UI ownership are not yet integrated. I2C2 is shared
 by matrix and sensors, so its controller ownership must be resolved together.
 
-The next bench milestone is to validate the initial extraction and the
-opt-in `IpcSmoke` build before transferring peripherals. Normal Debug/Release
-retain sleeping-M4 behavior. Continue service extraction alongside a
-host-tested interaction model, then deliver Classic/Manual and reliable Field
-capture before expanding Instrument features. See the
-[prioritized roadmap](docs/next-steps.md) and [host-test commands](tests/README.md).
+The opt-in `IpcSmoke` build has passed initial boot and 60-second recording-load
+checks; WAV inspection and bounded SD success/cancellation also have live
+evidence. Longer recording, sleep, stale-peer/reset and failure-path acceptance
+remain before broader ownership changes. Normal Debug/Release retain
+sleeping-M4 behavior. Continue service extraction alongside a host-tested
+interaction model, then deliver Classic/Manual and reliable Field capture
+before expanding Instrument features. See the
+[roadmap rationale](docs/next-steps.md) and [host-test commands](tests/README.md).
+
+## Development tracking
+
+Beads is the source of truth for executable tasks, status and dependencies;
+the docs explain design intent and preserve validation evidence. Start with
+`bd ready`, inspect a task with `bd show <id>`, and claim it with
+`bd update <id> --claim`. Use `bd ready --type task --priority 1` to focus on
+near-term actionable tasks and `bd graph --all --open` for the current task graph.
+
+The roadmap is grouped into baseline qualification (`full_spooky_proto-jjy`),
+service boundaries (`full_spooky_proto-8lw`), the first Field experience
+(`full_spooky_proto-54w`), capture/playback (`full_spooky_proto-hpq`), Instrument
+(`full_spooky_proto-v7l`), and bench extensions (`full_spooky_proto-5yv`).
+Each task records source documents and acceptance criteria. Parent epics group
+work; blocking dependencies specify prerequisites. P1 is near-term foundation
+work, P2 the next delivery slices, and P3/P4 later expansion. `bench-required`
+identifies hardware work; `off-bench` means implementation can start without
+hardware, though its acceptance may still require a bench regression.
+
+Issue data lives in the local Beads database. Code commits and remote Beads
+sync are separate, explicit operations; `.beads/issues.jsonl` is a passive
+export, not the task database.

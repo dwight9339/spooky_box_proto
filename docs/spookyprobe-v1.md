@@ -3,7 +3,9 @@
 This is the integration contract for parallel work in the device and Spookyprobe
 repos. The STM32 implementation is in `CM7/App/target_logger.*` and
 `CM7/App/diagnostics.*`; portable event definitions are in
-`Common/Inc/diag_history.h`. Hardware acceptance remains a bench task.
+`Common/Inc/diag_history.h`. Initial live capture/decoder acceptance is recorded
+in the [September 24 results](bench-results-2026-09-24.md); sustained-load and
+failure-path qualification remains.
 
 ## Two independent inputs
 
@@ -106,7 +108,15 @@ RECORD_END bit 0 also covers finalization failure. This is not a HardFault/NMI o
 reset-persistent crash recorder. Parsers must preserve unknown event names and
 keys for forward compatibility, and reject unsupported schema versions clearly.
 
-## Parallel Spookyprobe work package
+## Original Spookyprobe work package
+
+The capture/decoder integration below is the original work package, not a new
+implementation backlog. The pinned host dependency and Windows Spooky Bench
+now exercise these paths; see [setup](spooky-bench-setup.md) and the
+[September 24 live results](bench-results-2026-09-24.md). Remaining sustained-load,
+loss-accounting and mid-response failure checks are tracked in Beads under
+`full_spooky_proto-jjy`. Probe firmware identity and trace resources remain
+separate work under `full_spooky_proto-5yv`.
 
 1. Inspect the probe repo's existing UART bridge and host tooling. Preserve the
    current debug/probe functions while adding bounded capture and explicit probe

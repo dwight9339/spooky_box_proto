@@ -48,9 +48,9 @@ Do not require trace, power switching, CI, or a core-ownership migration first.
 **The prompt's claimed current M4 diagnostic ownership is not the repository's
 current implementation.** UART7, diagnostic history, and device USB CDC are on
 M7. M4 sleeps in normal builds. Preserve these implementations for Phase 1/2;
-the requested long-term M4 service/diagnostic aggregator remains the destination,
-with a separately validated ownership handoff. Never initialize UART7 from both
-cores or make M7 wait for a diagnostic consumer.
+an M4 service/diagnostic aggregator remains a separate option requiring an
+explicit decision and validated ownership handoff. Never initialize UART7 from
+both cores or make M7 wait for a diagnostic consumer.
 
 The initial bench runs directly on this PC, with both USB data connections:
 
@@ -649,8 +649,9 @@ the top-level CLI name. GitHub Actions is one possible client, never a core depe
    breaking v1 clients? Current protocol has neither request IDs nor firmware ID.
 10. Are firmware builds reproducible with the external FatFs/toolchain versions,
     and how will both dirty source snapshots be archived/distributed?
-11. M4 diagnostic/UART ownership, product IPC/input queues, I2C2 ownership and
-    independent core recovery remain unimplemented decisions, not Phase-1 fixes.
+11. Product IPC/input queues and independent core recovery remain unimplemented.
+    The first product slice now keeps I2C2 and UART7 on M7; see the
+    [ownership decision](architecture.md#initial-ui-and-bus-ownership-decision).
 12. Crash SRAM reset survival, board VBAT and true target power isolation are
     unresolved; no guaranteed post-power-cycle postmortem is possible yet.
 13. Existing host capture's unbounded close and optional reconnect, target USB
@@ -658,6 +659,14 @@ the top-level CLI name. GitHub Actions is one possible client, never a core depe
     before unattended operation. Native tests do not prove hardware scheduling.
 
 ## Validation performed and explicit hardware checklist
+
+This section preserves the original audit and its partially updated acceptance
+checklist. Some unchecked items have since received initial evidence; consult
+the [September 24 live results](bench-results-2026-09-24.md) for the precise
+scope. Beads now tracks remaining work and dependencies under
+`full_spooky_proto-jjy` (baseline qualification) and `full_spooky_proto-5yv`
+(bench extensions). Use those tasks for current execution status rather than
+treating every unchecked historical item as unimplemented work.
 
 Offline evidence this session:
 
@@ -717,8 +726,10 @@ execute the repeatable portions unattended.
       USB disconnects without misclassifying them as measured target failures.
 - [ ] Validate SD card-full/removal and retained-file failure paths on hardware; audio and
       peripheral tests only with their prerequisites and measured counter criteria.
-- [ ] Before ownership migration, validate M4 UART service and M7 nonblocking
-      forwarding, saturation/restart behavior, and whole-controller ownership.
+- [ ] Before UI ownership migration, validate product IPC restart/staleness,
+      M4 input timing, and single-owner GPIO/SPI6/I2C2 configuration.
+- [ ] Before any separate UART7 migration, validate the M4 UART service and M7
+      nonblocking forwarding plus saturation, restart and sleep behavior.
 - [ ] Before enabling injection, test physical/injected equivalence, full-queue
       rejection, release cleanup and production compile-out on real controls.
 - [ ] Before crash support, fault each core deliberately; read via diagnostics and
