@@ -1,6 +1,6 @@
 # Logger and diagnostic design
 
-M7 now owns a bounded UART7 text logger and an independent numeric diagnostic
+M7 owns a bounded UART7 text logger and an independent numeric diagnostic
 history. The logger uses a 4096-byte queue, copies at most 512 bytes per write,
 and sends contiguous chunks of at most 128 bytes using UART interrupts. It keeps
 each chunk allocated until the completion callback. Full/oversized/context-invalid

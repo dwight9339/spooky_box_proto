@@ -3,9 +3,9 @@
 This is the integration contract for parallel work in the device and Spookyprobe
 repos. The STM32 implementation is in `CM7/App/target_logger.*` and
 `CM7/App/diagnostics.*`; portable event definitions are in
-`Common/Inc/diag_history.h`. Initial live capture/decoder acceptance is recorded
-in the [September 24 results](../evidence/2026-09-24-bench-results.md); sustained-load and
-failure-path qualification remains.
+`Common/Inc/diag_history.h`. Live capture/decoder evidence is in the
+[September 24 results](../evidence/2026-09-24-bench-results.md); qualification status
+is tracked in Beads `full_spooky_proto-jjy`.
 
 ## Two independent inputs
 
@@ -107,31 +107,3 @@ covers recorder data writes, not every filesystem operation or SD stress test.
 RECORD_END bit 0 also covers finalization failure. This is not a HardFault/NMI or
 reset-persistent crash recorder. Parsers must preserve unknown event names and
 keys for forward compatibility, and reject unsupported schema versions clearly.
-
-## Original Spookyprobe work package
-
-The capture/decoder integration below is the original work package, not a new
-implementation backlog. The pinned host dependency and Windows Spooky Bench
-now exercise these paths; see [setup](../procedures/spooky-bench-setup.md) and the
-[September 24 live results](../evidence/2026-09-24-bench-results.md). Remaining sustained-load,
-loss-accounting and mid-response failure checks are tracked in Beads under
-`full_spooky_proto-jjy`. Probe firmware identity and trace resources remain
-separate work under `full_spooky_proto-5yv`.
-
-1. Inspect the probe repo's existing UART bridge and host tooling. Preserve the
-   current debug/probe functions while adding bounded capture and explicit probe
-   overflow accounting where supported by its architecture.
-2. Implement raw log capture with host timestamps, reconnect/session boundaries,
-   and bounded buffering. Preserve raw bytes even when text decoding fails.
-3. Implement a separate device CDC client for LOG STATUS and DIAG STATUS/LAST/DUMP.
-   Parse incremental lines and retain raw lines alongside structured records.
-4. Add a dump reader/summary that handles interleaved text, GAP, missing END,
-   sequence/tick wrap, reset, unknown fields/events, unsupported versions, and
-   timeouts. Do not label host timestamps as MCU timestamps or infer UART loss
-   from diagnostic sequence gaps.
-5. Test offline using transcript fixtures and a fake serial transport, including
-   arbitrary read splits, disconnect mid-line/dump, overload, and delayed input.
-
-Keep the first shared milestone small: offline capture and decoding tests in
-Spookyprobe, host and firmware build tests here, then one bench session to verify
-both serial paths and compare device/probe/host loss counters under load.

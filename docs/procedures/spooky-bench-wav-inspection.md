@@ -1,6 +1,6 @@
 # Spooky Bench: host-side WAV inspection
 
-Implemented in version 0.5.0, 2026-09-24. This Phase 3 slice retrieves one
+Requires Spooky Bench 0.5.0 or later. This procedure retrieves one
 completed `REC###.WAV` from the target's SD card, proves transport integrity, and
 analyzes the exact saved bytes on the Windows host.
 
@@ -16,8 +16,8 @@ host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.j
 
 Only names matching `REC000.WAV` through `REC999.WAV` are accepted. The default
 whole-operation deadline is 600 seconds; `--timeout` may be set from greater than
-zero through 3600 seconds. At the current cooperative 5 ms service cadence, the
-initial 17.3 MB acceptance file took about 4.5 minutes.
+zero through 3600 seconds. At the cooperative 5 ms service cadence, a 17.3 MB
+(one-minute) file takes about 4.5 minutes.
 
 ## Bounded transfer protocol
 
@@ -59,18 +59,6 @@ device/profile identity, and authoritative `test-results.json`. Simulation cover
 a good file plus missing file, frame CRC corruption, truncated transfer, constant
 channels, and an invalid RIFF header. Simulated success is not hardware evidence.
 
-## Initial hardware result
+## Evidence
 
-The first complete run inspected the earlier load-test file `REC004.WAV`. Run
-`2026-09-24T190727.483624_0000-a961b406` transferred 17,301,548 bytes in 17,165
-frames over 267.469 seconds. CRC32 was `eb92c866`; SHA-256 was
-`fdedb2b5d885afe37865b007d84890f64ca7c4b730025358142ea78f13798098`.
-
-The file contains 2,883,584 frames and 17,301,504 audio bytes over 60.074667
-seconds. Peaks were 1643, 1640, and 672, exactly matching the recorder's original
-final diagnostics. No channel clipped or stayed constant. One-second follow-up
-analysis found no constant window: minimum per-window peaks were 1087, 1085, and
-31 for radio-left, radio-right, and microphone. `ffprobe` independently reported
-`pcm_s16le`, 48 kHz, three channels, 16 bits, the same duration, and the same file
-size. Full evidence is recorded in the
-[live bench results](../evidence/2026-09-24-bench-results.md#phase-3-host-side-wav-inspection).
+[2026-09-24 WAV inspection results](../evidence/2026-09-24-bench-results.md#phase-3-host-side-wav-inspection).

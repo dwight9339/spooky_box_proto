@@ -16,8 +16,10 @@ not yet the complete product firmware.
   contextual controls, and open product decisions.
 - [Architecture](docs/design/architecture.md) - current implementation, target M7/M4
   split, boundaries, and open decisions.
-- [Hardware bring-up and USB CLI](BRINGUP.md) - wiring, known prototype bodges,
-  power checks, commands, and recording test procedure.
+- [Hardware bring-up](BRINGUP.md) - power checks, flashing, and the radio, USB, UI,
+  recording, SD and sleep test procedures. Wiring and bodges are in
+  [prototype hardware](docs/design/prototype-hardware.md); commands are in the
+  [USB CLI contract](docs/design/usb-cli.md).
 - [Documentation index](docs/README.md) - decision records, design contracts, bench
   procedures, dated evidence, and frozen history.
 - [STM32 pivot reference](reference/legacy_docs/spooky_box_architecture_stm32h745_pivot.md)
@@ -77,25 +79,25 @@ before flashing hardware.
 Do not regenerate the `.ioc` and assume the result matches the passing image:
 several proven clock and peripheral configurations currently override or defer
 the generated settings. The specific discrepancies are listed in
-[BRINGUP.md](BRINGUP.md#cubemx-findings-to-fix-before-broader-bring-up).
+the [CubeMX reconciliation register](docs/design/cubemx-reconciliation.md).
 
 ## Current direction
 
-Keep the M7 as the source of truth for radio, audio, storage, session behavior,
-and sensor interpretation. The intended M4 role is input scanning and UI
-presentation, communicating semantic state and events across a controlled
-inter-core boundary. Input, LEDs, matrix and OLED have M7 bring-up support;
-product interaction and M4 UI ownership are not yet integrated. I2C2 is shared
-by matrix and sensors, so its controller ownership must be resolved together.
+The M7 is the source of truth for radio, audio, storage, session behavior, and
+sensor interpretation. The M4's target role is input scanning and UI presentation,
+exchanging semantic state and events with the M7 across a versioned inter-core
+boundary. For the first product slice the whole I2C2 domain (matrix, magnetometer,
+fuel gauge) stays on M7; see [decision 0001](docs/decisions/0001-initial-ui-and-bus-ownership.md)
+and the [architecture](docs/design/architecture.md) for what is proven today and
+what is still target. Normal Debug/Release builds keep the M4 asleep; the opt-in
+`IpcSmoke` build carries the diagnostic IPC experiment.
 
-The opt-in `IpcSmoke` build has passed initial boot and 60-second recording-load
-checks; WAV inspection and bounded SD success/cancellation also have live
-evidence. Longer recording, sleep, stale-peer/reset and failure-path acceptance
-remain before broader ownership changes. Normal Debug/Release retain
-sleeping-M4 behavior. Continue service extraction alongside a host-tested
-interaction model, then deliver Classic/Manual and reliable Field capture
-before expanding Instrument features. See the
-[roadmap rationale](docs/history/2026-09-23-repository-review.md) and [host-test commands](tests/README.md).
+Delivery order follows [Constitution Principle VII](spec/.specify/memory/constitution.md):
+qualify the baseline and finish service boundaries, deliver the Field
+Classic/Manual slice with reliable capture, then capture/session transactions,
+and only then Instrument features. Status is tracked in Beads, not in this README;
+dated validation lives in [`docs/evidence`](docs/evidence/). Host tests are
+described in [tests/README.md](tests/README.md).
 
 ## Development tracking
 

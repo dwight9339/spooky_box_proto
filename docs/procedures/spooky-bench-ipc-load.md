@@ -1,9 +1,8 @@
 # Spooky Bench: IPC progress under recording load
 
-Implemented in version 0.4.0, 2026-09-24. This is the first Phase 3 runner. It
-starts a bounded three-channel recording on an already running `IpcSmoke` pair
-and proves that the two-core diagnostic exchange keeps advancing before, during,
-and after the workload.
+Requires Spooky Bench 0.4.0 or later. This test starts a bounded three-channel
+recording on an already running `IpcSmoke` pair and proves that the two-core
+diagnostic exchange keeps advancing before, during, and after the workload.
 
 ## Preconditions and invocation
 
@@ -74,11 +73,7 @@ Simulation covers successful execution plus `record-abort`, `record-overrun`,
 `record-ipc-stale`, `record-disconnect`, and `record-busy` failure semantics.
 Simulation is never hardware acceptance evidence.
 
-## Initial hardware acceptance
+## Evidence
 
-The exact version 0.4.0 source passed a 60-second run on 2026-09-24. It produced
-`REC004.WAV`, reported 2,883,584 frames and 17,301,504 bytes over 60.074 seconds,
-kept recorder queue high-water at 1/8 for both sources, and advanced every IPC
-counter in both in-load intervals and after recording. Full measurements and the
-run identity are in the
-[live bench record](../evidence/2026-09-24-bench-results.md#phase-3-ipc-progress-under-recording-load).
+[2026-09-24 IPC load results](../evidence/2026-09-24-bench-results.md#phase-3-ipc-progress-under-recording-load).
+Longer recordings are tracked in Beads under `full_spooky_proto-jjy`.

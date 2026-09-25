@@ -1,7 +1,7 @@
-# Spooky Bench Phase 2: paired boot smoke test
+# Spooky Bench: paired boot smoke test
 
-Implemented in version 0.3.0, 2026-09-24. The command combines the accepted
-Phase 1B flash/reset path with UART evidence, target CDC rediscovery, M7
+Requires Spooky Bench 0.3.0 or later. The command combines the
+[controls](spooky-bench-controls.md) flash/reset path with UART evidence, target CDC rediscovery, M7
 diagnostics, and M4 IPC progress under one board lock:
 
 ```powershell
@@ -44,7 +44,7 @@ Success leaves the prototype running and does not start a recording. A failed
 post-reset health criterion preserves the artifacts and does not retry flash or
 reset. If M7 answered after reset, the final state is reported running; failure
 before that proof leaves it unknown and sets `human_required`. Partial flash or
-verification failure follows the Phase 1B rule: the utility does not resume the
+verification failure follows the [controls](spooky-bench-controls.md#recovery) rule: the utility does not resume the
 partly updated pair.
 
 Artifacts include the exact staged firmware pair and manifest, pinned OpenOCD
@@ -56,6 +56,6 @@ UART evidence, disabled/stale/error IPC, diagnostic faults, and the prior tool,
 protocol, storage, disconnect, and process cleanup cases. Simulation is never
 hardware acceptance evidence.
 
-The first live invocation passed with complete evidence on 2026-09-24. See the
-[bench results](../evidence/2026-09-24-bench-results.md). Repeated-reset and physical
-failure-path acceptance remain separate gates.
+Evidence: [2026-09-24 bench results](../evidence/2026-09-24-bench-results.md).
+Repeated-reset and physical failure-path acceptance are tracked in Beads under
+`full_spooky_proto-jjy`.

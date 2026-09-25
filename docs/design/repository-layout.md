@@ -40,7 +40,7 @@ used by `platformio/deploy.py`.
 
 | Path | Ownership | Policy |
 | --- | --- | --- |
-| `full_spooky_proto.ioc` | CubeMX project input | Track it. It is not yet authoritative for every proven runtime setting; consult `BRINGUP.md` before regeneration. |
+| `full_spooky_proto.ioc` | CubeMX project input | Track it. It is not yet authoritative for every proven runtime setting; consult the [CubeMX reconciliation register](cubemx-reconciliation.md) before regeneration. |
 | `.mxproject`, `.settings/`, `CM4/.settings/`, `CM7/.settings/` | STM32Cube metadata | Track them while STM32Cube tooling is part of the workflow. |
 | `CM4/Core/`, `CM7/Core/`, `CM7/USB_Device/` | Mixed generated scaffolding and hand-maintained code | Track them. Do not overwrite them through CubeMX until the documented `.ioc` discrepancies are reconciled and the diff is reviewed. |
 | `CM4/mx-generated.cmake`, `CM7/mx-generated.cmake` | CubeMX-generated core source lists | Track them; regeneration may update them. Review changes before accepting. |
@@ -58,10 +58,9 @@ used by `platformio/deploy.py`.
 Before running CubeMX code generation, commit or otherwise preserve a clean
 working tree. Generate, inspect the complete diff, and restore any proven
 runtime overrides that CubeMX cannot express. The known discrepancies are
-listed in [BRINGUP.md](../../BRINGUP.md#cubemx-findings-to-fix-before-broader-bring-up).
+listed in the [CubeMX reconciliation register](cubemx-reconciliation.md).
 
-The first board-diagnostics and prototype-power extraction now lives in
-`CM7/App`; hardware initialization and IRQ wrappers remain in generated shells.
+Board diagnostics and prototype-power policy live in `CM7/App`; hardware initialization and IRQ wrappers remain in generated shells.
 Portable IPC tests build independently through `tests/CMakeLists.txt` and never
 inherit the firmware cross toolchain.
 
