@@ -25,6 +25,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include "audio_path_service.h"
 #include "board_diagnostics.h"
 #include "codec_volume_service.h"
 #include "target_logger.h"
@@ -54,8 +55,6 @@
 /* USER CODE BEGIN PD */
 
 #define SPOOKY_MINIMAL_BRINGUP
-#define RADIO_AUDIO_BUFFER_SAMPLES     2048U
-#define RADIO_AUDIO_START_TIMEOUT_MS   500U
 
 /* DUAL_CORE_BOOT_SYNC_SEQUENCE: Define for dual core boot synchronization    */
 /*                             demonstration code based on hardware semaphore */
@@ -100,18 +99,6 @@ SPI_HandleTypeDef hspi6;
 
 /* USER CODE BEGIN PV */
 
-DMA_HandleTypeDef hdma_sai2_a;
-
-static uint16_t radio_audio_rx_buffer[RADIO_AUDIO_BUFFER_SAMPLES]
-  __attribute__((section(".dma_buffer"), aligned(32)));
-static uint16_t radio_audio_tx_buffer[RADIO_AUDIO_BUFFER_SAMPLES]
-  __attribute__((section(".dma_buffer"), aligned(32)));
-static volatile uint32_t radio_audio_rx_half_count;
-static volatile uint32_t radio_audio_rx_full_count;
-static volatile uint32_t radio_audio_error_flags;
-static volatile bool radio_audio_copy_enabled;
-static bool radio_audio_running;
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -133,192 +120,11 @@ static void MX_SPI6_Init(void);
 static void Bringup_Run(void);
 static void UsbCliCommand(const char *line);
 static void RadioAudio_Service(void);
-static uint32_t RadioAudioMeasureFs(GPIO_TypeDef *port, uint32_t pin);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-static uint32_t __attribute__((optimize("O3")))
-RadioAudioMeasureFs(GPIO_TypeDef *port, uint32_t pin)
-{
-  enum { PROBE_PERIODS = 64U };
-  volatile uint32_t * const idr = &port->IDR;
-  const uint32_t timeout_cycles = SystemCoreClock / 100U;
-  uint32_t primask;
-  uint32_t wait_start;
-  uint32_t start_cycles;
-  uint32_t elapsed_cycles;
-  uint32_t captured = 0U;
-  bool timed_out = false;
-
-  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-  primask = __get_PRIMASK();
-  __disable_irq();
-
-  /* Synchronize to one rising frame-sync edge. */
-  wait_start = DWT->CYCCNT;
-  while ((*idr & pin) != 0U)
-  {
-    if ((DWT->CYCCNT - wait_start) > timeout_cycles)
-    {
-      timed_out = true;
-      break;
-    }
-  }
-  wait_start = DWT->CYCCNT;
-  while (!timed_out && ((*idr & pin) == 0U))
-  {
-    if ((DWT->CYCCNT - wait_start) > timeout_cycles)
-    {
-      timed_out = true;
-      break;
-    }
-  }
-
-  start_cycles = DWT->CYCCNT;
-  while (!timed_out && (captured < PROBE_PERIODS))
-  {
-    wait_start = DWT->CYCCNT;
-    while ((*idr & pin) != 0U)
-    {
-      if ((DWT->CYCCNT - wait_start) > timeout_cycles)
-      {
-        timed_out = true;
-        break;
-      }
-    }
-    wait_start = DWT->CYCCNT;
-    while (!timed_out && ((*idr & pin) == 0U))
-    {
-      if ((DWT->CYCCNT - wait_start) > timeout_cycles)
-      {
-        timed_out = true;
-        break;
-      }
-    }
-    if (!timed_out)
-    {
-      ++captured;
-    }
-  }
-  elapsed_cycles = DWT->CYCCNT - start_cycles;
-  __set_PRIMASK(primask);
-
-  if (timed_out || (elapsed_cycles == 0U))
-  {
-    return 0U;
-  }
-  return (uint32_t)(((uint64_t)captured * SystemCoreClock) / elapsed_cycles);
-}
-
-static bool RadioSai2Start(void)
-{
-  uint32_t sai2_kernel_hz;
-  uint32_t measured_fs_hz;
-
-  memset(&hsai_BlockA2, 0, sizeof(hsai_BlockA2));
-  hsai_BlockA2.Instance = SAI2_Block_A;
-  hsai_BlockA2.Init.AudioMode = SAI_MODEMASTER_RX;
-  hsai_BlockA2.Init.Synchro = SAI_ASYNCHRONOUS;
-  hsai_BlockA2.Init.OutputDrive = SAI_OUTPUTDRIVE_ENABLE;
-  hsai_BlockA2.Init.NoDivider = SAI_MASTERDIVIDER_DISABLE;
-  hsai_BlockA2.Init.MckOverSampling = SAI_MCK_OVERSAMPLING_DISABLE;
-  hsai_BlockA2.Init.MckOutput = SAI_MCK_OUTPUT_DISABLE;
-  hsai_BlockA2.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_1QF;
-  hsai_BlockA2.Init.AudioFrequency = SAI_AUDIO_FREQUENCY_MCKDIV;
-  hsai_BlockA2.Init.Mckdiv = 16U;
-  hsai_BlockA2.Init.SynchroExt = SAI_SYNCEXT_DISABLE;
-  hsai_BlockA2.Init.MonoStereoMode = SAI_STEREOMODE;
-  hsai_BlockA2.Init.CompandingMode = SAI_NOCOMPANDING;
-  hsai_BlockA2.Init.TriState = SAI_OUTPUT_NOTRELEASED;
-
-  /* Use the wire-native 32-bit stereo frame. The sibling jumper experiment's
-     64-bit compensation made this board capture at about 24 kHz, which the
-     48 kHz codec then replayed one octave high. */
-  if (HAL_SAI_InitProtocol(&hsai_BlockA2, SAI_I2S_STANDARD,
-                           SAI_PROTOCOL_DATASIZE_16BIT, 2U) != HAL_OK)
-  {
-    printf("[sai2] FAIL: SAI2A init error=0x%08lX\r\n",
-           (unsigned long)HAL_SAI_GetError(&hsai_BlockA2));
-    return false;
-  }
-
-  sai2_kernel_hz = HAL_RCCEx_GetPeriphCLKFreq(RCC_PERIPHCLK_SAI2);
-  if ((sai2_kernel_hz == 0U) ||
-      ((uint64_t)HAL_RCC_GetPCLK2Freq() < (2ULL * sai2_kernel_hz)))
-  {
-    printf("[sai2] FAIL: clocks PCLK2=%lu SAI2=%lu Hz\r\n",
-           (unsigned long)HAL_RCC_GetPCLK2Freq(),
-           (unsigned long)sai2_kernel_hz);
-    return false;
-  }
-
-  memset(&hdma_sai2_a, 0, sizeof(hdma_sai2_a));
-  hdma_sai2_a.Instance = DMA1_Stream4;
-  hdma_sai2_a.Init.Request = DMA_REQUEST_SAI2_A;
-  hdma_sai2_a.Init.Direction = DMA_PERIPH_TO_MEMORY;
-  hdma_sai2_a.Init.PeriphInc = DMA_PINC_DISABLE;
-  hdma_sai2_a.Init.MemInc = DMA_MINC_ENABLE;
-  hdma_sai2_a.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
-  hdma_sai2_a.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
-  hdma_sai2_a.Init.Mode = DMA_CIRCULAR;
-  hdma_sai2_a.Init.Priority = DMA_PRIORITY_VERY_HIGH;
-  hdma_sai2_a.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
-  if (HAL_DMA_Init(&hdma_sai2_a) != HAL_OK)
-  {
-    printf("[sai2] FAIL: DMA1 Stream4 init error=0x%08lX\r\n",
-           (unsigned long)HAL_DMA_GetError(&hdma_sai2_a));
-    return false;
-  }
-  __HAL_LINKDMA(&hsai_BlockA2, hdmarx, hdma_sai2_a);
-  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0U, 0U);
-  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
-  HAL_NVIC_SetPriority(SAI2_IRQn, 0U, 0U);
-  HAL_NVIC_EnableIRQ(SAI2_IRQn);
-
-  memset(radio_audio_rx_buffer, 0, sizeof(radio_audio_rx_buffer));
-  memset(radio_audio_tx_buffer, 0, sizeof(radio_audio_tx_buffer));
-#if (__DCACHE_PRESENT == 1U)
-  if ((SCB->CCR & SCB_CCR_DC_Msk) != 0U)
-  {
-    SCB_CleanDCache_by_Addr((uint32_t *)radio_audio_rx_buffer,
-                            sizeof(radio_audio_rx_buffer));
-    SCB_CleanDCache_by_Addr((uint32_t *)radio_audio_tx_buffer,
-                            sizeof(radio_audio_tx_buffer));
-  }
-#endif
-  radio_audio_rx_half_count = 0U;
-  radio_audio_rx_full_count = 0U;
-  radio_audio_error_flags = 0U;
-  radio_audio_copy_enabled = false;
-  if (HAL_SAI_Receive_DMA(&hsai_BlockA2, (uint8_t *)radio_audio_rx_buffer,
-                          RADIO_AUDIO_BUFFER_SAMPLES) != HAL_OK)
-  {
-    printf("[sai2] FAIL: RX DMA start error=0x%08lX\r\n",
-           (unsigned long)HAL_SAI_GetError(&hsai_BlockA2));
-    return false;
-  }
-  measured_fs_hz = RadioAudioMeasureFs(GPIOD, GPIO_PIN_12);
-  printf("[sai2] PD11 RX, PD12 FS, PD13 SCK; kernel=%lu Hz; "
-         "measured FS=%lu Hz\r\n", (unsigned long)sai2_kernel_hz,
-         (unsigned long)measured_fs_hz);
-  printf("[sai2] frame=%lu bits active=%lu bits slots=%lu MCKDIV=%lu; "
-         "expect 48 kHz/1.536 MHz\r\n",
-         (unsigned long)hsai_BlockA2.FrameInit.FrameLength,
-         (unsigned long)hsai_BlockA2.FrameInit.ActiveFrameLength,
-         (unsigned long)hsai_BlockA2.SlotInit.SlotNumber,
-         (unsigned long)hsai_BlockA2.Init.Mckdiv);
-  if ((measured_fs_hz < 47500U) || (measured_fs_hz > 48500U))
-  {
-    printf("[sai2] FAIL: radio frame sync is not 48 kHz\r\n");
-    (void)HAL_SAI_DMAStop(&hsai_BlockA2);
-    return false;
-  }
-  return true;
-}
 
 /* Sequences the monitored output around a receiver function change. The radio
  * service only changes the Si4735; this caller owns muting and the DMA copy. */
@@ -332,14 +138,14 @@ static bool RadioAudioSwitchBand(RadioBand band, RadioTuneStatus *tune_status)
   {
     goto failed;
   }
-  radio_audio_copy_enabled = false;
+  AudioPath_SetStreamEnabled(false);
 
   if (!RadioControl_SwitchBand(band, tune_status))
   {
     goto failed;
   }
 
-  radio_audio_copy_enabled = true;
+  AudioPath_SetStreamEnabled(true);
   if (!CodecVolume_SetTransitionMuted(false))
   {
     goto failed;
@@ -347,8 +153,8 @@ static bool RadioAudioSwitchBand(RadioBand band, RadioTuneStatus *tune_status)
   return true;
 
 failed:
-  radio_audio_copy_enabled = false;
-  radio_audio_running = false;
+  AudioPath_SetStreamEnabled(false);
+  AudioPath_MarkStopped();
   (void)CodecVolume_SetTransitionMuted(true);
   RadioControl_HoldReset();
   BSP_LED_Off(LED_GREEN);
@@ -357,105 +163,13 @@ failed:
   return false;
 }
 
-static void RadioAudioCopyHalf(uint32_t offset)
-{
-  const uint32_t half_samples = RADIO_AUDIO_BUFFER_SAMPLES / 2U;
-#if (__DCACHE_PRESENT == 1U)
-  if ((SCB->CCR & SCB_CCR_DC_Msk) != 0U)
-  {
-    SCB_InvalidateDCache_by_Addr((uint32_t *)&radio_audio_rx_buffer[offset],
-                                 half_samples * sizeof(uint16_t));
-  }
-#endif
-  RadioRecorder_OnRadioSamples(
-    (const int16_t *)&radio_audio_rx_buffer[offset], half_samples);
-  memcpy(&radio_audio_tx_buffer[offset], &radio_audio_rx_buffer[offset],
-         half_samples * sizeof(uint16_t));
-#if (__DCACHE_PRESENT == 1U)
-  if ((SCB->CCR & SCB_CCR_DC_Msk) != 0U)
-  {
-    SCB_CleanDCache_by_Addr((uint32_t *)&radio_audio_tx_buffer[offset],
-                            half_samples * sizeof(uint16_t));
-  }
-#endif
-}
-
-static bool RadioAudioBridgeStart(void)
-{
-  uint32_t observed;
-  uint32_t start_tick;
-  uint32_t measured_fs_hz;
-
-  start_tick = HAL_GetTick();
-  while ((radio_audio_rx_full_count == 0U) &&
-         (radio_audio_error_flags == 0U) &&
-         ((HAL_GetTick() - start_tick) < RADIO_AUDIO_START_TIMEOUT_MS))
-  {
-    HAL_Delay(1U);
-  }
-  if ((radio_audio_rx_full_count == 0U) || (radio_audio_error_flags != 0U))
-  {
-    printf("[bridge] FAIL: no complete radio PCM buffer (flags=0x%08lX)\r\n",
-           (unsigned long)radio_audio_error_flags);
-    return false;
-  }
-
-  /* At a full callback, RX is writing half 0 and half 1 is stable. */
-  RadioAudioCopyHalf(RADIO_AUDIO_BUFFER_SAMPLES / 2U);
-  __disable_irq();
-  observed = radio_audio_rx_half_count;
-  radio_audio_copy_enabled = true;
-  __enable_irq();
-  start_tick = HAL_GetTick();
-  while ((radio_audio_rx_half_count == observed) &&
-         (radio_audio_error_flags == 0U) &&
-         ((HAL_GetTick() - start_tick) < RADIO_AUDIO_START_TIMEOUT_MS))
-  {
-    HAL_Delay(1U);
-  }
-  if ((radio_audio_rx_half_count == observed) ||
-      (radio_audio_error_flags != 0U))
-  {
-    printf("[bridge] FAIL: DMA prefill synchronization\r\n");
-    radio_audio_copy_enabled = false;
-    return false;
-  }
-
-  if (HAL_SAI_Transmit_DMA(&hsai_BlockA1, (uint8_t *)radio_audio_tx_buffer,
-                           RADIO_AUDIO_BUFFER_SAMPLES) != HAL_OK)
-  {
-    printf("[bridge] FAIL: SAI1 TX DMA error=0x%08lX\r\n",
-           (unsigned long)HAL_SAI_GetError(&hsai_BlockA1));
-    radio_audio_copy_enabled = false;
-    return false;
-  }
-  measured_fs_hz = RadioAudioMeasureFs(GPIOE, GPIO_PIN_4);
-  printf("[bridge] SAI1 PE4 measured FS=%lu Hz\r\n",
-         (unsigned long)measured_fs_hz);
-  if ((measured_fs_hz < 47500U) || (measured_fs_hz > 48500U))
-  {
-    printf("[bridge] FAIL: codec frame sync is not 48 kHz\r\n");
-    radio_audio_copy_enabled = false;
-    (void)HAL_SAI_DMAStop(&hsai_BlockA1);
-    return false;
-  }
-  radio_audio_running = true;
-  printf("[bridge] PASS: SAI2 RX DMA -> SAI1 TX DMA is running\r\n");
-  return true;
-}
-
 static bool RadioAudioStart(void)
 {
-  radio_audio_running = false;
-  if (!CodecVolume_Init(&hi2c4, &hadc3, &hsai_BlockA1) ||
-      !RadioSai2Start() ||
-      !RadioControl_Start(&hi2c1))
-  {
-    goto failed;
-  }
-  radio_audio_rx_half_count = 0U;
-  radio_audio_rx_full_count = 0U;
-  if (!RadioAudioBridgeStart())
+  if (!AudioPath_Init(&hsai_BlockA2, &hsai_BlockA1) ||
+      !CodecVolume_Init(&hi2c4, &hadc3, &hsai_BlockA1) ||
+      !AudioPath_StartCapture() ||
+      !RadioControl_Start(&hi2c1) ||
+      !AudioPath_StartMonitor())
   {
     goto failed;
   }
@@ -693,7 +407,7 @@ static void UsbCliCommand(const char *line)
     (void)UsbTest_SendText("ERR RECORD unavailable while SD test active\r\n");
     return;
   }
-  if (RadioRecorder_HandleCommand(command, radio_audio_running))
+  if (RadioRecorder_HandleCommand(command, AudioPath_IsRunning()))
   {
     return;
   }
@@ -723,7 +437,7 @@ static void UsbCliCommand(const char *line)
     BoardDiagnostics_SendBatteryStatus(true);
     return;
   }
-  if (!radio_audio_running)
+  if (!AudioPath_IsRunning())
   {
     (void)UsbTest_SendText("ERR RADIO audio path is not running\r\n");
     return;
@@ -832,27 +546,29 @@ static void UsbCliCommand(const char *line)
 static void RadioAudio_Service(void)
 {
   CodecVolumeStatus codec_status;
+  AudioPathStatus audio_status;
 
-  if (!radio_audio_running)
+  if (!AudioPath_GetStatus(&audio_status) || !audio_status.running)
   {
     return;
   }
-  if (radio_audio_error_flags != 0U)
+  if (audio_status.fault_flags != 0U)
   {
     (void)CodecVolume_SetTransitionMuted(true);
-    radio_audio_running = false;
+    AudioPath_MarkStopped();
     BSP_LED_Off(LED_GREEN);
     BSP_LED_On(LED_RED);
     printf("[bridge] FAIL: runtime SAI/DMA flags=0x%08lX; output muted\r\n",
-           (unsigned long)radio_audio_error_flags);
+           (unsigned long)audio_status.fault_flags);
     return;
   }
 
   if (!CodecVolume_Service())
   {
     (void)CodecVolume_GetStatus(&codec_status);
-    radio_audio_error_flags |=
-      (codec_status.last_error == CODEC_VOLUME_ERROR_OUTPUT) ? 4U : 8U;
+    AudioPath_ReportFault(
+      (codec_status.last_error == CODEC_VOLUME_ERROR_OUTPUT)
+        ? AUDIO_PATH_FAULT_CODEC_OUTPUT : AUDIO_PATH_FAULT_VOLUME_ADC);
   }
 }
 
@@ -908,19 +624,13 @@ static void SleepMakePeripheralPinsHighImpedance(void)
 
 static void SleepStopRadioAudio(void)
 {
-  if (radio_audio_running)
+  if (AudioPath_IsRunning())
   {
     (void)CodecVolume_SetTransitionMuted(true);
     RadioControl_PowerDown();
   }
-  radio_audio_copy_enabled = false;
-  radio_audio_running = false;
-  (void)HAL_SAI_DMAStop(&hsai_BlockA1);
-  (void)HAL_SAI_DMAStop(&hsai_BlockA2);
-  HAL_NVIC_DisableIRQ(DMA1_Stream0_IRQn);
-  HAL_NVIC_DisableIRQ(DMA1_Stream4_IRQn);
-  HAL_NVIC_DisableIRQ(DMA2_Stream0_IRQn);
-  HAL_NVIC_DisableIRQ(SAI2_IRQn);
+  AudioPath_Stop();
+  HAL_NVIC_DisableIRQ(DMA2_Stream0_IRQn); /* DFSDM microphone capture */
   RadioControl_HoldReset();
   HAL_GPIO_WritePin(AMP_SD_GPIO_Port, AMP_SD_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(LED_MATRIX_EN_GPIO_Port, LED_MATRIX_EN_Pin,
@@ -1770,60 +1480,9 @@ void BSP_PB_Callback(Button_TypeDef Button)
   }
 }
 
-void DMA1_Stream4_IRQHandler(void)
-{
-  HAL_DMA_IRQHandler(&hdma_sai2_a);
-}
-
 void DMA2_Stream0_IRQHandler(void)
 {
   HAL_DMA_IRQHandler(&hdma_dfsdm1_flt0);
-}
-
-void SAI2_IRQHandler(void)
-{
-  HAL_SAI_IRQHandler(&hsai_BlockA2);
-}
-
-void HAL_SAI_RxHalfCpltCallback(SAI_HandleTypeDef *hsai)
-{
-  if ((hsai != NULL) && (hsai->Instance == SAI2_Block_A))
-  {
-    if (radio_audio_copy_enabled)
-    {
-      RadioAudioCopyHalf(0U);
-    }
-    ++radio_audio_rx_half_count;
-  }
-}
-
-void HAL_SAI_RxCpltCallback(SAI_HandleTypeDef *hsai)
-{
-  if ((hsai != NULL) && (hsai->Instance == SAI2_Block_A))
-  {
-    if (radio_audio_copy_enabled)
-    {
-      RadioAudioCopyHalf(RADIO_AUDIO_BUFFER_SAMPLES / 2U);
-    }
-    ++radio_audio_rx_full_count;
-  }
-}
-
-void HAL_SAI_ErrorCallback(SAI_HandleTypeDef *hsai)
-{
-  if ((hsai != NULL) && (hsai->Instance == SAI2_Block_A))
-  {
-    if ((radio_audio_error_flags & 1U) == 0U)
-      Diagnostics_Record(DIAG_AUDIO_ERROR, 1U, hsai->ErrorCode);
-    radio_audio_error_flags |= 1U;
-    RadioRecorder_NotifyRadioError();
-  }
-  else if ((hsai != NULL) && (hsai->Instance == SAI1_Block_A))
-  {
-    if ((radio_audio_error_flags & 2U) == 0U)
-      Diagnostics_Record(DIAG_AUDIO_ERROR, 2U, hsai->ErrorCode);
-    radio_audio_error_flags |= 2U;
-  }
 }
 
 /* USER CODE END 4 */

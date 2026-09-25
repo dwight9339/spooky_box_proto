@@ -558,3 +558,37 @@ codec run; 101.5 MHz measured 19 dBuV, SNR 3. The receiver configuration is
 unchanged, so this is recorded as marginal, variable antenna reception rather
 than an extraction regression. A same-position A/B against the previous image
 would confirm it.
+
+## Audio path service extraction regression
+
+Beads task `full_spooky_proto-8lw.3` moved radio capture and headphone monitoring
+into `CM7/App/audio_path_service.*`: SAI2 A receive setup and DMA1 Stream 4, the
+SAI1 A transmit DMA, both `.dma_buffer` arrays, counters, fault flags, the SAI
+callbacks and their interrupt handlers. Each received half-buffer goes unchanged
+to the recorder first and is then rendered into the separate monitor buffer by a
+read-only pass-through stage, the future microphone-mix/PTT point. Link-map
+addresses were unchanged (RX `0x24000000`, TX `0x24001000`, recorder queues
+unchanged), and Release interrupt-path code sizes matched `f660c2c` apart from a
+4-byte NULL check in `SAI2_IRQHandler`. The Debug CM7 image
+(SHA-256 `db778559ebadeeb24b256beb499e0e7f2c9cdd7d74deeba15acc8fe327a43358`,
+CM4 unchanged) was built from a dirty tree on `f660c2c` and flashed with
+PlatformIO Deploy. The [raw transcript](evidence/2026-09-24-audio-path-service.md)
+includes both Spooky Bench inspection results.
+
+| Check | Result |
+| --- | --- |
+| Boot | SAI2 FS 48,004 Hz, SAI1 FS 47,996 Hz, bridge PASS on two boots |
+| Tuning and bands | 61 FM step/tune commands, AM 1000/1310 and FM return, all acknowledged; audio returned after each band switch |
+| `REC007.WAV` (FM 105.5, pot and jack changes) | PASS 60.074 s, 2,883,584 frames, queues at most 1/8, max SD write 24 ms |
+| `REC008.WAV` (AM 1310, pot and jack changes) | PASS 60.074 s, 2,883,584 frames, queues at most 1/8, max SD write 50 ms |
+| WAV inspection | Both pass with CRC32 `114daeee` and `c897815b`; 3 ch, 48 kHz, no clipped samples, radio channels non-constant |
+
+Radio peaks in the inspections exactly match the target `RECORD DIAG` values
+(1542/1546 and 4651/4648). REC008's 50 ms maximum SD write is the highest
+observed so far (the earlier 60-second IPC run reached 44 ms), but the radio
+queue never exceeded 1/8 of its roughly 683 ms capacity. The SD write path is
+outside this change; foreground latency budgets are tracked separately. The sleep/USER-button path was not exercised
+in this run; its only change is `AudioPath_Stop`, which performs the prior
+DMA stops and IRQ disables in the same order. The FM scan also found 98.5 MHz as
+the only valid station (RSSI 26 dBuV, SNR 6), supporting the weak-FM reception
+note above.
