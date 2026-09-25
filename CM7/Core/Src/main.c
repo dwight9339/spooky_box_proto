@@ -36,6 +36,7 @@
 #include "prototype_power.h"
 #include "fuel_gauge_test.h"
 #include "magnetometer_test.h"
+#include "radio_control_service.h"
 #include "radio_recorder.h"
 #include "sd_test.h"
 #include "ui_board_test.h"
@@ -47,74 +48,14 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
-typedef enum
-{
-  RADIO_BAND_FM = 0,
-  RADIO_BAND_AM,
-  RADIO_BAND_SW,
-  RADIO_BAND_LW,
-  RADIO_BAND_COUNT
-} RadioBand;
-
-typedef struct
-{
-  const char *name;
-  uint32_t minimum_khz;
-  uint32_t maximum_khz;
-  uint32_t default_khz;
-  uint32_t step_khz;
-  uint8_t power_up_function;
-  uint8_t tune_command;
-  uint8_t tune_status_command;
-  uint16_t antenna_capacitance;
-  bool select_whip;
-} RadioBandConfig;
-
-typedef struct
-{
-  RadioBand band;
-  uint32_t frequency_khz;
-  uint8_t rssi_dbuv;
-  uint8_t snr_db;
-  bool valid;
-} RadioTuneStatus;
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
 #define SPOOKY_MINIMAL_BRINGUP
-#define SI4735_I2C_ADDRESS_HAL         (0x11U << 1U)
-#define SI4735_STATUS_CTS              0x80U
-#define SI4735_STATUS_ERR              0x40U
-#define SI4735_CMD_POWER_UP            0x01U
-#define SI4735_CMD_GET_REV             0x10U
-#define SI4735_CMD_POWER_DOWN          0x11U
-#define SI4735_POWER_UP_FM_ANALOG      0x00U
-#define SI4735_ANALOG_AUDIO_OUTPUT     0x05U
-#define BRINGUP_I2C_TIMEOUT_MS         100U
-#define BRINGUP_DEVICE_TIMEOUT_MS      2000U
-#define RADIO_AUDIO_SAMPLE_RATE_HZ     48000U
-#define RADIO_AUDIO_FREQUENCY_KHZ      99100U
 #define RADIO_AUDIO_BUFFER_SAMPLES     2048U
 #define RADIO_AUDIO_START_TIMEOUT_MS   500U
-
-#define SI4735_CMD_SET_PROPERTY        0x12U
-#define SI4735_CMD_GET_INT_STATUS      0x14U
-#define SI4735_CMD_FM_TUNE_FREQ        0x20U
-#define SI4735_CMD_FM_TUNE_STATUS      0x22U
-#define SI4735_CMD_AM_TUNE_FREQ        0x40U
-#define SI4735_CMD_AM_TUNE_STATUS      0x42U
-#define SI4735_POWER_UP_AM_ANALOG      0x01U
-#define SI4735_POWER_UP_FM_DIGITAL     0xB5U
-#define SI4735_STATUS_STCINT           0x01U
-#define SI4735_PROP_DIGITAL_FORMAT     0x0102U
-#define SI4735_PROP_DIGITAL_RATE       0x0104U
-#define SI4735_PROP_REFCLK_FREQ        0x0201U
-#define SI4735_PROP_REFCLK_PRESCALE    0x0202U
-#define SI4735_PROP_RX_VOLUME          0x4000U
-#define SI4735_PROP_RX_HARD_MUTE       0x4001U
 
 /* DUAL_CORE_BOOT_SYNC_SEQUENCE: Define for dual core boot synchronization    */
 /*                             demonstration code based on hardware semaphore */
@@ -170,35 +111,6 @@ static volatile uint32_t radio_audio_rx_full_count;
 static volatile uint32_t radio_audio_error_flags;
 static volatile bool radio_audio_copy_enabled;
 static bool radio_audio_running;
-static RadioTuneStatus radio_tune_status;
-static RadioBand radio_band = RADIO_BAND_FM;
-static const RadioBandConfig radio_band_configs[RADIO_BAND_COUNT] =
-{
-  [RADIO_BAND_FM] = {
-    "FM", 87500U, 108000U, RADIO_AUDIO_FREQUENCY_KHZ, 100U,
-    SI4735_POWER_UP_FM_ANALOG, SI4735_CMD_FM_TUNE_FREQ,
-    SI4735_CMD_FM_TUNE_STATUS, 0U, false
-  },
-  [RADIO_BAND_AM] = {
-    "AM", 520U, 1710U, 1000U, 10U,
-    SI4735_POWER_UP_AM_ANALOG, SI4735_CMD_AM_TUNE_FREQ,
-    SI4735_CMD_AM_TUNE_STATUS, 0U, false
-  },
-  [RADIO_BAND_SW] = {
-    "SW", 2300U, 23000U, 6000U, 5U,
-    SI4735_POWER_UP_AM_ANALOG, SI4735_CMD_AM_TUNE_FREQ,
-    SI4735_CMD_AM_TUNE_STATUS, 1U, true
-  },
-  [RADIO_BAND_LW] = {
-    "LW", 153U, 279U, 198U, 9U,
-    SI4735_POWER_UP_AM_ANALOG, SI4735_CMD_AM_TUNE_FREQ,
-    SI4735_CMD_AM_TUNE_STATUS, 0U, false
-  }
-};
-static uint32_t radio_last_frequency_khz[RADIO_BAND_COUNT] =
-{
-  RADIO_AUDIO_FREQUENCY_KHZ, 1000U, 6000U, 198U
-};
 
 /* USER CODE END PV */
 
@@ -218,15 +130,7 @@ static void MX_SAI2_Init(void);
 static void MX_SPI6_Init(void);
 /* USER CODE BEGIN PFP */
 
-static HAL_StatusTypeDef Bringup_RadioWaitCts(uint8_t *status);
-static HAL_StatusTypeDef Bringup_RadioCommand(const uint8_t *command,
-                                               uint16_t command_length,
-                                               uint8_t *response,
-                                               uint16_t response_length);
-static bool Bringup_RadioProbe(void);
 static void Bringup_Run(void);
-static bool RadioTuneFrequency(RadioBand band, uint32_t frequency_khz,
-                               RadioTuneStatus *tune_status);
 static void UsbCliCommand(const char *line);
 static void RadioAudio_Service(void);
 static uint32_t RadioAudioMeasureFs(GPIO_TypeDef *port, uint32_t pin);
@@ -235,176 +139,6 @@ static uint32_t RadioAudioMeasureFs(GPIO_TypeDef *port, uint32_t pin);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-static HAL_StatusTypeDef Bringup_RadioWaitCts(uint8_t *status)
-{
-  uint32_t start_tick = HAL_GetTick();
-  uint8_t value = 0U;
-
-  do
-  {
-    if (HAL_I2C_Master_Receive(&hi2c1, SI4735_I2C_ADDRESS_HAL, &value, 1U,
-                               BRINGUP_I2C_TIMEOUT_MS) == HAL_OK)
-    {
-      if ((value & SI4735_STATUS_ERR) != 0U)
-      {
-        return HAL_ERROR;
-      }
-      if ((value & SI4735_STATUS_CTS) != 0U)
-      {
-        if (status != NULL)
-        {
-          *status = value;
-        }
-        return HAL_OK;
-      }
-    }
-    HAL_Delay(1U);
-  } while ((HAL_GetTick() - start_tick) < BRINGUP_DEVICE_TIMEOUT_MS);
-
-  return HAL_TIMEOUT;
-}
-
-static HAL_StatusTypeDef Bringup_RadioCommand(const uint8_t *command,
-                                               uint16_t command_length,
-                                               uint8_t *response,
-                                               uint16_t response_length)
-{
-  uint8_t status = 0U;
-
-  if ((command == NULL) || (command_length == 0U) ||
-      (response == NULL) || (response_length == 0U))
-  {
-    return HAL_ERROR;
-  }
-
-  if (Bringup_RadioWaitCts(NULL) != HAL_OK)
-  {
-    return HAL_TIMEOUT;
-  }
-  if (HAL_I2C_Master_Transmit(&hi2c1, SI4735_I2C_ADDRESS_HAL,
-                              (uint8_t *)command, command_length,
-                              BRINGUP_I2C_TIMEOUT_MS) != HAL_OK)
-  {
-    return HAL_ERROR;
-  }
-  if (Bringup_RadioWaitCts(&status) != HAL_OK)
-  {
-    return HAL_TIMEOUT;
-  }
-
-  if (response_length == 1U)
-  {
-    response[0] = status;
-    return HAL_OK;
-  }
-  if (HAL_I2C_Master_Receive(&hi2c1, SI4735_I2C_ADDRESS_HAL, response,
-                             response_length, BRINGUP_I2C_TIMEOUT_MS) != HAL_OK)
-  {
-    return HAL_ERROR;
-  }
-  if (((response[0] & SI4735_STATUS_CTS) == 0U) ||
-      ((response[0] & SI4735_STATUS_ERR) != 0U))
-  {
-    return HAL_ERROR;
-  }
-  return HAL_OK;
-}
-
-static bool Bringup_RadioProbe(void)
-{
-  const uint8_t power_up[] = {
-    SI4735_CMD_POWER_UP,
-    SI4735_POWER_UP_FM_ANALOG,
-    SI4735_ANALOG_AUDIO_OUTPUT
-  };
-  const uint8_t get_rev = SI4735_CMD_GET_REV;
-  const uint8_t power_down = SI4735_CMD_POWER_DOWN;
-  uint8_t response[9] = {0U};
-  uint8_t status = 0U;
-  bool passed = false;
-
-  printf("\r\n[radio] Si4735 control-path smoke test\r\n");
-  printf("[radio] PA10 reset, PA8 RCLK=LSE/1 (32768 Hz), "
-         "I2C1 PB8/PB9, address 0x11\r\n");
-
-  HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
-  HAL_Delay(2U);
-  if ((HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_8) != GPIO_PIN_SET) ||
-      (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9) != GPIO_PIN_SET))
-  {
-    printf("[radio] FAIL: I2C1 is not idle-high while reset is asserted\r\n");
-    goto done;
-  }
-  printf("[radio] reset low; bus idle-high; GPIO1=%u INT=%u\r\n",
-         (unsigned int)HAL_GPIO_ReadPin(RADIO_GPIO_1_GPIO_Port,
-                                        RADIO_GPIO_1_Pin),
-         (unsigned int)HAL_GPIO_ReadPin(RADIO_INT_GPIO_Port,
-                                        RADIO_INT_Pin));
-
-  HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_SET);
-  HAL_Delay(15U);
-  if ((HAL_I2C_IsDeviceReady(&hi2c1, SI4735_I2C_ADDRESS_HAL, 3U,
-                             BRINGUP_I2C_TIMEOUT_MS) != HAL_OK) ||
-      (Bringup_RadioWaitCts(NULL) != HAL_OK))
-  {
-    printf("[radio] FAIL: no ready device at 0x11; I2C error=0x%08lX\r\n",
-           (unsigned long)HAL_I2C_GetError(&hi2c1));
-    goto done;
-  }
-  printf("[radio] I2C probe and CTS passed\r\n");
-
-  if (Bringup_RadioCommand(power_up, sizeof(power_up), &status,
-                           sizeof(status)) != HAL_OK)
-  {
-    printf("[radio] FAIL: FM analog POWER_UP\r\n");
-    goto done;
-  }
-  if (Bringup_RadioCommand(&get_rev, sizeof(get_rev), response,
-                           sizeof(response)) != HAL_OK)
-  {
-    printf("[radio] FAIL: GET_REV\r\n");
-    goto done;
-  }
-
-  printf("[radio] PASS: part=0x%02X fw=%c.%c patch=0x%04X "
-         "comp=%c.%c chip=%c\r\n",
-         response[1], response[2], response[3],
-         ((uint16_t)response[4] << 8) | response[5],
-         response[6], response[7], response[8]);
-  passed = true;
-
-  if (Bringup_RadioCommand(&power_down, sizeof(power_down), &status,
-                           sizeof(status)) != HAL_OK)
-  {
-    printf("[radio] WARN: POWER_DOWN did not complete; asserting reset\r\n");
-  }
-
-done:
-  HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
-  printf("[radio] reset asserted after smoke test\r\n");
-  return passed;
-}
-
-static bool RadioSetProperty(uint16_t property, uint16_t value)
-{
-  const uint8_t command[] = {
-    SI4735_CMD_SET_PROPERTY, 0U,
-    (uint8_t)(property >> 8), (uint8_t)property,
-    (uint8_t)(value >> 8), (uint8_t)value
-  };
-  uint8_t status;
-
-  if (Bringup_RadioCommand(command, sizeof(command), &status,
-                           sizeof(status)) != HAL_OK)
-  {
-    printf("[radio] FAIL: SET_PROPERTY 0x%04X=0x%04X\r\n",
-           property, value);
-    return false;
-  }
-  HAL_Delay(10U);
-  return true;
-}
 
 static uint32_t __attribute__((optimize("O3")))
 RadioAudioMeasureFs(GPIO_TypeDef *port, uint32_t pin)
@@ -586,196 +320,21 @@ static bool RadioSai2Start(void)
   return true;
 }
 
-static bool RadioTuneFrequency(RadioBand band, uint32_t frequency_khz,
-                               RadioTuneStatus *tune_status)
+/* Sequences the monitored output around a receiver function change. The radio
+ * service only changes the Si4735; this caller owns muting and the DMA copy. */
+static bool RadioAudioSwitchBand(RadioBand band, RadioTuneStatus *tune_status)
 {
-  const RadioBandConfig *config;
-  uint8_t tune[6] = {0U};
-  const uint8_t get_interrupt = SI4735_CMD_GET_INT_STATUS;
-  uint8_t get_tune_status[2];
-  uint8_t response[8] = {0U};
-  uint8_t status = 0U;
-  uint16_t device_frequency;
-  uint16_t tune_length;
-  uint32_t start_tick;
-
-  if ((tune_status == NULL) || (band >= RADIO_BAND_COUNT))
-  {
-    return false;
-  }
-  config = &radio_band_configs[band];
-  if ((frequency_khz < config->minimum_khz) ||
-      (frequency_khz > config->maximum_khz))
-  {
-    return false;
-  }
-
-  /* FM command frequencies are in 10 kHz units; AM/SW/LW use 1 kHz. */
-  device_frequency = (band == RADIO_BAND_FM)
-    ? (uint16_t)((frequency_khz + 5U) / 10U)
-    : (uint16_t)frequency_khz;
-  tune[0] = config->tune_command;
-  tune[1] = 0U;
-  tune[2] = (uint8_t)(device_frequency >> 8);
-  tune[3] = (uint8_t)device_frequency;
-  tune[4] = (uint8_t)(config->antenna_capacitance >> 8);
-  tune[5] = (uint8_t)config->antenna_capacitance;
-  tune_length = (band == RADIO_BAND_FM) ? 5U : 6U;
-  get_tune_status[0] = config->tune_status_command;
-  get_tune_status[1] = 0x01U;
-
-  if (Bringup_RadioCommand(tune, tune_length, &status,
-                           sizeof(status)) != HAL_OK)
-  {
-    return false;
-  }
-
-  start_tick = HAL_GetTick();
-  do
-  {
-    if (Bringup_RadioCommand(&get_interrupt, sizeof(get_interrupt), &status,
-                             sizeof(status)) != HAL_OK)
-    {
-      return false;
-    }
-    if ((status & SI4735_STATUS_STCINT) != 0U)
-    {
-      break;
-    }
-    HAL_Delay(2U);
-  } while ((HAL_GetTick() - start_tick) < BRINGUP_DEVICE_TIMEOUT_MS);
-
-  if ((status & SI4735_STATUS_STCINT) == 0U ||
-      Bringup_RadioCommand(get_tune_status, sizeof(get_tune_status), response,
-                           sizeof(response)) != HAL_OK)
-  {
-    return false;
-  }
-
-  device_frequency = ((uint16_t)response[2] << 8) | response[3];
-  tune_status->band = band;
-  tune_status->frequency_khz = (band == RADIO_BAND_FM)
-    ? (uint32_t)device_frequency * 10U
-    : (uint32_t)device_frequency;
-  tune_status->rssi_dbuv = response[4];
-  tune_status->snr_db = response[5];
-  tune_status->valid = (response[1] & 1U) != 0U;
-  radio_band = band;
-  radio_tune_status = *tune_status;
-  radio_last_frequency_khz[band] = tune_status->frequency_khz;
-  return true;
-}
-
-static bool RadioPowerUpBand(RadioBand band, uint32_t frequency_khz,
-                             RadioTuneStatus *tune_status)
-{
-  const RadioBandConfig *config;
-  uint8_t power_up[3];
-  uint8_t status = 0U;
-
   if ((band >= RADIO_BAND_COUNT) || (tune_status == NULL))
   {
     return false;
   }
-  config = &radio_band_configs[band];
-  HAL_GPIO_WritePin(RADIO_SW_SWITCH_GPIO_Port, RADIO_SW_SWITCH_Pin,
-                    config->select_whip ? GPIO_PIN_SET : GPIO_PIN_RESET);
-  power_up[0] = SI4735_CMD_POWER_UP;
-  power_up[1] = config->power_up_function;
-  power_up[2] = SI4735_POWER_UP_FM_DIGITAL;
-
-  if (Bringup_RadioCommand(power_up, sizeof(power_up), &status,
-                           sizeof(status)) != HAL_OK)
-  {
-    printf("[radio] FAIL: %s digital POWER_UP\r\n", config->name);
-    return false;
-  }
-  if (!RadioSetProperty(SI4735_PROP_REFCLK_FREQ, 32768U) ||
-      !RadioSetProperty(SI4735_PROP_REFCLK_PRESCALE, 1U) ||
-      !RadioSetProperty(SI4735_PROP_RX_VOLUME, 50U) ||
-      !RadioSetProperty(SI4735_PROP_RX_HARD_MUTE, 0U))
-  {
-    return false;
-  }
-
-  /* AM-family digital clocks do not start until the first tune completes. */
-  if (!RadioTuneFrequency(band, frequency_khz, tune_status))
-  {
-    printf("[radio] FAIL: %s tune timeout/status\r\n", config->name);
-    return false;
-  }
-
-  if (!RadioSetProperty(SI4735_PROP_DIGITAL_RATE,
-                        RADIO_AUDIO_SAMPLE_RATE_HZ) ||
-      !RadioSetProperty(SI4735_PROP_DIGITAL_FORMAT, 0x0000U))
-  {
-    return false;
-  }
-  return true;
-}
-
-static void RadioLogTune(const char *prefix,
-                         const RadioTuneStatus *tune_status)
-{
-  const RadioBandConfig *config = &radio_band_configs[tune_status->band];
-
-  printf("[radio] %s %s %lu kHz (%lu.%03lu MHz): "
-         "RSSI=%u dBuV SNR=%u dB valid=%u\r\n",
-         prefix, config->name,
-         (unsigned long)tune_status->frequency_khz,
-         (unsigned long)(tune_status->frequency_khz / 1000U),
-         (unsigned long)(tune_status->frequency_khz % 1000U),
-         tune_status->rssi_dbuv, tune_status->snr_db, tune_status->valid);
-}
-
-static bool RadioTuneAndEnableDigital(void)
-{
-  RadioTuneStatus tune_status;
-
-  printf("\r\n[radio] Si4735 digital multi-band setup\r\n");
-  HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
-  HAL_Delay(2U);
-  HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_SET);
-  HAL_Delay(15U);
-  if ((Bringup_RadioWaitCts(NULL) != HAL_OK) ||
-      !RadioPowerUpBand(RADIO_BAND_FM, RADIO_AUDIO_FREQUENCY_KHZ,
-                        &tune_status))
-  {
-    return false;
-  }
-  RadioLogTune("tuned", &tune_status);
-  radio_audio_rx_half_count = 0U;
-  radio_audio_rx_full_count = 0U;
-  printf("[radio] digital output enabled: 48 kHz, 16-bit stereo I2S\r\n");
-  return true;
-}
-
-static bool RadioSwitchBand(RadioBand band, RadioTuneStatus *tune_status)
-{
-  const uint8_t power_down = SI4735_CMD_POWER_DOWN;
-  const RadioBandConfig *config;
-  uint8_t status;
-
-  if ((band >= RADIO_BAND_COUNT) || (tune_status == NULL))
-  {
-    return false;
-  }
-  config = &radio_band_configs[band];
   if (!CodecVolume_SetTransitionMuted(true))
   {
     goto failed;
   }
   radio_audio_copy_enabled = false;
 
-  /* Remove digital output cleanly before changing receiver function. */
-  if (!RadioSetProperty(SI4735_PROP_DIGITAL_RATE, 0U) ||
-      (Bringup_RadioCommand(&power_down, sizeof(power_down), &status,
-                            sizeof(status)) != HAL_OK))
-  {
-    goto failed;
-  }
-  HAL_Delay(1U);
-  if (!RadioPowerUpBand(band, radio_last_frequency_khz[band], tune_status))
+  if (!RadioControl_SwitchBand(band, tune_status))
   {
     goto failed;
   }
@@ -785,17 +344,13 @@ static bool RadioSwitchBand(RadioBand band, RadioTuneStatus *tune_status)
   {
     goto failed;
   }
-  RadioLogTune("switched to", tune_status);
-  printf("[radio] antenna path=%s\r\n",
-         config->select_whip ? "SW whip" :
-         (band == RADIO_BAND_FM ? "FM input" : "AM/LW loop"));
   return true;
 
 failed:
   radio_audio_copy_enabled = false;
   radio_audio_running = false;
   (void)CodecVolume_SetTransitionMuted(true);
-  HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
+  RadioControl_HoldReset();
   BSP_LED_Off(LED_GREEN);
   BSP_LED_On(LED_RED);
   printf("[radio] FAIL: band switch; receiver reset and output muted\r\n");
@@ -894,13 +449,22 @@ static bool RadioAudioStart(void)
   radio_audio_running = false;
   if (!CodecVolume_Init(&hi2c4, &hadc3, &hsai_BlockA1) ||
       !RadioSai2Start() ||
-      !RadioTuneAndEnableDigital() || !RadioAudioBridgeStart())
+      !RadioControl_Start(&hi2c1))
   {
-    (void)CodecVolume_SetTransitionMuted(true);
-    HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
-    return false;
+    goto failed;
+  }
+  radio_audio_rx_half_count = 0U;
+  radio_audio_rx_full_count = 0U;
+  if (!RadioAudioBridgeStart())
+  {
+    goto failed;
   }
   return true;
+
+failed:
+  (void)CodecVolume_SetTransitionMuted(true);
+  RadioControl_HoldReset();
+  return false;
 }
 
 static bool RadioParseFrequencyKHz(const char *text, uint32_t *frequency_khz)
@@ -950,7 +514,7 @@ static bool RadioParseBand(const char *text, RadioBand *band)
   }
   for (uint32_t index = 0U; index < RADIO_BAND_COUNT; ++index)
   {
-    if (strcmp(text, radio_band_configs[index].name) == 0)
+    if (strcmp(text, RadioControl_GetBandInfo((RadioBand)index)->name) == 0)
     {
       *band = (RadioBand)index;
       return true;
@@ -961,7 +525,7 @@ static bool RadioParseBand(const char *text, RadioBand *band)
 
 static void RadioUsbSendStatus(const RadioTuneStatus *tune_status)
 {
-  const RadioBandConfig *config;
+  const RadioBandInfo *config;
   char response[160];
 
   if ((tune_status == NULL) || (tune_status->band >= RADIO_BAND_COUNT))
@@ -969,7 +533,7 @@ static void RadioUsbSendStatus(const RadioTuneStatus *tune_status)
     (void)UsbTest_SendText("ERR RADIO status unavailable\r\n");
     return;
   }
-  config = &radio_band_configs[tune_status->band];
+  config = RadioControl_GetBandInfo(tune_status->band);
   (void)snprintf(response, sizeof(response),
                  "OK RADIO BAND=%s FREQ=%lu kHz (%lu.%03lu MHz) "
                  "RSSI=%u SNR=%u VALID=%u\r\n",
@@ -985,9 +549,12 @@ static void RadioUsbSendStatus(const RadioTuneStatus *tune_status)
 
 static void RadioUsbSendBand(void)
 {
-  const RadioBandConfig *config = &radio_band_configs[radio_band];
+  RadioControlStatus status;
+  const RadioBandInfo *config;
   char response[128];
 
+  (void)RadioControl_GetStatus(&status);
+  config = RadioControl_GetBandInfo(status.band);
   (void)snprintf(response, sizeof(response),
                  "OK RADIO BAND=%s RANGE=%lu..%lu kHz STEP=%lu kHz\r\n",
                  config->name, (unsigned long)config->minimum_khz,
@@ -1031,11 +598,12 @@ static void VolumeUsbSendStatus(void)
 static void UsbCliCommand(const char *line)
 {
   char command[64];
-  const RadioBandConfig *config;
+  const RadioBandInfo *config;
+  RadioControlStatus radio_status;
   RadioBand target_band;
   RadioTuneStatus tune_status;
   uint32_t frequency_khz;
-  uint32_t target_frequency_khz;
+  bool tuned;
   size_t length;
 
   if (line == NULL)
@@ -1162,7 +730,8 @@ static void UsbCliCommand(const char *line)
   }
   if (strcmp(command, "STATUS") == 0)
   {
-    RadioUsbSendStatus(&radio_tune_status);
+    (void)RadioControl_GetStatus(&radio_status);
+    RadioUsbSendStatus(&radio_status.tune);
     return;
   }
   if ((strcmp(command, "VOLUME") == 0) ||
@@ -1199,7 +768,7 @@ static void UsbCliCommand(const char *line)
       (void)UsbTest_SendText("ERR usage: BAND FM|AM|SW|LW\r\n");
       return;
     }
-    if (!RadioSwitchBand(target_band, &tune_status))
+    if (!RadioAudioSwitchBand(target_band, &tune_status))
     {
       (void)UsbTest_SendText(
         "ERR RADIO band switch failed; reset required\r\n");
@@ -1209,23 +778,16 @@ static void UsbCliCommand(const char *line)
     return;
   }
 
-  config = &radio_band_configs[radio_band];
+  (void)RadioControl_GetStatus(&radio_status);
+  config = RadioControl_GetBandInfo(radio_status.band);
 
   if (strcmp(command, "UP") == 0)
   {
-    target_frequency_khz =
-      (radio_tune_status.frequency_khz <=
-       (config->maximum_khz - config->step_khz))
-        ? radio_tune_status.frequency_khz + config->step_khz
-        : config->maximum_khz;
+    tuned = RadioControl_TuneStep(true, &tune_status);
   }
   else if (strcmp(command, "DOWN") == 0)
   {
-    target_frequency_khz =
-      (radio_tune_status.frequency_khz >=
-       (config->minimum_khz + config->step_khz))
-        ? radio_tune_status.frequency_khz - config->step_khz
-        : config->minimum_khz;
+    tuned = RadioControl_TuneStep(false, &tune_status);
   }
   else if ((strncmp(command, "TUNE", 4U) == 0) &&
            ((command[4] == ' ') || (command[4] == '\t')))
@@ -1246,9 +808,7 @@ static void UsbCliCommand(const char *line)
       (void)UsbTest_SendText(response);
       return;
     }
-    target_frequency_khz = (radio_band == RADIO_BAND_FM)
-      ? ((frequency_khz + 5U) / 10U) * 10U
-      : frequency_khz;
+    tuned = RadioControl_Tune(frequency_khz, &tune_status);
   }
   else
   {
@@ -1256,15 +816,16 @@ static void UsbCliCommand(const char *line)
     return;
   }
 
-  if (!RadioTuneFrequency(radio_band, target_frequency_khz, &tune_status))
+  if (!tuned)
   {
+    (void)RadioControl_GetStatus(&radio_status);
     (void)UsbTest_SendText("ERR RADIO tune failed\r\n");
     printf("[radio] USB %s tune failed at %lu kHz\r\n",
-           config->name, (unsigned long)target_frequency_khz);
+           config->name, (unsigned long)radio_status.target_khz);
     return;
   }
 
-  RadioLogTune("USB tuned", &tune_status);
+  RadioControl_LogTune("USB tuned", &tune_status);
   RadioUsbSendStatus(&tune_status);
 }
 
@@ -1347,14 +908,10 @@ static void SleepMakePeripheralPinsHighImpedance(void)
 
 static void SleepStopRadioAudio(void)
 {
-  const uint8_t power_down = SI4735_CMD_POWER_DOWN;
-  uint8_t status;
-
   if (radio_audio_running)
   {
     (void)CodecVolume_SetTransitionMuted(true);
-    (void)Bringup_RadioCommand(&power_down, sizeof(power_down), &status,
-                               sizeof(status));
+    RadioControl_PowerDown();
   }
   radio_audio_copy_enabled = false;
   radio_audio_running = false;
@@ -1364,7 +921,7 @@ static void SleepStopRadioAudio(void)
   HAL_NVIC_DisableIRQ(DMA1_Stream4_IRQn);
   HAL_NVIC_DisableIRQ(DMA2_Stream0_IRQn);
   HAL_NVIC_DisableIRQ(SAI2_IRQn);
-  HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
+  RadioControl_HoldReset();
   HAL_GPIO_WritePin(AMP_SD_GPIO_Port, AMP_SD_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(LED_MATRIX_EN_GPIO_Port, LED_MATRIX_EN_Pin,
                     GPIO_PIN_RESET);

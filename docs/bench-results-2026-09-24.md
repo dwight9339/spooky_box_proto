@@ -525,3 +525,36 @@ The operator-run check was manual, not a Spooky Bench run; the
 No `[audio] FAIL` line appeared. The `VOLUME` CLI status reply, whose formatting
 now reads the service status, was not exercised. Headphone audibility was
 confirmed by ear only.
+
+## Radio control service extraction regression
+
+Beads task `full_spooky_proto-8lw.2` moved Si4735 control (reset, SW antenna
+switch, band table, per-band frequency memory, tune target/result and fault
+state) into `CM7/App/radio_control_service.*`. Audio DMA and USB formatting stay
+in `main.c`, which sequences muting and the DMA copy around band changes. A
+normalized comparison against `9254e64` shows the command, property, delay and
+timeout code unchanged apart from a NULL handle check and target recording.
+The Debug pair was built from a dirty tree on `9254e64` and flashed with the
+PlatformIO Deploy task: CM7 SHA-256
+`42c7e9b226a7ea8129e27b506e0caa5a2b2eea604ae2cd1b2beb27968eae829e`, CM4 SHA-256
+`d5ab1687e85e3d5a975b5e5c98bdfa8ca445b7aa8bbabc11c6dd008f94a91809`. This was a
+manual operator check; the [raw transcript](evidence/2026-09-24-radio-regression.md)
+is preserved.
+
+| Check | Result |
+| --- | --- |
+| Boot | FM 99100 tuned, digital output enabled, SAI2/bridge FS 47,990-47,995 Hz, bridge PASS |
+| Status and band query | `STATUS` FM 99100; `BAND` reports 87500..108000 kHz, 100 kHz step |
+| Tune | `TUNE 101504` rounded to 101500; out-of-range and non-numeric input rejected with the prior messages |
+| Step | `UP` clamps at 108000; `DOWN` gives 107900 |
+| Band switch | SW 6000 (whip), LW 198 and AM 1000 (loop); `TUNE 1500`; return to FM restored 107900 and AM restored 1500; invalid band rejected |
+| Recording guard | `UP`, `TUNE` and `BAND` rejected during `REC006.WAV`; recording PASS 20.053 s, queues at most 1/8, max SD write 26 ms |
+| Volume CLI | `OK VOLUME ADC=36315 LEVEL=55% ATTEN=-23.5 dB MUTED=0` (closes the gap from the codec check) |
+| Sleep and wake | Sleep entered with radio stopped, RTC self-test wake passed, USER button rebooted into a normal radio start |
+
+The operator reported weak FM 99.1 reception. The receiver's own measurement was
+RSSI 15-16 dBuV, SNR 0, valid=0, against 17 dBuV, SNR 0-1, valid=0 in the earlier
+codec run; 101.5 MHz measured 19 dBuV, SNR 3. The receiver configuration is
+unchanged, so this is recorded as marginal, variable antenna reception rather
+than an extraction regression. A same-position A/B against the previous image
+would confirm it.
