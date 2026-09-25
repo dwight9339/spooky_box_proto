@@ -442,9 +442,9 @@ Which core owns each responsibility and peripheral is an engineering decision. T
 
 ## Initial Implementation Scope
 
-The first coherent interaction milestone should be intentionally narrower than the full vision.
+The first implementation should be intentionally narrower than the full vision. The lists below describe what each area must include before it is coherent from the user's point of view. They do not set the build order: the [development roadmap](roadmap.md) decides which milestone delivers each item and in what sequence. For example, the first Field slice ships without rolling capture, which arrives with recoverable sessions, so the Field scope below is complete only after both milestones.
 
-### Field Mode Milestone
+### First Field Scope
 
 - boot directly into Field and Classic
 - implement parameter pages, page colors, and the encoder 3 Shift layer
@@ -457,7 +457,7 @@ The first coherent interaction milestone should be intentionally narrower than t
 - present recording, band, frequency, EMF, and radio activity consistently
 - leave Seek and Orbit selectable only when their minimum behavior and visuals are coherent
 
-### Instrument Mode Milestone
+### First Instrument Scope
 
 - establish the top-level Field and Instrument transition
 - implement one Granular engine with a limited source and parameter set
@@ -466,7 +466,7 @@ The first coherent interaction milestone should be intentionally narrower than t
 - define the data model for Modulation, Macros, and Sequencer before building their full editors
 - preserve the active engine while moving among performance views
 
-### Recording And Playback Milestone
+### First Recording And Playback Scope
 
 - use separate Field and Instrument session folders and manifests
 - record Field radio and microphone tracks separately and in sync

@@ -194,17 +194,34 @@ while they are still cheap to answer.
 ## Development Workflow & Quality Gates
 
 - **Task tracking:** Beads (`bd`) is the only source of truth for executable tasks, status
-  and dependencies. Markdown TODO lists and parallel trackers MUST NOT be created. Spec Kit
-  task lists that produce work MUST be reflected in Beads.
+  and dependencies. Markdown TODO lists and parallel trackers MUST NOT be created.
+- **Spec Kit scope:** Spec Kit is used only for this constitution (`/speckit-constitution`)
+  and for feature specifications (`/speckit-specify`, `/speckit-clarify`). Planning, task
+  breakdown, implementation tracking and issue export belong to Beads and the documentation
+  classes:
+  - design goes into `docs/design/` and decision records;
+  - work items go into Beads tasks under the relevant milestone epic;
+  - status is recorded only in Beads.
+
+  Agents MUST NOT create `plan.md` or `tasks.md` files or export tasks to another tracker.
+  The other Spec Kit commands are removed from the project, and reinstating one requires an
+  approved amendment. Where a kept command suggests `/speckit-plan` as its next step, the
+  next step is instead the spec-to-work handoff below.
+- **From spec to work:** once a spec is ratified, an agent proposes the Beads tasks that
+  implement it. Each task cites the spec path and the requirement IDs it satisfies, carries
+  a milestone label, and has acceptance criteria traceable to the spec's success criteria.
+  Design questions the spec leaves open become decision records or design-document updates,
+  not a plan file. The user approves the task set before work starts.
 - **Handoff:** agents MUST keep claimed-issue notes current with `bd update <id>
   --append-notes`. The notes cover what is done, what was validated, what remains, which
   files belong to the task, and which unrelated uncommitted changes exist.
 - **Quality gates for code changes:** the affected dual-core presets build; host tests
   pass; bench regression runs when timing-, ownership- or hardware-sensitive behavior
   changes; and results, including failures, are reported.
-- **Plan gate:** every Spec Kit plan MUST include a Constitution Check against Principles
-  I–VII. A plan that violates a principle MUST name the principle, justify the exception
-  and record the simpler alternative that was rejected.
+- **Constitution check:** every Beads task is checked against Principles I–VII when work
+  starts and again at handoff. A task that departs from a principle MUST name the
+  principle, justify the exception and record the simpler alternative that was rejected,
+  in the task notes or its decision record.
 - **Decisions:** open design decisions (IPC queues and restart, session format, recovery,
   scan algorithms, timing budgets, gestures, ownership transfers) are settled through a
   decision record in `docs/decisions/` and a test. They MUST NOT be embedded silently in
@@ -221,7 +238,7 @@ document lives and when it may change. A document that mixes classes MUST be spl
 |---|---|---|---|
 | Governance | `spec/.specify/memory/` | This constitution | Protected; approved proposal only |
 | Product intent | `spec/product/` | Product philosophy, modes and interaction, control map, development roadmap | Protected. Resolving an open decision requires an approved proposal backed by a decision record. |
-| Feature specs | `spec/specs/NNN-*/` | Spec Kit `spec.md`, `plan.md`, `tasks.md` and supporting files | `spec.md` is protected once ratified. Plans and tasks are working files for Spec Kit commands. |
+| Feature specs | `spec/specs/NNN-*/` | Spec Kit `spec.md` and its `checklists/` | `spec.md` is protected once ratified. Checklists are working files maintained by `/speckit-specify` and `/speckit-clarify`. No `plan.md` or `tasks.md` (see Spec Kit scope). |
 | Decision records | `docs/decisions/NNNN-*.md` | One decision each: context, options, decision, consequences, evidence | Agents MAY draft a record with status `Proposed`. Only the user accepts one. Accepted records are immutable apart from their status line; a new record supersedes an old one. |
 | Design & contracts | `docs/design/` | Architecture, interfaces, wire formats, file ownership | Living. MUST be updated in the same change as the code it describes and MUST separate proven, target and open. |
 | Procedures | `docs/procedures/` and `BRINGUP.md` | Setup, bench and acceptance procedures | Living. MUST match current tooling and state prerequisites and pass criteria. |
@@ -307,4 +324,4 @@ existing code or documents file a Beads issue instead of making an unapproved sw
 fix. Day-to-day agent workflow guidance lives in `AGENTS.md` and `CLAUDE.md`. Those files
 MUST NOT contradict this constitution.
 
-**Version**: 1.2.0 | **Ratified**: 2026-09-25 | **Last Amended**: 2026-09-25
+**Version**: 1.3.0 | **Ratified**: 2026-09-25 | **Last Amended**: 2026-09-25
