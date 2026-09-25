@@ -14,6 +14,8 @@ in these documents.
 - [Modes and interaction](../spec/product/modes-and-interaction.md) and the
   [control map](../spec/product/spooky_box_control_map.xlsx): mode hierarchy, controls
   and open product decisions.
+- [Development roadmap](../spec/product/roadmap.md): milestones, exit criteria,
+  tooling-track rules, and the decisions each milestone waits on.
 - Feature specs, once created, live in `spec/specs/`.
 
 ## Decisions — [`decisions/`](decisions/README.md)

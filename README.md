@@ -92,10 +92,11 @@ and the [architecture](docs/design/architecture.md) for what is proven today and
 what is still target. Normal Debug/Release builds keep the M4 asleep; the opt-in
 `IpcSmoke` build carries the diagnostic IPC experiment.
 
-Delivery order follows [Constitution Principle VII](spec/.specify/memory/constitution.md):
-qualify the baseline and finish service boundaries, deliver the Field
-Classic/Manual slice with reliable capture, then capture/session transactions,
-and only then Instrument features. Status is tracked in Beads, not in this README;
+Delivery order, milestone exit criteria, and the rules that keep Spooky Bench and
+other tooling in service of the product are in the
+[development roadmap](spec/product/roadmap.md): qualify the baseline and finish
+service boundaries, deliver the Field Classic/Manual slice, then sessions and rolling
+capture, and only then Instrument features. Status is tracked in Beads, not in this README;
 dated validation lives in [`docs/evidence`](docs/evidence/). Host tests are
 described in [tests/README.md](tests/README.md).
 
@@ -107,6 +108,8 @@ the docs explain design intent and preserve validation evidence. Start with
 `bd update <id> --claim`. Use `bd ready --type task --priority 1` to focus on
 near-term actionable tasks and `bd graph --all --open` for the current task graph.
 
+Product tasks carry a milestone label (`m1`-`m5`) from the
+[roadmap](spec/product/roadmap.md); supporting tooling carries `track-tooling`.
 The roadmap is grouped into baseline qualification (`full_spooky_proto-jjy`),
 service boundaries (`full_spooky_proto-8lw`), the first Field experience
 (`full_spooky_proto-54w`), capture/playback (`full_spooky_proto-hpq`), Instrument

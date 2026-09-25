@@ -151,9 +151,18 @@ narrow vertical slices that deepen the instrument.
   restore the previous context.
 - The application MUST publish semantic facts and events, not pixel instructions, so that
   product behavior survives changes to display, driver, board or core ownership.
-- Work MUST follow the roadmap order: baseline qualification and service boundaries, then
-  the Field Classic/Manual slice, then capture and session transactions, then Instrument
-  features. A feature MUST NOT be added unless it deepens the instrument.
+- Work MUST follow the milestone sequence in `spec/product/roadmap.md`. A feature MUST
+  NOT be added unless it deepens the instrument.
+- Supporting tooling (Spooky Bench, Spookyprobe integration, host utilities) exists to
+  shorten the product development cycle. That means producing trustworthy evidence and
+  reducing the time product work waits on repetitive manual hardware validation. A
+  tooling task MAY start only in three cases: a product task depends on it; it removes a
+  recurring manual validation step from a current or next milestone gate; or a tooling
+  defect blocks product evidence. Among admitted tooling, work that removes the most
+  human validation time comes first. At most one tooling task is in progress at a time,
+  and a tooling task's priority MUST NOT exceed that of the product work it serves. An
+  automated check replaces a manual one only when it is at least as trustworthy, and
+  judgment checks stay with a person.
 - A proposed or open product decision (for example from the control-map workbook) MUST
   NOT be silently promoted to a requirement. It is settled through a short decision record
   and a test.
@@ -211,7 +220,7 @@ document lives and when it may change. A document that mixes classes MUST be spl
 | Class | Location | Contents | Change rule |
 |---|---|---|---|
 | Governance | `spec/.specify/memory/` | This constitution | Protected; approved proposal only |
-| Product intent | `spec/product/` | Product philosophy, modes and interaction, control map | Protected. Resolving an open decision requires an approved proposal backed by a decision record. |
+| Product intent | `spec/product/` | Product philosophy, modes and interaction, control map, development roadmap | Protected. Resolving an open decision requires an approved proposal backed by a decision record. |
 | Feature specs | `spec/specs/NNN-*/` | Spec Kit `spec.md`, `plan.md`, `tasks.md` and supporting files | `spec.md` is protected once ratified. Plans and tasks are working files for Spec Kit commands. |
 | Decision records | `docs/decisions/NNNN-*.md` | One decision each: context, options, decision, consequences, evidence | Agents MAY draft a record with status `Proposed`. Only the user accepts one. Accepted records are immutable apart from their status line; a new record supersedes an old one. |
 | Design & contracts | `docs/design/` | Architecture, interfaces, wire formats, file ownership | Living. MUST be updated in the same change as the code it describes and MUST separate proven, target and open. |
@@ -298,4 +307,4 @@ existing code or documents file a Beads issue instead of making an unapproved sw
 fix. Day-to-day agent workflow guidance lives in `AGENTS.md` and `CLAUDE.md`. Those files
 MUST NOT contradict this constitution.
 
-**Version**: 1.1.0 | **Ratified**: 2026-09-25 | **Last Amended**: 2026-09-25
+**Version**: 1.2.0 | **Ratified**: 2026-09-25 | **Last Amended**: 2026-09-25

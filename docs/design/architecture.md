@@ -158,8 +158,9 @@ authoritative source. See the [CubeMX reconciliation register](cubemx-reconcilia
 
 ## Roadmap and open decisions
 
-Delivery order and status are tracked in Beads, not here (`bd graph --all --open`).
-The roadmap epics are baseline qualification (`full_spooky_proto-jjy`), service
+Delivery order and milestone exit criteria are in the
+[development roadmap](../../spec/product/roadmap.md); status is tracked in Beads
+(`bd graph --all --open`). The roadmap epics are baseline qualification (`full_spooky_proto-jjy`), service
 boundaries (`full_spooky_proto-8lw`), the first Field experience
 (`full_spooky_proto-54w`), capture/playback (`full_spooky_proto-hpq`), Instrument
 (`full_spooky_proto-v7l`), and bench extensions (`full_spooky_proto-5yv`). The
