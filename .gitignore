@@ -18,3 +18,10 @@ mx.scratch
 # Generated editor files contain local paths and are not the build source.
 /.vscode/c_cpp_properties.json
 /.vscode/launch.json
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*

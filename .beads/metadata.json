@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "full_spooky_proto",
+  "project_id": "10207aaa-306a-4b93-846a-ff6931f2181a"
+}
