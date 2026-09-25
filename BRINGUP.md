@@ -1,7 +1,7 @@
 # Spooky Box radio/audio and USB prototype bring-up
 
 For the opt-in dual-core communication experiment and its separate build,
-see [IPC smoke test](docs/ipc-smoke-test.md). Normal builds retain the existing
+see [IPC smoke test](docs/procedures/ipc-smoke-test.md). Normal builds retain the existing
 M4 sleep behavior; `IPC STATUS` reports whether the experiment is enabled.
 
 This checkout now extends the passed control-path smoke test into the first
@@ -53,8 +53,8 @@ The current bring-up firmware runs UART7 from CM7 and uses it for all `printf`
 logs. PE7 is configured as the receive side of the link, but the interactive
 CLI remains on the Spooky Box USB CDC port for now. The bounded, nonblocking
 M7 logger and numeric diagnostics are implemented; see
-[logger and diagnostics](docs/logger-diag.md). M4 UART ownership is still future
-work. The [Spooky Bench audit](docs/spooky-bench-plan.md) describes automation
+[logger and diagnostics](docs/design/logger-diag.md). M4 UART ownership is still future
+work. The [Spooky Bench audit](docs/history/2026-09-23-spooky-bench-plan.md) describes automation
 using these two separate serial paths. On reset, the Pico UART terminal should
 begin with:
 

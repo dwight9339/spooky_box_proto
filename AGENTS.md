@@ -23,6 +23,28 @@ bd close <id>         # Complete work
 bd dolt push          # Push beads data to remote
 ```
 
+## Constitution and Protected Documents
+
+The project constitution at `spec/.specify/memory/constitution.md` has the highest
+authority in this project, second only to explicit user instructions. Read it before
+planning or implementing a change.
+
+- **Constitution check:** before starting a task, and again at handoff, check the
+  change against Principles I–VII. In the handoff note, name every principle the
+  change touches. If the change departs from a principle, state which one, why, and
+  what simpler alternative was rejected. Do not proceed with an unjustified
+  violation; raise it with the user.
+- **Protected documents:** do not create, edit, reformat or delete the constitution
+  or any other document the constitution's Governance section lists as protected.
+  This includes fixing typos and updating status. To change one, present a
+  proposal: target section, exact text or diff, motivation and evidence, principles
+  affected, version bump and effect on other documents. Then wait for explicit
+  approval. A user-invoked Spec Kit command whose purpose is to amend that document
+  counts as authorization, within that command's scope.
+- **Conflicts:** if code, `docs/`, Beads text or a user request appears to conflict
+  with the constitution or a protected document, report the conflict instead of
+  resolving it silently. File a Beads issue for violations found in existing work.
+
 ## Progress Notes for Handoff
 
 Any agent may be interrupted (usage limits, crashes) and another may resume the

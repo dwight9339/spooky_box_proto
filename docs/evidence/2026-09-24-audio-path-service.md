@@ -1,7 +1,7 @@
 # Audio path service extraction: raw bench transcript
 
 Unedited operator capture for `full_spooky_proto-8lw.3`, summarized in
-[September 24 results](../bench-results-2026-09-24.md#audio-path-service-extraction-regression).
+[September 24 results](2026-09-24-bench-results.md#audio-path-service-extraction-regression).
 Timestamps in the Spooky Bench JSON are UTC (2026-09-25 04:12-04:21 UTC is the
 evening of 2026-09-24 local time).
 

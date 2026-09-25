@@ -7,35 +7,19 @@ not yet the complete product firmware.
 
 ## Start here
 
-- [Product philosophy](docs/product-philosophy.md) - what the instrument should
+- [Constitution](spec/.specify/memory/constitution.md) - the project's governing
+  principles, documentation classes, and how authoritative documents are changed.
+- [Product philosophy](spec/product/product-philosophy.md) - what the instrument should
   feel like and the meaning its controls and feedback should preserve.
-- [Modes and interaction](docs/modes-and-interaction.md) and
-  [control map](docs/spooky_box_control_map.xlsx) - intended experience,
+- [Modes and interaction](spec/product/modes-and-interaction.md) and
+  [control map](spec/product/spooky_box_control_map.xlsx) - intended experience,
   contextual controls, and open product decisions.
-- [Review and next steps](docs/next-steps.md) - prioritized implementation
-  sequence, ownership constraints, and off-bench versus bench work.
-- [Spooky Bench audit and plan](docs/spooky-bench-plan.md) - current diagnostics,
-  probe/tool reuse, and incremental unattended hardware testing on a Pi host.
-- [Architecture](docs/architecture.md) - current implementation, target M7/M4
+- [Architecture](docs/design/architecture.md) - current implementation, target M7/M4
   split, boundaries, and open decisions.
-- [Repository and generated files](docs/repository-layout.md) - canonical build
-  outputs and which files may safely be edited or regenerated.
 - [Hardware bring-up and USB CLI](BRINGUP.md) - wiring, known prototype bodges,
   power checks, commands, and recording test procedure.
-- [IPC smoke test](docs/ipc-smoke-test.md) - opt-in dual-core heartbeat,
-  deliberate version mismatch, and bench acceptance procedure.
-- [Logger and diagnostics](docs/logger-diag.md) - bounded UART logging,
-  diagnostic history, tests, and bench acceptance.
-- [Latest bench results](docs/bench-results-2026-09-24.md) - automated boot,
-  recording-load, WAV inspection, SD tests, and remaining validation.
-  [September 23 results](docs/bench-results-2026-09-23.md) retain the earlier
-  supplied transcripts, power observations, and IPC mismatch evidence.
-- [Spooky Bench setup](docs/spooky-bench-setup.md) - installed Windows Phase-1A CLI
-  for discovery, bounded UART capture, LOG/DIAG queries, and JSON run evidence.
-- [Spooky Bench controls](docs/spooky-bench-controls.md) - Phase-1B SWD probe,
-  reset with UART capture, and hash-checked paired-image flash manifests.
-- [Spookyprobe v1 contract](docs/spookyprobe-v1.md) - serial formats and the
-  independent probe capture/decoder work package.
+- [Documentation index](docs/README.md) - decision records, design contracts, bench
+  procedures, dated evidence, and frozen history.
 - [STM32 pivot reference](reference/legacy_docs/spooky_box_architecture_stm32h745_pivot.md)
   - detailed design history and proposed features. It predates some completed
   bring-up work, so use the maintained docs above for current status.
@@ -56,6 +40,8 @@ not yet the complete product firmware.
 | `Drivers/`, `Middlewares/` | STM32 HAL/BSP and USB middleware dependencies. |
 | `full_spooky_proto.ioc` | CubeMX project/pin map; not yet authoritative for all working runtime settings. |
 | `platformio/`, `platformio.ini` | VS Code task/deployment wrapper around the CMake firmware build and Picoprobe/OpenOCD flashing. |
+| `spec/` | Spec Kit root: constitution (`.specify/memory/`), protected product intent (`product/`), and feature specs (`specs/`). |
+| `docs/` | Decision records, design contracts, bench procedures, dated evidence, and frozen history; see the [index](docs/README.md). |
 | `reference/` | Schematics and historical design documents. |
 
 ## Build and flash
@@ -109,7 +95,7 @@ remain before broader ownership changes. Normal Debug/Release retain
 sleeping-M4 behavior. Continue service extraction alongside a host-tested
 interaction model, then deliver Classic/Manual and reliable Field capture
 before expanding Instrument features. See the
-[roadmap rationale](docs/next-steps.md) and [host-test commands](tests/README.md).
+[roadmap rationale](docs/history/2026-09-23-repository-review.md) and [host-test commands](tests/README.md).
 
 ## Development tracking
 

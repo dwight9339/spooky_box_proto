@@ -1,7 +1,7 @@
 # Radio control service extraction: raw bench transcript
 
 Unedited operator capture for `full_spooky_proto-8lw.2`, summarized in
-[September 24 results](../bench-results-2026-09-24.md#radio-control-service-extraction-regression).
+[September 24 results](2026-09-24-bench-results.md#radio-control-service-extraction-regression).
 
 ## UART7 (Pico bridge, 115200 8N1)
 

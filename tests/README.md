@@ -5,7 +5,7 @@ Windows use a Visual Studio Developer Command Prompt (VS 2019 16.11 or newer).
 These tests do not use the ARM toolchain or connect to the board.
 
 The separate Python Spooky Bench tests live in `host/tests`; see
-[bench setup](../docs/spooky-bench-setup.md#simulation-and-tests). They do not
+[bench setup](../docs/procedures/spooky-bench-setup.md#simulation-and-tests). They do not
 change or replace these native firmware tests.
 
 ```text
@@ -31,4 +31,4 @@ The HAL stub is not a UART timing or NVIC simulator.
 
 These tests do **not** establish SRAM visibility, MPU/cache behavior, HSEM
 operation, boot timing, or recording reliability. Those require the
-[IPC bench procedure](../docs/ipc-smoke-test.md).
+[IPC bench procedure](../docs/procedures/ipc-smoke-test.md).

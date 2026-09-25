@@ -11,7 +11,7 @@ def verify_probe():
     try:
         package = importlib.import_module("spookyprobe")
     except ImportError as exc:
-        raise BenchError("dependency_missing", "Install the pinned Spookyprobe snapshot; see spooky-bench-setup.md") from exc
+        raise BenchError("dependency_missing", "Install the pinned Spookyprobe snapshot; see docs/procedures/spooky-bench-setup.md") from exc
     root = Path(package.__file__).parent
     for name, expected in lock["modules"].items():
         try:

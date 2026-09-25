@@ -1,7 +1,7 @@
 # Codec/volume service extraction: raw bench transcript
 
 Unedited operator capture for `full_spooky_proto-8lw.1`, summarized in
-[September 24 results](../bench-results-2026-09-24.md#codec-and-volume-service-extraction-regression).
+[September 24 results](2026-09-24-bench-results.md#codec-and-volume-service-extraction-regression).
 The CDC section shows local echo interleaved with asynchronous progress lines.
 
 ## UART7 (Pico bridge, 115200 8N1)
