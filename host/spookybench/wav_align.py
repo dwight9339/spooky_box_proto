@@ -152,6 +152,16 @@ def analyze(path, window_seconds=2.0, hop_seconds=5.0, max_lag_ms=50.0,
     return {"alignment": summary, "windows": windows}
 
 
+def verdict(summary):
+    """Return (result, reason, detail): pass needs at least half the windows detected."""
+    needed = max(2, math.ceil(summary["windows"] / 2))
+    if summary["detected_windows"] < needed:
+        return ("fail", "alignment_not_detected",
+            f"{summary['detected_windows']} of {summary['windows']} windows correlated; "
+            "check the acoustic loopback stimulus")
+    return ("pass", None, None)
+
+
 def run_local(options):
     """Analyze one local WAV; raise BenchError("fail") when alignment is not measurable."""
     from pathlib import Path
@@ -160,10 +170,4 @@ def run_local(options):
         raise BenchError("invalid_invocation", f"WAV file not found: {path}")
     metrics = analyze(path, options["window_seconds"], options["hop_seconds"],
                       options["max_lag_ms"])
-    summary = metrics["alignment"]
-    needed = max(2, math.ceil(summary["windows"] / 2))
-    if summary["detected_windows"] < needed:
-        return metrics, ("fail", "alignment_not_detected",
-            f"{summary['detected_windows']} of {summary['windows']} windows correlated; "
-            "check the acoustic loopback stimulus")
-    return metrics, ("pass", None, None)
+    return metrics, verdict(metrics["alignment"])

@@ -175,7 +175,7 @@ def _analyze(path):
 
 def run(options, profile, run, metrics, artifacts):
     clock = fake.Clock() if options["simulate"] else serial_io.Clock()
-    shared = {}
+    shared = options.get("sim_state", {})
     serial = fake.Serial(clock, "device", options["scenario"], shared) if options["simulate"] \
         else serial_io.open_serial(metrics["selected"]["device"]["port"])
     records = JsonLines(run, "wav-transfer.jsonl", profile["limits"]["diag_bytes"])

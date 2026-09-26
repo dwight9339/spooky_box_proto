@@ -6,7 +6,7 @@ import platform
 import time
 from pathlib import Path
 from . import __version__
-from . import fake, serial_io, openocd, boot_smoke, ipc_load, sd_basic, wav_inspect
+from . import fake, serial_io, openocd, boot_smoke, ipc_load, regression, sd_basic, wav_inspect
 from .artifacts import JsonLines, Run
 from .config import load_profile
 from .dependency import verify_probe
@@ -67,9 +67,10 @@ def execute(options, run_notice=lambda path: None):
         profile, profile_raw = load_profile(options["profile"])
         metrics["capabilities"].update(probe="openocd" in profile,
             flash="openocd" in profile, reset="openocd" in profile,
-            ipc_test=True, sd_test=True, wav_inspect=True)
+            ipc_test=True, sd_test=True, wav_inspect=True,
+            recording_regression="openocd" in profile)
         # Controls require the named probe, not an already-booted target CDC.
-        required = ("probe", "device") if command == "status" else ("probe",) if command == "console" or command in openocd.CONTROL_COMMANDS or command == "test boot-smoke" else ("device",)
+        required = ("probe", "device") if command == "status" else ("probe",) if command == "console" or command in openocd.CONTROL_COMMANDS or command in ("test boot-smoke", "test recording-regression") else ("device",)
         # Both board and artifact-root locks live outside the run root. The root
         # lock serializes quota reservations across different boards/profiles.
         root_key = str(Path(profile["artifact_root"]).resolve()).casefold()
@@ -95,6 +96,9 @@ def execute(options, run_notice=lambda path: None):
                     return finish(reason="simulated" if options["simulate"] else None)
                 if command == "test ipc-load":
                     ipc_load.run(options, profile, run, metrics, artifacts)
+                    return finish(reason="simulated" if options["simulate"] else None)
+                if command == "test recording-regression":
+                    regression.run(options, profile, run, metrics, artifacts)
                     return finish(reason="simulated" if options["simulate"] else None)
                 if command == "test sd-basic":
                     sd_basic.run(options, profile, run, metrics, artifacts)

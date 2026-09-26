@@ -59,8 +59,9 @@ Kept in step with the current tooling. Hardware bring-up checks are in
 - [Boot smoke](procedures/spooky-bench-boot-smoke.md),
   [IPC recording load](procedures/spooky-bench-ipc-load.md),
   [SD basic](procedures/spooky-bench-sd-basic.md),
-  [WAV inspection](procedures/spooky-bench-wav-inspection.md), and
-  [WAV alignment](procedures/spooky-bench-wav-alignment.md)
+  [WAV inspection](procedures/spooky-bench-wav-inspection.md),
+  [WAV alignment](procedures/spooky-bench-wav-alignment.md), and the
+  [recording regression](procedures/spooky-bench-recording-regression.md)
 - [IPC smoke test](procedures/ipc-smoke-test.md)
 - [Logger and diagnostics bench](procedures/logger-diag-bench.md)
 

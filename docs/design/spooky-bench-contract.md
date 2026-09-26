@@ -55,8 +55,10 @@ reader for the full acknowledged binary transfer; it cannot run during recording
 another bench operation. SD basic refuses an active recording and a pre-existing
 `SDTEST.BIN`, verifies card identity before and after the test, and never issues
 `SD CLEAN` on unknown scratch data; its explicit stop path removes only the file
-created by that run. `wav align` is offline and does not acquire the board lock. A
-second board operation reports `bench_busy`.
+created by that run. The recording regression holds one lock across every stage it
+composes; it never deletes or rewrites a recording on the card. `wav align` is
+offline and does not acquire the board lock. A second board operation reports
+`bench_busy`.
 
 The per-user OS lock is released when its process exits. Its stale file is harmless.
 A second lock serializes quota accounting for a shared artifact root. External tools
@@ -88,6 +90,7 @@ automatic reset, or reconnect.
 | `wav inspect` | 600 s default; explicit `--timeout` up to 3600 s |
 | `wav align` | Synchronous offline computation; no supervisor deadline or hardware access |
 | `test sd-basic` | 30..1800 s deadline, 180 s default |
+| `test recording-regression` | 10..600 s duration; default deadline 450 s + 7 x duration (+60 s for `loopback`); explicit `--timeout` 300..7200 s |
 
 Serial reads have 100 ms and writes 1-second timeouts. Two seconds of each total are
 reserved for forced termination/reaping. Capture archival uses a bounded
@@ -113,6 +116,24 @@ monotonic or stable within one frame. Otherwise `drift_reliable=false`, the drif
 values are null, and `drift_reason` identifies `phase_ambiguous` or
 `lag_not_continuous`. Raw windows remain in the result for review.
 The bench procedure defines the controlled acoustic stimulus and evidence requirements.
+
+## Recording regression
+
+`test recording-regression` composes the existing runners in one run directory:
+boot smoke, a prerequisite session, IPC load, WAV inspection of the file the
+recorder reported, an accounting cross-check, optional loopback alignment, and a
+post-transfer health session. `metrics.stages` lists each stage with its result and
+reason; the first non-pass stage decides the verdict. Each stage's full metrics are
+archived as `stage-<name>.json`, and stage artifacts are prefixed with the stage
+name. The result keeps a bounded summary.
+
+The result separates three kinds of evidence. Gates decide the verdict (`checks`).
+Observations are reported without a verdict (`observations`: radio left/right
+correlation and a `mono_like`/`distinct` label, radio/microphone correlations,
+clipped samples; `prerequisites`: tuning and volume state). Human checks stay
+pending (`human_checks.listening`). The runner refuses before flashing when the
+profile `run_bytes` cannot hold the expected WAV plus 16 MiB. A failure after
+`RECORD START` reports the file left on the card in `retained_recording`.
 
 ## Process supervision
 

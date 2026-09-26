@@ -37,7 +37,7 @@ class BenchTests(unittest.TestCase):
                         "artifact_root": str(self.root / "runs"),
                         "probe": {"serial_number": "SIM-PROBE"},
                         "device": {"serial_number": "SIM-TARGET"},
-                        "limits": {"run_bytes": 262144, "total_bytes": 8 * 1024**2,
+                        "limits": {"run_bytes": 524288, "total_bytes": 8 * 1024**2,
                                    "min_free_bytes": 0, "uart_bytes": 65536, "diag_bytes": 65536}}
         self.path = self.root / "profile.json"
         self.save()

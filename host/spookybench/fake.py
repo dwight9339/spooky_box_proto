@@ -1,6 +1,20 @@
 """Deterministic simulated devices. No hardware calls or real-time sleeps."""
+from array import array
+import math
+import random
 import struct
+import sys
 import zlib
+
+MIB = 1024 * 1024
+LOOPBACK_LAG_FRAMES = 300
+
+
+def _container(payload, scenario):
+    riff = b"RIFF" + struct.pack("<I", 36 + len(payload)) + b"WAVE"
+    fmt = b"fmt " + struct.pack("<IHHIIHH", 16, 1, 3, 48000, 288000, 6, 16)
+    wav = riff + fmt + b"data" + struct.pack("<I", len(payload)) + payload
+    return (b"NOPE" + wav[4:]) if scenario == "wav-bad-header" else wav
 
 
 def _wav_bytes(scenario):
@@ -12,10 +26,28 @@ def _wav_bytes(scenario):
             ((index % 29) - 14) * 90,
             ((index % 13) - 6) * 50)
         payload.extend(struct.pack("<hhh", *values))
-    riff = b"RIFF" + struct.pack("<I", 36 + len(payload)) + b"WAVE"
-    fmt = b"fmt " + struct.pack("<IHHIIHH", 16, 1, 3, 48000, 288000, 6, 16)
-    wav = riff + fmt + b"data" + struct.pack("<I", len(payload)) + payload
-    return (b"NOPE" + wav[4:]) if scenario == "wav-bad-header" else wav
+    return _container(payload, scenario)
+
+
+def _recorded_wav(frames, scenario):
+    """A recording matching the recorder's frame count: broadband mono radio and a
+    microphone that hears it through an acoustic loopback, unless the scenario
+    removes the loopback."""
+    rng = random.Random(frames)
+    radio = array("h", (rng.randint(-8000, 8000) for _ in range(frames)))
+    if scenario == "loopback-missing":
+        mic = array("h", (rng.randint(-300, 300) for _ in range(frames)))
+    else:
+        mic = array("h", bytes(2 * LOOPBACK_LAG_FRAMES)) + \
+            array("h", (value // 2 for value in radio[:frames - LOOPBACK_LAG_FRAMES]))
+    samples = array("h", bytes(6 * frames))
+    if scenario != "wav-silent":
+        samples[0::3], samples[1::3], samples[2::3] = radio, radio, mic
+    if sys.byteorder != "little":
+        samples.byteswap()
+    return _container(samples.tobytes(), scenario)
+
+
 class Clock:
     def __init__(self):
         self.value = 0.0
@@ -53,7 +85,10 @@ class Serial:
         self.closed = False
 
     def read(self, size):
-        self.clock.sleep(0.1)
+        # Bulk WAV reads model a CDC link of a few MB/s rather than line polling.
+        if not self.pending and not self.state.get("wav_active"):
+            self.state["wav_bulk"] = False
+        self.clock.sleep(0.001 if self.state.get("wav_bulk") else 0.1)
         self.reads += 1
         if self.scenario == "disconnect" and (self.role == "probe" or self.writes):
             raise OSError("simulated cable disconnect")
@@ -126,7 +161,8 @@ class Serial:
                         "write-max=7ms read-max=3ms aggregate=380.9MiB/s "
                         "file-removed=1\r\n").encode()
                 self.state["sd_active"] = False
-        take = min(size, 17)
+        # Short reads exercise line reassembly; recorded WAVs are too large for that.
+        take = size if self.state.get("wav_bulk") else min(size, 17)
         out, self.pending = self.pending[:take], self.pending[take:]
         return out
 
@@ -140,8 +176,10 @@ class Serial:
                 count = self.state.get("sd_status_count", 0) + 1
                 self.state["sd_status_count"] = count
                 blocks = 61440001 if self.scenario == "sd-card-changed" and count > 1 else 61440000
+                free = 1 if self.scenario == "sd-full" else \
+                    4096 - math.ceil(self.state.get("sd_used_bytes", 0) / MIB)
                 self.pending = (f"OK SD PRESENT=1 MOUNTED=1 TYPE=SDHC/SDXC "
-                    f"CAPACITY=30000MiB FREE=4096MiB BLOCKS={blocks} "
+                    f"CAPACITY=30000MiB FREE={free}MiB BLOCKS={blocks} "
                     "BUS=4 CLOCKDIV=0\r\n").encode()
             return len(data)
         if command.startswith("SD STRESS ") and command != "SD STRESS STOP":
@@ -167,11 +205,15 @@ class Serial:
             if self.scenario == "wav-missing":
                 self.pending = b"ERR WAV open failed result=4\r\n"
             else:
-                wav = _wav_bytes(self.scenario)
+                recorded = self.state.get("recordings", {}).get(name)
+                wav = _wav_bytes(self.scenario) if recorded is None else \
+                    _recorded_wav(recorded, self.scenario)
+                chunk = 73 if recorded is None else 16384
                 self.state.update(wav_active=True, wav_data=wav, wav_offset=0,
-                                  wav_chunk=73, wav_waiting_ack=False)
+                                  wav_chunk=chunk, wav_waiting_ack=False,
+                                  wav_bulk=recorded is not None)
                 self.pending = (f"OK WAV START file={name} bytes={len(wav)} "
-                                "chunk=73 protocol=1\r\n").encode()
+                                f"chunk={chunk} protocol=1\r\n").encode()
             return len(data)
         if command.startswith("WAV ACK "):
             acknowledged = int(command[8:])
@@ -208,6 +250,14 @@ class Serial:
                 stop_requested=False, record_filename="REC900.WAV")
             answers[command] = (f"OK RECORD START file=REC900.WAV duration={seconds}s "
                 "format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]\r\n").encode()
+        elif command in ("STATUS", "VOLUME STATUS"):
+            if self.scenario == "audio-stopped":
+                answers[command] = b"ERR RADIO audio path is not running\r\n"
+            elif command == "STATUS":
+                answers[command] = (b"OK RADIO BAND=FM FREQ=98100 kHz (98.100 MHz) "
+                                    b"RSSI=38 SNR=21 VALID=1\r\n")
+            else:
+                answers[command] = b"OK VOLUME ADC=32768 LEVEL=50% ATTEN=-12.5 dB MUTED=0\r\n"
         elif command == "RECORD STOP":
             self.state["stop_requested"] = True
             answers[command] = b"OK RECORD STOP requested; finalizing next matched block\r\n"
@@ -236,6 +286,10 @@ class Serial:
         frames = ((seconds * 48000 + 4095) // 4096) * 4096
         audio_ms = frames * 1000 // 48000
         self.state["recording_active"] = False
+        # The recorder finalizes aborted files too; both stay on the card.
+        kept = frames // 2 if aborted else frames
+        self.state.setdefault("recordings", {})[self.state["record_filename"]] = kept
+        self.state["sd_used_bytes"] = self.state.get("sd_used_bytes", 0) + 44 + kept * 6
         if aborted:
             result = (f"ERR RECORD ABORT file={self.state['record_filename']} frames={frames // 2} "
                 f"bytes={frames * 3} reason=simulated failure finalized=1\r\n")

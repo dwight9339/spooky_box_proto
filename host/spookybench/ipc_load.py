@@ -284,15 +284,15 @@ def _recording_session(selected, options, clock, shared, emit, baseline_ipc, met
     return ipc_samples, last_ipc
 
 
-def run(options, profile, run, metrics, artifacts):
+def run(options, profile, run, metrics, artifacts, evidence="diagnostics.jsonl"):
     metrics["test"] = {"name": "ipc-load", "criterion": "IPC progress during recording"}
     metrics["checks"] = {}
     metrics["final_target_state"] = "running"
     clock = fake.Clock() if options["simulate"] else serial_io.Clock()
-    shared = {}
+    shared = options.get("sim_state", {})
     selected = metrics["selected"]
-    artifacts["diagnostics"] = str(run.path / "diagnostics.jsonl")
-    lines = JsonLines(run, "diagnostics.jsonl", profile["limits"]["diag_bytes"])
+    artifacts["diagnostics"] = str(run.path / evidence)
+    lines = JsonLines(run, evidence, profile["limits"]["diag_bytes"])
     failure = None
     try:
         baseline_diag = boot_smoke._query(profile, selected, options, clock, shared,

@@ -23,7 +23,8 @@ def supervise(options, seconds, target=worker):
     result_length = context.Value("I", 0, lock=False)
     notice_buffer = context.Array("B", 8192, lock=False)
     notice_length = context.Value("I", 0, lock=False)
-    control = options["command"] in ("probe", "reset", "flash", "test boot-smoke")
+    control = options["command"] in ("probe", "reset", "flash", "test boot-smoke",
+                                     "test recording-regression")
     job = WindowsJob() if control else None
     gate = context.Event()
     args = (options, result_buffer, result_length, notice_buffer, notice_length)
@@ -60,7 +61,7 @@ def supervise(options, seconds, target=worker):
         value = outcome(options["command"], "simulated" if options["simulate"] else "hardware",
             started_at, started, result="error", reason=reason or "worker_failed", artifacts=artifacts,
             metrics={"cleanup": cleanup, "evidence_complete": False,
-                     "final_target_state": "unknown", "human_required": cleanup == "failed" or options["command"] in ("flash", "reset", "test boot-smoke", "test ipc-load", "test sd-basic")},
+                     "final_target_state": "unknown", "human_required": cleanup == "failed" or options["command"] in ("flash", "reset", "test boot-smoke", "test ipc-load", "test sd-basic", "test recording-regression")},
             detail="Operation stopped; any run without a final result must be treated as incomplete")
     if not process.is_alive():
         process.close()

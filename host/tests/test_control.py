@@ -339,6 +339,148 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(result["result"], "pass", result)
         self.assertEqual(result["execution"], "simulated")
 
+    def regression(self, scenario="happy", stimulus="ambient"):
+        self.large_run_budget()
+        options = dict(self.options("test recording-regression", scenario), seconds=10,
+                       stimulus=stimulus, deadline=time.monotonic() + 90)
+        return execute(options)
+
+    def large_run_budget(self):
+        self.profile["limits"].update(run_bytes=24 * 1024**2, total_bytes=256 * 1024**2)
+        self.path.write_text(json.dumps(self.profile))
+
+    def test_recording_regression_rejects_small_run_budget_before_flash(self):
+        with patch("spookybench.openocd.control", side_effect=AssertionError("control started")):
+            result = execute(dict(self.options("test recording-regression"), seconds=10,
+                                  stimulus="ambient"))
+        self.assertEqual((result["result"], result["reason"]), ("error", "artifact_limit"))
+        self.assertEqual(result["metrics"]["stages"], [])
+
+    def test_recording_regression_happy_path(self):
+        from spookybench import fake
+        commands = []
+        write = fake.Serial.write
+        def spy(serial, data):
+            commands.append(data.decode().strip())
+            return write(serial, data)
+        with patch.object(fake.Serial, "write", spy):
+            result = self.regression()
+        self.assertEqual(result["result"], "pass", result)
+        metrics = result["metrics"]
+        self.assertEqual([stage["name"] for stage in metrics["stages"]],
+                         ["boot_smoke", "prerequisites", "recording", "wav_inspect",
+                          "accounting", "post_transfer_health"])
+        self.assertTrue(all(stage["result"] == "pass" for stage in metrics["stages"]))
+        self.assertEqual(metrics["transfer"]["file"], metrics["recording"]["result"]["file"])
+        self.assertEqual(metrics["wav"]["frames"], metrics["recording"]["result"]["frames"])
+        self.assertEqual(metrics["prerequisites"]["radio"]["band"], "FM")
+        self.assertFalse(metrics["prerequisites"]["volume"]["muted"])
+        self.assertEqual(metrics["observations"]["radio_channels"], "mono_like")
+        self.assertEqual(metrics["human_checks"]["listening"], "pending")
+        self.assertEqual(metrics["health"]["sd_consumed_mib"], 3)
+        self.assertEqual(metrics["ipc"]["after_transfer"],
+                         {"TX": 1, "RX": 1, "ACK": 1, "ROUNDTRIPS": 1})
+        self.assertNotIn("alignment", metrics)
+        self.assertEqual((metrics["target_health"], metrics["final_target_state"],
+                          metrics["human_required"]), ("healthy", "running", False))
+        run_dir = Path(result["artifacts"]["run_dir"])
+        for name in ("boot_smoke", "prerequisites", "recording", "wav_inspect",
+                     "accounting", "post_transfer_health"):
+            self.assertTrue((run_dir / f"stage-{name}.json").is_file(), name)
+        for name in ("boot-diagnostics.jsonl", "recording-diagnostics.jsonl",
+                     "regression-diagnostics.jsonl", "wav-transfer.jsonl"):
+            self.assertTrue((run_dir / name).is_file(), name)
+        self.assertTrue(Path(result["artifacts"]["wav_inspect_wav"]).is_file())
+        # Nothing on the card is removed or rewritten by the regression.
+        self.assertFalse([command for command in commands
+                          if command.startswith(("SD CLEAN", "SD STRESS", "SD REINIT"))])
+
+    def test_recording_regression_loopback_alignment(self):
+        result = self.regression(stimulus="loopback")
+        self.assertEqual(result["result"], "pass", result)
+        alignment = result["metrics"]["alignment"]
+        self.assertEqual(alignment["lag_median_frames"], 300)
+        self.assertTrue(alignment["drift_reliable"])
+        self.assertEqual(result["metrics"]["stages"][-2]["name"], "alignment")
+
+    def test_recording_regression_failure_verdicts(self):
+        cases = (("ipc-stale", "ambient", "ipc_no_progress", "boot_smoke", None),
+                 ("audio-stopped", "ambient", "audio_path_stopped", "prerequisites", None),
+                 ("sd-full", "ambient", "sd_capacity", "prerequisites", None),
+                 ("record-busy", "ambient", "recording_busy", "prerequisites", None),
+                 ("record-overrun", "ambient", "recorder_overrun", "recording", "REC900.WAV"),
+                 ("record-abort", "ambient", "recording_aborted", "recording", "REC900.WAV"),
+                 ("wav-corrupt-frame", "ambient", "transfer_crc", "wav_inspect", "REC900.WAV"),
+                 ("wav-silent", "ambient", "wav_silent_channel", "wav_inspect", "REC900.WAV"),
+                 ("loopback-missing", "loopback", "alignment_not_detected", "alignment",
+                  "REC900.WAV"))
+        for scenario, stimulus, reason, stage, retained in cases:
+            with self.subTest(scenario=scenario):
+                result = self.regression(scenario, stimulus)
+                self.assertNotEqual(result["result"], "pass")
+                self.assertEqual(result["reason"], reason, result)
+                self.assertFalse(result["metrics"]["evidence_complete"])
+                self.assertEqual(result["metrics"]["stages"][-1]["name"], stage)
+                self.assertEqual(result["metrics"].get("retained_recording"), retained)
+                self.assertEqual(result["metrics"]["target_health"], "failed")
+
+    def test_recording_regression_rejects_wav_that_differs_from_recorder(self):
+        from spookybench import fake
+        original = fake._recorded_wav
+        with patch("spookybench.fake._recorded_wav",
+                   side_effect=lambda frames, scenario: original(frames - 4096, scenario)):
+            result = self.regression()
+        self.assertEqual((result["result"], result["reason"]), ("fail", "wav_accounting"))
+        self.assertEqual(result["metrics"]["stages"][-1]["name"], "accounting")
+
+    def test_recording_regression_fault_after_transfer_fails(self):
+        from spookybench import boot_smoke
+        calls = []
+        original = boot_smoke._query
+        def faulting(profile, selected, options, clock, shared, emit, command):
+            answer = original(profile, selected, options, clock, shared, emit, command)
+            calls.append(command)
+            # Boot, recording baseline and recording final precede the post-transfer query.
+            if command == "DIAG STATUS" and calls.count(command) == 4:
+                answer["fields"]["HAS_FAULT"] = 1
+            return answer
+        with patch("spookybench.boot_smoke._query", side_effect=faulting):
+            result = self.regression()
+        self.assertEqual((result["result"], result["reason"]), ("fail", "diag_unhealthy"))
+        self.assertEqual(result["metrics"]["stages"][-1]["name"], "post_transfer_health")
+        self.assertEqual(result["metrics"]["retained_recording"], "REC900.WAV")
+
+    def test_recording_regression_cli_limits(self):
+        import contextlib
+        import io
+        from spookybench.cli import main
+        for argv in (["test", "recording-regression", "--manifest", "m.json", "--seconds", "121",
+                      "--stimulus", "loopback"],
+                     ["test", "recording-regression", "--manifest", "m.json", "--seconds", "60",
+                      "--timeout", "100"],
+                     ["test", "recording-regression", "--seconds", "60"]):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(main(["--json", "--simulate", "--profile", str(self.path),
+                                       *argv]), 2)
+            self.assertEqual(json.loads(output.getvalue())["reason"], "invalid_invocation")
+
+    def test_recording_regression_budget_covers_measured_transfer(self):
+        from spookybench import regression
+        # REC016/REC017/REC018 retrieval ran at about 65 KB/s; keep margin at 50 KB/s.
+        for seconds in (10, 60, 600):
+            transfer = seconds * regression.BYTES_PER_SECOND / 50000
+            self.assertGreater(regression.budget(seconds, "ambient"),
+                               240 + seconds + 60 + transfer + 60)
+
+    def test_spawned_simulated_recording_regression(self):
+        self.large_run_budget()
+        options = dict(self.options("test recording-regression"), seconds=10,
+                       stimulus="ambient")
+        result = supervise(options, 90)
+        self.assertEqual(result["result"], "pass", result)
+        self.assertEqual(result["execution"], "simulated")
+
     def test_manifest_generator_records_explicit_provenance(self):
         helper = Path(__file__).resolve().parents[1] / "tools/make_manifest.py"
         output = self.root / "generated manifest.json"

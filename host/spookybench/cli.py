@@ -6,7 +6,7 @@ import sys
 import time
 from .result import BenchError, exit_code, outcome, utc_now
 from .supervisor import supervise
-from . import wav_align
+from . import regression, wav_align
 from .wav_inspect import filename as wav_filename
 
 
@@ -55,7 +55,7 @@ def parser():
     p.add_argument("--json", action="store_true", help="emit one machine-readable result")
     p.add_argument("--profile", help="JSON bench profile; optional only for discovery status")
     p.add_argument("--simulate", action="store_true", help="use fake devices; never hardware acceptance")
-    p.add_argument("--scenario", choices=("happy", "missing", "ambiguous", "disconnect", "incomplete", "invalid-schema", "no-response", "m4-unavailable", "tool-timeout", "tool-failure", "partial-flash", "cdc-missing", "com-renumber", "uart-empty", "ipc-disabled", "ipc-stale", "ipc-error", "diag-fault", "record-abort", "record-overrun", "record-ipc-stale", "record-disconnect", "record-busy", "wav-missing", "wav-corrupt-frame", "wav-truncated", "wav-silent", "wav-bad-header", "sd-no-card", "sd-existing", "sd-corrupt", "sd-cleanup", "sd-timeout", "sd-disconnect", "sd-card-changed"), default="happy")
+    p.add_argument("--scenario", choices=("happy", "missing", "ambiguous", "disconnect", "incomplete", "invalid-schema", "no-response", "m4-unavailable", "tool-timeout", "tool-failure", "partial-flash", "cdc-missing", "com-renumber", "uart-empty", "ipc-disabled", "ipc-stale", "ipc-error", "diag-fault", "record-abort", "record-overrun", "record-ipc-stale", "record-disconnect", "record-busy", "wav-missing", "wav-corrupt-frame", "wav-truncated", "wav-silent", "wav-bad-header", "sd-no-card", "sd-existing", "sd-corrupt", "sd-cleanup", "sd-timeout", "sd-disconnect", "sd-card-changed", "sd-full", "audio-stopped", "loopback-missing"), default="happy")
     commands = p.add_subparsers(dest="action", required=True)
     commands.add_parser("status", help="list ports; with profile, validate both selections")
     capture = commands.add_parser("console", help="bounded receive-only Pico UART capture")
@@ -75,6 +75,15 @@ def parser():
     load = tests.add_parser("ipc-load", help="prove IPC progress during a bounded recording")
     load.add_argument("--seconds", type=load_duration, required=True,
                       help="recording duration, whole seconds in [10, 600]")
+    regress = tests.add_parser("recording-regression",
+        help="flash IpcSmoke, record under IPC load, retrieve and inspect the WAV")
+    regress.add_argument("--manifest", required=True, help="paired IpcSmoke build-info JSON")
+    regress.add_argument("--seconds", type=load_duration, required=True,
+                         help="recording duration, whole seconds in [10, 600]")
+    regress.add_argument("--stimulus", choices=regression.STIMULI, default="ambient",
+                         help="ambient (default) or loopback: earbud feeds radio to the mic")
+    regress.add_argument("--timeout", type=lambda text: bounded_integer(text, "timeout", 300, 7200),
+                         help="whole-operation deadline in seconds (default scales with --seconds)")
     sd = tests.add_parser("sd-basic", help="write, verify, and remove one SD scratch file")
     sd.add_argument("--size-mib", type=lambda text: bounded_integer(text, "size-mib", 1, 64),
                     default=8, help="scratch file size in MiB, 1..64 (default 8)")
@@ -111,6 +120,10 @@ def main(argv=None):
             raise BenchError("invalid_invocation", "--scenario requires --simulate")
         if command == "test sd-basic" and args.size_mib * args.passes > 128:
             raise BenchError("invalid_invocation", "SD size-mib times passes must not exceed 128")
+        if command == "test recording-regression" and args.stimulus == "loopback" and \
+           args.seconds > regression.LOOPBACK_MAX_SECONDS:
+            raise BenchError("invalid_invocation", "loopback alignment is limited to "
+                             f"{regression.LOOPBACK_MAX_SECONDS} seconds")
         if args.action in ("power", "trace", "crash"):
             raise BenchError("not_implemented", "This operation is not implemented", "unsupported")
         if command == "wav align":
@@ -130,8 +143,12 @@ def main(argv=None):
                    "manifest": getattr(args, "manifest", None),
                    "filename": getattr(args, "filename", None),
                    "size_mib": getattr(args, "size_mib", None),
-                   "passes": getattr(args, "passes", None)}
-        seconds = args.timeout if command in ("wav inspect", "test sd-basic") else args.seconds + 60.0 if command == "test ipc-load" else 240.0 if command == "test boot-smoke" else 120.0 if command == "flash" else 10.0 if command == "status" else args.seconds + 12.0 if command == "console" else 15.0
+                   "passes": getattr(args, "passes", None),
+                   "stimulus": getattr(args, "stimulus", None)}
+        if command == "test recording-regression":
+            seconds = args.timeout or regression.budget(args.seconds, args.stimulus)
+        else:
+            seconds = args.timeout if command in ("wav inspect", "test sd-basic") else args.seconds + 60.0 if command == "test ipc-load" else 240.0 if command == "test boot-smoke" else 120.0 if command == "flash" else 10.0 if command == "status" else args.seconds + 12.0 if command == "console" else 15.0
         value = supervise(options, seconds)
     except BenchError as exc:
         value = outcome(command, execution, started_at, started, result=exc.result, reason=exc.reason, detail=str(exc))

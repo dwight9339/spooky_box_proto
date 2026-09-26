@@ -186,7 +186,7 @@ def _progress(first, second):
     return deltas
 
 
-def run(options, profile, run, metrics, artifacts):
+def run(options, profile, run, metrics, artifacts, evidence="diagnostics.jsonl"):
     """Run the complete test while the caller owns board and artifact locks."""
     metrics["test"] = {"name": "boot-smoke", "criterion": "IpcSmoke paired boot"}
     metrics["checks"] = {}
@@ -197,7 +197,7 @@ def run(options, profile, run, metrics, artifacts):
     _stage(metrics, "manifest_preflight", preflight)
 
     capture = None
-    shared = {}
+    shared = options.get("sim_state", {})
     clock = fake.Clock() if options["simulate"] else serial_io.Clock()
     # Simulation still archives boot bytes, but never opens hardware or starts a tool.
     if options["simulate"]:
@@ -226,8 +226,8 @@ def run(options, profile, run, metrics, artifacts):
         metrics["checks"]["target_cdc"] = "pass"
         structured = time.monotonic()
 
-        artifacts["diagnostics"] = str(run.path / "diagnostics.jsonl")
-        lines = JsonLines(run, "diagnostics.jsonl", profile["limits"]["diag_bytes"])
+        artifacts["diagnostics"] = str(run.path / evidence)
+        lines = JsonLines(run, evidence, profile["limits"]["diag_bytes"])
 
         diag = _query(profile, selected, options, clock, shared, lines.emit, "DIAG STATUS")
         _check_diag(diag)
