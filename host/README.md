@@ -6,11 +6,13 @@ OpenOCD probe/reset and manifest-based paired flashing with integrated UART
 capture. Phase 2 adds a supervised `test boot-smoke` verdict for an IpcSmoke
 pair. Phase 3 adds a supervised `test ipc-load` recording workload,
 `wav inspect` for CRC-verified retrieval and local three-channel analysis, and
-`test sd-basic` for bounded scratch-file write/read verification with cleanup. See
+`wav align` for offline radio-to-microphone timing measurement, and `test sd-basic`
+for bounded scratch-file write/read verification with cleanup. See
 [controls](../docs/procedures/spooky-bench-controls.md),
 [boot smoke](../docs/procedures/spooky-bench-boot-smoke.md), and
 [IPC load](../docs/procedures/spooky-bench-ipc-load.md), and
-[WAV inspection](../docs/procedures/spooky-bench-wav-inspection.md), and
+[WAV inspection](../docs/procedures/spooky-bench-wav-inspection.md),
+[WAV alignment](../docs/procedures/spooky-bench-wav-alignment.md), and
 [SD basic](../docs/procedures/spooky-bench-sd-basic.md). Run
 `spookybench --json ...` for one machine-readable result.
 

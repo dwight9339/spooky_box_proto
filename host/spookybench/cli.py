@@ -6,6 +6,7 @@ import sys
 import time
 from .result import BenchError, exit_code, outcome, utc_now
 from .supervisor import supervise
+from . import wav_align
 from .wav_inspect import filename as wav_filename
 
 
@@ -87,6 +88,12 @@ def parser():
     inspect.add_argument("--file", type=wav_filename, required=True, dest="filename")
     inspect.add_argument("--timeout", type=duration, default=600.0,
                          help="whole-operation deadline in seconds (default 600)")
+    align = wav_commands.add_parser(
+        "align", help="offline: measure radio-to-mic lag in a local WAV (loopback stimulus)")
+    align.add_argument("--wav", required=True, help="local recorder WAV, e.g. a run's audio file")
+    align.add_argument("--window-seconds", type=duration, default=2.0)
+    align.add_argument("--hop-seconds", type=duration, default=5.0)
+    align.add_argument("--max-lag-ms", type=duration, default=50.0)
     for name in ("power", "trace", "crash"):
         commands.add_parser(name, help="not implemented")
     return p
@@ -106,6 +113,16 @@ def main(argv=None):
             raise BenchError("invalid_invocation", "SD size-mib times passes must not exceed 128")
         if args.action in ("power", "trace", "crash"):
             raise BenchError("not_implemented", "This operation is not implemented", "unsupported")
+        if command == "wav align":
+            # Pure local computation: no ports, locks, profile or run directory.
+            execution = "offline"
+            metrics, (result, reason, detail) = wav_align.run_local({
+                "wav": args.wav, "window_seconds": args.window_seconds,
+                "hop_seconds": args.hop_seconds, "max_lag_ms": args.max_lag_ms})
+            metrics["wav"] = args.wav
+            value = outcome(command, execution, started_at, started, result=result,
+                            reason=reason, detail=detail, metrics=metrics)
+            return _emit(value, argv)
         if not args.profile and args.action != "status":
             raise BenchError("invalid_invocation", "--profile is required for this operation")
         options = {"command": command, "profile": args.profile, "simulate": args.simulate,
@@ -122,6 +139,10 @@ def main(argv=None):
         value = outcome(command, execution, started_at, started, result="error", reason="interrupted")
     except Exception as exc:
         value = outcome(command, execution, started_at, started, result="error", reason="internal_error", detail=f"{type(exc).__name__}: {exc}")
+    return _emit(value, argv)
+
+
+def _emit(value, argv):
     if "--json" in argv:
         print(json.dumps(value, ensure_ascii=True, allow_nan=False))
     else:

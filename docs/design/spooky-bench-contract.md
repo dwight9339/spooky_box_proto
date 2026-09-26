@@ -14,6 +14,9 @@ its own procedure with pass criteria. Target-side commands are in the
 remains ordinary CLI help. Fields are `schema_version`, `command`, `result`,
 `reason`, `execution`, `metrics`, `artifacts`, and `timestamps`; errors also have
 bounded `detail`. `execution=simulated` is never hardware acceptance evidence.
+`execution=offline` identifies local analysis of an existing artifact: it does not
+discover devices, acquire the board lock, create a run directory, or establish new
+hardware provenance.
 Successful simulations carry `reason=simulated`; simulated failures preserve
 their failure reason. Query success does not mean HAS_FAULT=0: inspect the
 returned response. Target health and final target state remain explicitly
@@ -52,7 +55,8 @@ reader for the full acknowledged binary transfer; it cannot run during recording
 another bench operation. SD basic refuses an active recording and a pre-existing
 `SDTEST.BIN`, verifies card identity before and after the test, and never issues
 `SD CLEAN` on unknown scratch data; its explicit stop path removes only the file
-created by that run. A second operation reports `bench_busy`.
+created by that run. `wav align` is offline and does not acquire the board lock. A
+second board operation reports `bench_busy`.
 
 The per-user OS lock is released when its process exits. Its stale file is harmless.
 A second lock serializes quota accounting for a shared artifact root. External tools
@@ -82,12 +86,33 @@ automatic reset, or reconnect.
 | `test boot-smoke` | 240 s supervisor deadline |
 | `test ipc-load` | 10..600 s duration, plus 60 s |
 | `wav inspect` | 600 s default; explicit `--timeout` up to 3600 s |
+| `wav align` | Synchronous offline computation; no supervisor deadline or hardware access |
 | `test sd-basic` | 30..1800 s deadline, 180 s default |
 
 Serial reads have 100 ms and writes 1-second timeouts. Two seconds of each total are
 reserved for forced termination/reaping. Capture archival uses a bounded
 64 x 4096-byte queue in the supervised process; a stuck writer cannot hold the
 supervisor waiting on archive close indefinitely.
+
+## Offline WAV alignment
+
+`wav align --wav <path>` validates an existing recorder WAV and measures microphone
+lag against the average of its radio channels. Positive lag means the microphone
+follows the radio. The command uses first-difference pre-whitening, a decimated coarse
+search, and a full-rate refinement in independently reported windows. Window length,
+hop, and maximum lag are explicit CLI parameters. The command emits no run artifacts;
+the source WAV retains the provenance of the earlier `wav inspect` operation.
+
+A passing result means that at least half the windows, and at least two windows,
+exceeded both correlation and peak-confidence thresholds. It does not by itself
+qualify clock drift. `endpoint_delta_frames` and `endpoint_delta_ppm` report the raw
+first-to-last change. Drift uses the polarity held by at least 75% of detected windows;
+opposite-phase peaks remain visible and are counted in `drift_excluded_windows`.
+`drift_frames` and `drift_ppm` are populated only when the dominant-phase lag is
+monotonic or stable within one frame. Otherwise `drift_reliable=false`, the drift
+values are null, and `drift_reason` identifies `phase_ambiguous` or
+`lag_not_continuous`. Raw windows remain in the result for review.
+The bench procedure defines the controlled acoustic stimulus and evidence requirements.
 
 ## Process supervision
 

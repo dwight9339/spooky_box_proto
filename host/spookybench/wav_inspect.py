@@ -58,7 +58,8 @@ def _write(serial, data):
         raise OSError("short command write")
 
 
-def _analyze(path):
+def read_format(path):
+    """Validate the recorder's WAV container; return (fmt, data_offset, data_size)."""
     size = path.stat().st_size
     with path.open("rb") as stream:
         header = stream.read(12)
@@ -96,13 +97,17 @@ def _analyze(path):
         if fmt is None or data_offset is None:
             raise BenchError("wav_invalid", "WAV requires fmt and data chunks", "fail")
 
-    audio_format, channels, sample_rate, byte_rate, block_align, bits = fmt
     expected = (1, 3, 48000, 48000 * 6, 6, 16)
     if fmt != expected:
         raise BenchError("wav_format", "Expected PCM 48 kHz/16-bit/3-channel WAV", "fail")
-    if not data_size or data_size % block_align:
+    if not data_size or data_size % fmt[4]:
         raise BenchError("wav_invalid", "WAV data is empty or not frame-aligned", "fail")
+    return fmt, data_offset, data_size
 
+
+def _analyze(path):
+    fmt, data_offset, data_size = read_format(path)
+    audio_format, channels, sample_rate, byte_rate, block_align, bits = fmt
     count = data_size // block_align
     sums = [0, 0, 0]
     squares = [0, 0, 0]
