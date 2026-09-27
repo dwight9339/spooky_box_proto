@@ -373,6 +373,8 @@ Button 1 acts as the default Field **PTT** performance control. While held, it s
 
 The user-facing name may remain PTT even though its default signal behavior is more precisely push-to-mute-radio. Its meaning should be stated clearly in the interface and documentation.
 
+Recording and rolling capture must not change how Field Mode moves through radio territory. Tuning, scanning and band transitions behave the same whether or not a session or capture is active, so Spooky Box keeps working as a scanning radio while it records. A receiver transition that briefly interrupts radio audio must not shift the radio track against the microphone track: the radio track keeps its timeline, and any interval without valid radio audio is marked in the session events.
+
 ### Instrument Sessions
 
 An Instrument session should initially record the performed stereo mix, an EMF stream, and the event data required to understand the performance. Where available, it should also preserve microphone injection as a separate source and record sequencer or external MIDI events in a standard or well-documented form.
@@ -496,6 +498,7 @@ The following questions should remain visible as prototypes are tested:
 14. What file formats should store EMF, semantic events, and sequencer or MIDI data?
 15. How should button 0 select layered, ducked, or exclusive microphone injection in Instrument Mode?
 16. What Shift-layer chord timing feels reliable without making the controls feel delayed?
+17. Should tunes and band transitions play generated transition noise in the monitored mix, and which of its qualities, such as level, color and duration, should the user be able to tune? Transition noise would never be written to a raw track.
 
 ## Design Guardrails
 

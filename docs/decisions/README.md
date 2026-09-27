@@ -12,6 +12,8 @@ Each file records one design decision, following the Documentation Classes rules
 |---|---|---|
 | [0001](0001-initial-ui-and-bus-ownership.md) | Initial UI and bus ownership | Accepted |
 | [0002](0002-windows-first-spooky-bench.md) | Windows-first Spooky Bench host | Accepted |
+| [0003](0003-radio-control-during-recording.md) | Radio control stays available while recording | Accepted |
+| [0004](0004-radio-track-continuity-across-transitions.md) | Radio-track continuity across receiver transitions | Accepted |
 
 ## Template
 

@@ -132,3 +132,4 @@ followed by a test. They are listed in the order that unblocks the most work.
 | 3 | Rolling-window duration and memory/storage strategy | `hpq.2` | M4 formats and rolling save. Needs measurement first, so start early. |
 | 4 | Semantic EMF, activity and warning mappings (workbook D-016) | `54w.8` | M3 visual feedback |
 | 5 | Session, asset and recovery formats | `hpq.3` | M4 transactions and playback |
+| 6 | Qualification for lifting the recording guards on tuning and band transitions (decisions 0003 and 0004) | `54w.6`, `54w.12` | Tuning and band transitions while recording in M3 and M4 |

@@ -32,6 +32,8 @@ Updated in the same change as the code they describe.
 
 - [Architecture](design/architecture.md): proven path, responsibility boundaries,
   application model, reliability rules.
+- [Behavior model](design/behavior/README.md): hierarchical state machines for the
+  M7 application, with vocabulary, transition tables and presentation mapping.
 - [Prototype hardware](design/prototype-hardware.md): installed hardware, bodges,
   wiring, clocks and bus devices.
 - [USB CLI contract](design/usb-cli.md): target commands, responses and the EMF

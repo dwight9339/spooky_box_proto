@@ -104,6 +104,9 @@ in-band tune or an expensive band/RF-path transition.
 The USB CLI ([contract](usb-cli.md)) and recorder are bring-up implementations of
 this model, not the final command router or `SessionManager`.
 
+The [behavior model](behavior/README.md) specifies these states, commands, events and
+their transitions as tables, one machine per region.
+
 ## Inter-core contract to implement
 
 Keep common types C-compatible and fixed-width. The first protocol should
