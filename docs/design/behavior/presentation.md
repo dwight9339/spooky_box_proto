@@ -54,6 +54,20 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | Requested duration | The `OK RECORD START` reply only |
 | Queue depths and longest SD write | `RECORD STATUS`, periodic `RECORD progress` lines and the final `RECORD DIAG` line |
 
+## Radio domain events
+
+| ID | Domain event | Required acknowledgement | CLI reply today |
+|---|---|---|---|
+| PRES-RAD-01 | RadioStarted | Display | Boot log `[radio] tuned FM ...` and `[radio] digital output enabled ...` |
+| PRES-RAD-02 | TuneStarted | Display | None |
+| PRES-RAD-03 | Tuned | Display | `OK RADIO BAND=... FREQ=... RSSI=... SNR=... VALID=...` |
+| PRES-RAD-04 | TuneRejected | Reply to the command's source | `ERR <band> range: <min>..<max> kHz` |
+| PRES-RAD-05 | TuneFailed | Display, with the target and reason | `ERR RADIO tune failed` |
+| PRES-RAD-06 | BandTransitionStarted | Display, lights and audio | None |
+| PRES-RAD-07 | BandChanged | Display, lights and audio | `OK RADIO BAND=... FREQ=... RSSI=... SNR=... VALID=...` |
+| PRES-RAD-08 | RadioFault | Display, lights and audio, as a fault | `ERR RADIO band switch failed; reset required`, or a `[bridge] FAIL` log line; the red board LED turns on |
+| PRES-RAD-09 | RadioCommandRejected | Reply to the command's source | `ERR RADIO audio path is not running` |
+
 ## Device domain events
 
 | ID | Domain event | Required acknowledgement | CLI reply today |
@@ -83,6 +97,15 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | PRES-SES-04 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | PRES-SES-05 | Target | CLI reply implemented; no bench evidence |
 | PRES-SES-06 | Target | CLI reply implemented; no bench evidence |
+| PRES-RAD-01 | Proven for the boot log | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
+| PRES-RAD-02 | Target | Not implemented |
+| PRES-RAD-03 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
+| PRES-RAD-04 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
+| PRES-RAD-05 | Target | CLI reply implemented without a reason; no bench evidence |
+| PRES-RAD-06 | Target | Not implemented |
+| PRES-RAD-07 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
+| PRES-RAD-08 | Target | CLI reply and log implemented; no bench evidence |
+| PRES-RAD-09 | Target | CLI reply implemented; no bench evidence |
 | PRES-DEV-01 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | PRES-DEV-02 | Target | CLI reply implemented; no bench evidence |
 | PRES-DEV-03 | Target | Product intent; no mode state exists in firmware |

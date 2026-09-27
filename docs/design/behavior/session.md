@@ -108,7 +108,7 @@ session is never shown as a successful one.
 |---|---|
 | DEV-01 | EnterSleep is allowed only `in(Session.Idle)` |
 | DEV-I1 | Context transitions never change Session state |
-| SES-I4 | Radio commands are legal in every Session state; the Radio region's own rules decide whether one is deferred or rejected |
+| SES-I4 | Radio commands are legal in every Session state; the [Radio region](radio.md)'s own rules decide whether one is deferred or rejected |
 
 ## Open behavior
 

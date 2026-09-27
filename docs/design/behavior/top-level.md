@@ -28,8 +28,13 @@ stateDiagram-v2
         }
         --
         state Radio {
-            [*] --> RadioDetail
-            state "not modelled" as RadioDetail
+            [*] --> Settled
+            Settled --> Tuning
+            Tuning --> Settled
+            Settled --> BandTransition
+            BandTransition --> Settled
+            BandTransition --> Faulted
+            Settled --> Faulted
         }
         --
         state InputResolution {
@@ -43,8 +48,9 @@ stateDiagram-v2
 `H*` marks deep history: CTX-03 restores the operating context that CTX-02 saved.
 Operating is drawn as one state because Mermaid 11 cannot draw a composite state inside
 a parallel region. Its Field and Instrument substates are in the States table; the
-transitions between them are open. The Session region
-is summarized; its full machine is in [session.md](session.md).
+transitions between them are open. The Session and Radio regions
+are summarized; their full machines are in [session.md](session.md) and
+[radio.md](radio.md).
 
 ## Regions
 
@@ -55,7 +61,7 @@ commands and inputs are interpreted.
 |---|---|---|---|
 | Context | Which operating mode, engine, view or utility has the controls | It decides what a resolved gesture means | This file |
 | Session | Whether a recording lifecycle is active | Active sessions reject SD maintenance and WAV transfer, and change how stop and faults are handled | [session.md](session.md) |
-| Radio | Whether a band or tuning transition is in progress | Commands arriving mid-transition need defined handling | Named here only; see `full_spooky_proto-54w.15`, and decisions [0003](../../decisions/0003-radio-control-during-recording.md) and [0004](../../decisions/0004-radio-track-continuity-across-transitions.md) |
+| Radio | Whether a band or tuning transition is in progress | Commands arriving mid-transition need defined handling | [radio.md](radio.md) |
 | InputResolution | How held controls, Shift and chords are being interpreted | The same press means different things while Shift is held or a chord is pending | Named here only; open in `full_spooky_proto-54w.2` |
 
 Shift is part of InputResolution, not a peer of Session or Context: it changes how

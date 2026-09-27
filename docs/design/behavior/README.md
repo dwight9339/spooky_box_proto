@@ -17,6 +17,7 @@ shows the whole device; each region with enough behavior gets its own file.
 |---|---|
 | [top-level.md](top-level.md) | Device chart, parallel regions, context transitions, cross-region invariants |
 | [session.md](session.md) | Session region: recording lifecycle |
+| [radio.md](radio.md) | Radio region: tuning, band transitions and radio faults |
 | [presentation.md](presentation.md) | How domain events and published state reach the user |
 
 ## What gets a state machine
@@ -82,10 +83,11 @@ events and never feeds back into the machine.
 ## Open behavior and maturity
 
 A semantic table holds only behavior that is settled. A Target row must trace to the
-constitution, product intent, an accepted decision record or existing firmware
-behavior. Anything else is open: it goes in the machine's **Open behavior** table as a
-question, with the Beads issue or product open decision that settles it, and never as a
-guessed row. Settling it moves the answer into the semantic tables.
+constitution, product intent, an accepted decision record, an explicit user direction
+recorded in a Beads issue, or existing firmware behavior. Anything else is open: it goes
+in the machine's **Open behavior** table as a question, with the Beads issue or product
+open decision that settles it, and never as a guessed row. Settling it moves the answer
+into the semantic tables.
 
 Maturity describes confidence in a row, not machine behavior. Each machine file keeps
 it in a separate **Maturity** table keyed by ID, never in the semantic tables.
