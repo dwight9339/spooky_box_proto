@@ -68,6 +68,21 @@ SLEEP START
 
 HELP is streamed in short lines.
 
+## Command admission while recording
+
+The CLI and future physical-control commands share the recording-safe policy from
+[decision 0008](../decisions/0008-recording-safe-command-policy.md). `RECORD START`
+and `RECORD STOP` are admitted to the bounded M7 event queue as external commands;
+if its non-reserved capacity is exhausted, the CLI replies `ERR BUSY` and changes
+nothing. Session actions then run through the authoritative Session machine.
+
+While Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
+transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE` and `UI DISPLAY TEST`
+patterns, and radio tuning/band changes are rejected before their service handlers
+run. Status and diagnostic reads remain available. Every policy rejection is a
+numeric `COMMAND_REJECTED` diagnostic and returns one stable `ERR` line. No command
+is deferred until the recording ends.
+
 ## Radio
 
 `BAND` reports the current receiver band and its tuning range. `BAND FM`,
@@ -236,7 +251,9 @@ RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,...
 `RECORD STATUS` reports progress, current queue depths, and the longest SD write.
 `RECORD STOP` requests a clean stop after the next matched radio/mic block.
 SD maintenance and stress commands, WAV transfer, and radio band/tuning changes are
-rejected while recording is active.
+rejected while recording is active. `SD STATUS` remains nonintrusive: while the
+recorder owns the volume it reports card presence, owner, active file and written
+frames from cached recorder state rather than mounting or querying the filesystem.
 
 ## WAV transfer (protocol v1)
 
@@ -284,7 +301,9 @@ is retained for inspection and the next stress command refuses to overwrite it.
 ## Low-power charging monitor
 
 `SLEEP START` is a one-way low-power state entered from the CLI; it is rejected in IPC
-experiment builds. On entry, firmware prints one fuel-gauge update, mutes and stops
+experiment builds and while the Session state is Recording or Finalizing. An active
+session receives `ERR SLEEP unavailable while recording` and is unchanged. On entry,
+firmware prints one fuel-gauge update, mutes and stops
 the audio DMA, powers down and resets the radio, stops USB CDC/HSI48, makes
 externally-facing push-pull audio clocks high impedance, and pulls the 3.3 V
 regulator enable low. CM4 is held in WFI. CM7 then uses hardware SLEEP with SysTick

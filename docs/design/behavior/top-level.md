@@ -110,6 +110,7 @@ This chart does not model them; the list is in the product
 | CTX-04 | Operating | CloseUtility | None | None | Operating | None |
 | DEV-01 | Device | EnterSleep | `in(Session.Idle)` and sleep_supported | Report the fuel gauge; stop any SD test; stop audio, radio and USB | LowPower | SleepEntered |
 | DEV-02 | Device | EnterSleep | not sleep_supported | None | Device | SleepRejected |
+| DEV-03 | Device | EnterSleep | `in(Session.Active)` | Reject without changing the session; record `COMMAND_REJECTED` | Device | SleepRejected |
 
 LowPower is left only by a system reset, from the USER button or RESET, which
 restarts the model at its initial state.
@@ -121,7 +122,6 @@ restarts the model at its initial state.
 | Field | SwitchMode | Is the switch allowed during a session, and what does Instrument restore? | `full_spooky_proto-54w.1`; product open decisions 1 and 12 |
 | Instrument | SwitchMode | Same question in the other direction | `full_spooky_proto-54w.1`; product open decisions 1 and 12 |
 | Utility | OpenUtility, SwitchMode | Can one utility open another, and can the mode change from inside a utility? | Product open decision 13 |
-| Device | EnterSleep while `not in(Session.Idle)` | Reject, defer, or stop the session after confirmation? | `full_spooky_proto-8lw.11`, `full_spooky_proto-54w.1` |
 
 ## Maturity
 
@@ -138,12 +138,12 @@ restarts the model at its initial state.
 | DEV-I5 | Target | [Decision 0004](../../decisions/0004-radio-track-continuity-across-transitions.md); [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions |
 | DEV-01 | Proven | Sleep entry while idle: [radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | DEV-02 | Target | Implemented in the IPC experiment builds; no bench evidence |
+| DEV-03 | Target | Implemented and host tested under [decision 0008](../../decisions/0008-recording-safe-command-policy.md); no bench evidence |
 
 ## Deviations
 
 | Row | Firmware today | Tracked by |
 |---|---|---|
-| EnterSleep during a session | Accepted. The recording is finalized and reported as a pass with reason `stopped` just before USB disconnects. Found by code reading; not reproduced on hardware. The Session shadow machine is not told, so it records a `SESSION_MISMATCH` diagnostic fault if this happens. | `full_spooky_proto-8lw.11` |
 | DEV-I4 | Tune, band, `UP` and `DOWN` are rejected while a session is active with `ERR RADIO tuning disabled while recording`, shown in the [radio regression](../../evidence/2026-09-24-radio-regression.md). Principle VI keeps this guard until bench qualification passes. | `full_spooky_proto-54w.6`, `full_spooky_proto-54w.12` |
 | DEV-I5 | The band-switch stream gate drops radio half-buffers instead of passing silence. Unreachable during a session today, because the DEV-I4 guard rejects band changes while recording. | `full_spooky_proto-54w.12` |
-| Session domain events | Exist only as CLI reply lines and shadow log lines; nothing is published to presentation surfaces | `full_spooky_proto-54w.4` |
+| Session domain events | The authoritative machine publishes semantic events to the recorder/CLI adapter; outbound presentation IPC is not wired yet. | `full_spooky_proto-54w.4` |

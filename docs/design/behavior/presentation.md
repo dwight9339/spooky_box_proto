@@ -91,7 +91,7 @@ period stays configurable until bench trials set it.
 | ID | Domain event | Required acknowledgement | CLI reply today |
 |---|---|---|---|
 | PRES-DEV-01 | SleepEntered | Reply to the command's source before USB stops | `OK SLEEP START; CDC will disconnect; updates continue on AUX UART7` |
-| PRES-DEV-02 | SleepRejected | Reply to the command's source | `ERR SLEEP unavailable in IPC smoke build; use Debug` |
+| PRES-DEV-02 | SleepRejected | Reply to the command's source | `ERR SLEEP unavailable while recording`, or `ERR SLEEP unavailable in IPC smoke build; use Debug` |
 | PRES-DEV-03 | UtilityOpened, UtilityClosed | Display | None |
 
 ## Open behavior

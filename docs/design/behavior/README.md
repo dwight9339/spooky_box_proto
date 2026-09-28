@@ -20,7 +20,7 @@ region's Markdown file is deleted in the change that lands its diagram.
 | File | Region | Form |
 |---|---|---|
 | [InputResolutionSm.puml](InputResolutionSm.puml) ([rendered](InputResolutionSm.svg)) | InputResolution: the Button 0 session hold and prompt ([decision 0005](../../decisions/0005-button-0-session-prompt.md)) | StateSmith diagram |
-| [SessionSm.puml](SessionSm.puml) ([rendered](SessionSm.svg)) | Session: the recording lifecycle, in shadow mode beside the recorder until `full_spooky_proto-8lw.4` | StateSmith diagram |
+| [SessionSm.puml](SessionSm.puml) ([rendered](SessionSm.svg)) | Session: the authoritative recording lifecycle; queued commands invoke recorder operations through its port | StateSmith diagram |
 | [top-level.md](top-level.md) | Device chart, parallel regions, the Context region, cross-region invariants | Tables |
 | [radio.md](radio.md) | Radio: tuning, band transitions and radio faults | Tables |
 | [presentation.md](presentation.md) | How domain events and published state reach the user | Hand-written contract |

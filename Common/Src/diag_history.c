@@ -55,6 +55,6 @@ const char *DiagHistory_Name(uint32_t type)
   static const char *const names[] = {"UNKNOWN", "BOOT", "RECORD_START",
     "RECORD_END", "SD_WRITE", "SD_ERROR", "RADIO_OVERRUN", "PDM_OVERRUN",
     "AUDIO_ERROR", "IPC_LINK", "LOOP_STALL", "LOG_LOSS", "LOG_ERROR", "SLEEP",
-    "EVENT_QUEUE_LOSS", "SESSION_MISMATCH"};
+    "EVENT_QUEUE_LOSS", "SESSION_MISMATCH", "COMMAND_REJECTED"};
   return type < DIAG_EVENT_LIMIT ? names[type] : names[0];
 }

@@ -30,10 +30,11 @@ USB, or text formatting occurs in event producers.
 Use device USB CDC commands `LOG STATUS`, `DIAG STATUS`, `DIAG QUEUE`, `DIAG LAST`,
 `DIAG DUMP` and `DIAG STOP`. `DIAG QUEUE` reports the capacity and counters of the M7
 application event queue ([decision 0007](../decisions/0007-m7-event-queue.md)); a
-rejected internal event is recorded as an `EVENT_QUEUE_LOSS` fault. The Session machine,
-running in shadow mode beside the recorder, records a `SESSION_MISMATCH` fault when
-it disagrees with the recorder about whether a session is active, and logs its state
-changes as `[session] shadow ...` lines. HELP is also streamed in short lines; its former combined reply
+rejected internal event is recorded as an `EVENT_QUEUE_LOSS` fault. A recording-safe
+policy rejection is recorded as `COMMAND_REJECTED`, with the semantic action and
+Session state. The authoritative Session machine records a `SESSION_MISMATCH` fault
+when it disagrees with the recorder about whether a session is active, and logs its
+state changes as `[session] authority ...` lines. HELP is also streamed in short lines; its former combined reply
 exceeded the USB sender's 256-byte limit. See the
 [v1 contract](spookyprobe-v1.md) for exact formats, units, and decoder behavior.
 

@@ -4,9 +4,8 @@
 ' Rules: docs/design/behavior/README.md. Guards and actions call only functions in
 ' CM7/App/sm/session_port.h.
 '
-' Today the machine runs in shadow mode beside the recorder (decision 0006 item 18):
-' the recorder acts, and the port answers each guard from what the recorder reported.
-' Authority moves to the machine in full_spooky_proto-8lw.4.
+' The machine owns the recording lifecycle (decision 0008): queued commands drive
+' its transitions, and its port invokes narrow recorder operations.
 
 [*] --> Idle
 
@@ -54,15 +53,15 @@ note right of Idle
   Open: Armed (rolling capture) and Reviewing are
   named by the constitution; their behavior is open in
   full_spooky_proto-hpq.2 and full_spooky_proto-hpq.3.
-  Physical start duration and which other commands are
-  allowed while recording: full_spooky_proto-54w.1.
+  Physical start duration and actions allowed while
+  recording follow decision 0008.
   Session folder and manifest: full_spooky_proto-hpq.3.
 end note
 note right of Active
   Safety guard in force (Principle VI): tune and band
-  commands are rejected while Active, outside this machine,
+  commands are rejected while Active by the shared command policy,
   until full_spooky_proto-54w.6 and -54w.12 qualify them
-  (decision 0003). Sleep during a session: full_spooky_proto-8lw.11.
+  (decision 0003). Sleep is also rejected while Active.
 end note
 
 /'! $CONFIG : toml

@@ -8,10 +8,8 @@
  * 1. The service interface the M7 dispatcher calls, one function per event.
  * 2. The guards and actions the diagram calls. Nothing else may be called from the
  *    diagram.
- * 3. The integration functions the port calls. In shadow mode
- *    (CM7/App/session_shadow.c) they answer from what the recorder reported and
- *    perform nothing; host tests provide fakes. With authority
- *    (full_spooky_proto-8lw.4) they will perform the actions.
+ * 3. The integration functions the port calls. CM7/App/session_control.c provides
+ *    the authoritative recorder adapter; host tests provide fakes.
  *
  * Portable C with no HAL calls. Not reentrant: call it from the dispatcher only.
  */
@@ -67,7 +65,7 @@ void ses_finalize_file(void);
 void ses_publish(SesPublished event);
 void ses_state_changed(void);
 
-/* --- 3. Integration functions, provided by shadow mode, authority or a test ---- */
+/* --- 3. Integration functions, provided by the authority adapter or a test ----- */
 
 bool ses_integration_can_start(uint32_t seconds);
 /* Open the session file: mount, name, create, preallocate, write the header. */

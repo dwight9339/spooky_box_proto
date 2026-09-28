@@ -1,6 +1,6 @@
 #include "radio_recorder.h"
 #include "diagnostics.h"
-#include "session_shadow.h"
+#include "session_control.h"
 
 #include "diskio.h"
 #include "ff.h"
@@ -90,6 +90,10 @@ static uint32_t radio_right_peak;
 static uint32_t pdm_peak;
 static int32_t pdm_dc_previous_input;
 static int32_t pdm_dc_previous_output;
+static uint32_t pending_seconds;
+static const char *finish_reason;
+static bool finish_aborted;
+static bool session_event_pending;
 
 static void RecorderSend(const char *format, ...)
 {
@@ -198,7 +202,7 @@ static void RecorderDiscardFile(void)
   RecorderUnmount();
 }
 
-static bool RecorderOpenFile(uint32_t requested_seconds)
+bool RadioRecorder_OpenFile(uint32_t requested_seconds)
 {
   FRESULT result;
   FILINFO info;
@@ -509,7 +513,7 @@ static bool RecorderWriteBlock(const int16_t *radio, const int32_t *pdm)
   return true;
 }
 
-static void RecorderStopCapture(void)
+void RadioRecorder_StopCapture(void)
 {
   capture_enabled = false;
   if (pdm_dma_running)
@@ -540,7 +544,7 @@ static bool RecorderFinish(bool aborted, const char *reason)
   uint32_t elapsed_ms;
   uint32_t data_bytes = frames_written * RECORDER_BLOCK_ALIGN;
 
-  RecorderStopCapture();
+  RadioRecorder_StopCapture();
   finalized = RecorderFinalizeFile();
   recorder_state = RECORDER_IDLE;
   stop_requested = false;
@@ -571,38 +575,46 @@ static bool RecorderFinish(bool aborted, const char *reason)
   return finalized;
 }
 
-static bool RecorderStart(uint32_t seconds, bool radio_ready)
+bool RadioRecorder_CanStart(uint32_t seconds, bool radio_ready)
 {
-  uint32_t primask;
-  bool card_present;
-
   if (recorder_state == RECORDER_ACTIVE)
   {
     RecorderSend("ERR RECORD already active\r\n");
-    SessionShadow_ReportStart(seconds, SESSION_SHADOW_REJECTED, false);
+    return false;
+  }
+  if ((seconds == 0U) || (seconds > RECORDER_MAX_SECONDS))
+  {
+    RecorderSend("ERR RECORD duration must be 1..3600 seconds\r\n");
+    return false;
+  }
+  if (SdTest_IsActive())
+  {
+    RecorderSend("ERR RECORD unavailable while SD test active\r\n");
     return false;
   }
   if (!radio_ready)
   {
     RecorderSend("ERR RECORD radio audio path is not running\r\n");
-    SessionShadow_ReportStart(seconds, SESSION_SHADOW_REJECTED, false);
     return false;
   }
   if ((pdm_filter == NULL) ||
       (HAL_DFSDM_FilterGetState(pdm_filter) == HAL_DFSDM_FILTER_STATE_ERROR))
   {
     RecorderSend("ERR RECORD PDM path is not ready\r\n");
-    SessionShadow_ReportStart(seconds, SESSION_SHADOW_REJECTED, false);
     return false;
   }
-  /* A missing card is a rejection; any later open failure is SES open failure. */
-  card_present = SD_CARD_IS_PRESENT();
-  if (!RecorderOpenFile(seconds))
+  if (!SD_CARD_IS_PRESENT())
   {
-    SessionShadow_ReportStart(seconds, card_present ? SESSION_SHADOW_OPEN_FAILED
-                                                    : SESSION_SHADOW_REJECTED, false);
+    RecorderSend("ERR RECORD no SD card detected\r\n");
     return false;
   }
+  pending_seconds = seconds;
+  return true;
+}
+
+bool RadioRecorder_StartCapture(void)
+{
+  uint32_t primask;
 
   primask = __get_PRIMASK();
   __disable_irq();
@@ -622,7 +634,7 @@ static bool RecorderStart(uint32_t seconds, bool radio_ready)
   }
 
   frames_written = 0U;
-  target_frames = seconds * RECORDER_SAMPLE_RATE_HZ;
+  target_frames = pending_seconds * RECORDER_SAMPLE_RATE_HZ;
   max_write_ms = 0U;
   radio_left_peak = 0U;
   radio_right_peak = 0U;
@@ -634,6 +646,9 @@ static bool RecorderStart(uint32_t seconds, bool radio_ready)
   radio_overrun = false;
   pdm_overrun = false;
   stop_requested = false;
+  finish_reason = "complete";
+  finish_aborted = false;
+  session_event_pending = false;
 
   RecorderPrepareDmaBuffer(pdm_dma_buffer, sizeof(pdm_dma_buffer));
   recorder_state = RECORDER_ACTIVE;
@@ -642,19 +657,75 @@ static bool RecorderStart(uint32_t seconds, bool radio_ready)
         pdm_filter, pdm_dma_buffer,
         2U * RECORDER_PDM_BLOCK_SAMPLES) != HAL_OK)
   {
-    SessionShadow_ReportStart(seconds, SESSION_SHADOW_CAPTURE_FAILED,
-                              RecorderFinish(true, "PDM DMA did not start"));
+    finish_aborted = true;
+    finish_reason = "PDM DMA did not start";
     return false;
   }
   pdm_dma_running = true;
   recording_start_ms = HAL_GetTick();
   progress_last_ms = recording_start_ms;
-  Diagnostics_Record(DIAG_RECORD_START, seconds, RECORDER_SAMPLE_RATE_HZ);
+  Diagnostics_Record(DIAG_RECORD_START, pending_seconds, RECORDER_SAMPLE_RATE_HZ);
   RecorderSend("OK RECORD START file=%s duration=%lus "
                "format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]\r\n",
-               recorder_filename, (unsigned long)seconds);
-  SessionShadow_ReportStart(seconds, SESSION_SHADOW_STARTED, false);
+               recorder_filename, (unsigned long)pending_seconds);
   return true;
+}
+
+void RadioRecorder_RequestStop(void)
+{
+  stop_requested = true;
+}
+
+bool RadioRecorder_TargetReached(void)
+{
+  const bool size_limit =
+    (frames_written + RECORDER_BLOCK_FRAMES) > RECORDER_WAV_MAX_FRAMES;
+  const bool reached = stop_requested || (frames_written >= target_frames) || size_limit;
+  if (size_limit)
+  {
+    finish_reason = "WAV size limit";
+  }
+  if (!reached)
+  {
+    session_event_pending = false;
+  }
+  return reached;
+}
+
+bool RadioRecorder_FinalizeFile(void)
+{
+  const bool finalized = RecorderFinish(finish_aborted, finish_reason);
+  finish_aborted = false;
+  finish_reason = "complete";
+  session_event_pending = false;
+  return finalized;
+}
+
+void RadioRecorder_PublishSessionEvent(SesPublished event)
+{
+  switch (event)
+  {
+    case SES_PUB_RECORDING_STOPPING:
+      RecorderSend("OK RECORD STOP requested; finalizing next matched block\r\n");
+      break;
+    case SES_PUB_STOP_IGNORED:
+      RecorderSend("OK RECORD already idle\r\n");
+      break;
+    case SES_PUB_RECORDING_STARTED:
+    case SES_PUB_RECORDING_REJECTED:
+    case SES_PUB_RECORDING_COMPLETED:
+    case SES_PUB_RECORDING_ABORTED:
+    default:
+      break;
+  }
+}
+
+void RadioRecorder_SendStorageStatus(void)
+{
+  RecorderSend("OK SD STATUS CARD=%s OWNER=RECORDER FILE=%s FRAMES=%lu\r\n",
+               SD_CARD_IS_PRESENT() ? "PRESENT" : "ABSENT",
+               (recorder_filename[0] != '\0') ? recorder_filename : "none",
+               (unsigned long)frames_written);
 }
 
 static bool RecorderParseSeconds(const char *text, uint32_t *seconds)
@@ -685,6 +756,10 @@ void RadioRecorder_Init(DFSDM_Filter_HandleTypeDef *filter)
   recorder_filesystem_mounted = false;
   pdm_dma_running = false;
   capture_enabled = false;
+  pending_seconds = RECORDER_DEFAULT_SECONDS;
+  finish_reason = "complete";
+  finish_aborted = false;
+  session_event_pending = false;
   recorder_filename[0] = '\0';
   printf("[record] three-channel recorder ready; default=%us\r\n",
          RECORDER_DEFAULT_SECONDS);
@@ -728,15 +803,9 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
   }
   if (strcmp(command, "RECORD STOP") == 0)
   {
-    SessionShadow_ReportStop();
-    if (recorder_state != RECORDER_ACTIVE)
+    if (!SessionControl_RequestStop())
     {
-      RecorderSend("OK RECORD already idle\r\n");
-    }
-    else
-    {
-      stop_requested = true;
-      RecorderSend("OK RECORD STOP requested; finalizing next matched block\r\n");
+      RecorderSend("ERR BUSY\r\n");
     }
     return true;
   }
@@ -754,10 +823,12 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
     if ((seconds == 0U) || (seconds > RECORDER_MAX_SECONDS))
     {
       RecorderSend("ERR RECORD duration must be 1..3600 seconds\r\n");
-      SessionShadow_ReportStart(seconds, SESSION_SHADOW_REJECTED, false);
       return true;
     }
-    (void)RecorderStart(seconds, radio_ready);
+    if (!SessionControl_RequestStart(seconds, radio_ready))
+    {
+      RecorderSend("ERR BUSY\r\n");
+    }
     return true;
   }
 
@@ -775,9 +846,16 @@ void RadioRecorder_Service(void)
   {
     return;
   }
+  if (session_event_pending)
+  {
+    return;
+  }
   if (!SD_CARD_IS_PRESENT())
   {
-    SessionShadow_ReportCaptureFault(RecorderFinish(true, "SD card removed"));
+    finish_aborted = true;
+    finish_reason = "SD card removed";
+    session_event_pending = true;
+    SessionControl_ReportCaptureFault();
     return;
   }
   if (radio_error || pdm_error || radio_overrun || pdm_overrun)
@@ -785,14 +863,19 @@ void RadioRecorder_Service(void)
     const char *reason = radio_error ? "radio DMA error" :
       pdm_error ? "PDM DMA error" :
       radio_overrun ? "radio queue overrun" : "PDM queue overrun";
-    SessionShadow_ReportCaptureFault(RecorderFinish(true, reason));
+    finish_aborted = true;
+    finish_reason = reason;
+    session_event_pending = true;
+    SessionControl_ReportCaptureFault();
     return;
   }
-  /* Unreachable while durations are capped at 3600 s (about 1 GB); not reported to
-   * the Session shadow, which would record a mismatch if it ever happened. */
+  /* The Session machine finalizes before a block would exceed the WAV limit. */
   if ((frames_written + RECORDER_BLOCK_FRAMES) > RECORDER_WAV_MAX_FRAMES)
   {
-    RecorderFinish(false, "WAV size limit");
+    finish_aborted = false;
+    finish_reason = "WAV size limit";
+    session_event_pending = true;
+    SessionControl_ReportBlockWritten();
     return;
   }
 
@@ -802,19 +885,17 @@ void RadioRecorder_Service(void)
   {
     if (!RecorderWriteBlock(radio, pdm))
     {
-      SessionShadow_ReportCaptureFault(
-        RecorderFinish(true, "three-channel file write failed"));
+      finish_aborted = true;
+      finish_reason = "three-channel file write failed";
+      session_event_pending = true;
+      SessionControl_ReportCaptureFault();
       return;
     }
     RecorderReleaseQueues();
-    if (stop_requested || (frames_written >= target_frames))
-    {
-      bool target_reached = frames_written >= target_frames;
-      SessionShadow_ReportBlockWritten(target_reached,
-                                       RecorderFinish(false, "complete"));
-      return;
-    }
-    SessionShadow_ReportBlockWritten(false, false);
+    finish_aborted = false;
+    finish_reason = "complete";
+    session_event_pending = true;
+    SessionControl_ReportBlockWritten();
   }
 
   now = HAL_GetTick();

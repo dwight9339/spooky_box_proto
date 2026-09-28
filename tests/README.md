@@ -29,10 +29,15 @@ exactly one outcome and that only a confirming Encoder 0 press issues a command.
 The Session tests drive the generated Session machine through its port with scripted
 action results: start success, each rejection and abort path, stop and repeated stop,
 block-driven completion, failed finalization and capture faults, plus a seeded random
-check that a failure is never published as a success. The Session shadow tests post
-reports the way the recorder does, through the real event queue and dispatcher, and
-check that the disagreement diagnostic fires exactly when the machine and the recorder
-differ.
+check that a failure is never published as a success. The Session authority tests post
+external commands and internal recorder outcomes through the real event queue and
+dispatcher, verify that machine actions invoke the recorder in order, and check that
+an unreported recorder change still produces a disagreement diagnostic.
+
+The command-policy tests cover every decision-0008 action in Idle, Recording and
+Finalizing, verify that no action is deferred, require one stable acknowledgement for
+every rejection, and check the current CLI-to-action mappings. These are portable
+policy tests, not recording evidence.
 
 The event-queue tests cover decision 0007: post order, sequence and time, admission
 by class with the internal reserve, reject-newest overrun, one reconcile event after

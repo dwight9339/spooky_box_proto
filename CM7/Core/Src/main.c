@@ -29,6 +29,7 @@
 #include "audio_path_service.h"
 #include "board_diagnostics.h"
 #include "codec_volume_service.h"
+#include "command_policy.h"
 #include "target_logger.h"
 #include "diagnostics.h"
 #include "ipc_smoke_cli.h"
@@ -41,7 +42,6 @@
 #include "radio_control_service.h"
 #include "radio_recorder.h"
 #include "sd_test.h"
-#include "session_shadow.h"
 #include "ui_board_test.h"
 #include "usb_test.h"
 #include "wav_transfer.h"
@@ -318,6 +318,8 @@ static void UsbCliCommand(const char *line)
   RadioControlStatus radio_status;
   RadioBand target_band;
   RadioTuneStatus tune_status;
+  CommandAction action;
+  CommandPolicyClass policy;
   uint32_t frequency_khz;
   bool tuned;
   size_t length;
@@ -361,6 +363,19 @@ static void UsbCliCommand(const char *line)
   {
     return;
   }
+  action = CommandPolicy_ActionFromCli(command);
+  policy = CommandPolicy_Evaluate(action, Session_GetState());
+  if (policy == COMMAND_POLICY_REJECTED)
+  {
+    const char *reply = CommandPolicy_Rejection(action);
+    Diagnostics_Record(DIAG_COMMAND_REJECTED, (uint32_t)action,
+                       (uint32_t)Session_GetState());
+    if (reply != NULL)
+    {
+      (void)UsbTest_SendText(reply);
+    }
+    return;
+  }
   if (strcmp(command, "SLEEP START") == 0)
   {
 #if defined(SPOOKY_IPC_SMOKE)
@@ -392,34 +407,20 @@ static void UsbCliCommand(const char *line)
     {
       (void)UsbTest_SendText("ERR WAV unavailable while SD test active\r\n");
     }
-    else if (RadioRecorder_IsActive())
-    {
-      (void)UsbTest_SendText("ERR WAV unavailable while recording\r\n");
-    }
     else
     {
       (void)WavTransfer_HandleCommand(command);
     }
     return;
   }
-  if (SdTest_IsActive() && (strncmp(command, "RECORD START", 12U) == 0) &&
-      ((command[12] == '\0') || (command[12] == ' ') ||
-       (command[12] == '\t')))
-  {
-    (void)UsbTest_SendText("ERR RECORD unavailable while SD test active\r\n");
-    SessionShadow_ReportStart(0U, SESSION_SHADOW_REJECTED, false); /* card_free */
-    return;
-  }
   if (RadioRecorder_HandleCommand(command, AudioPath_IsRunning()))
   {
     return;
   }
-  if (RadioRecorder_IsActive() &&
-      (command[0] == 'S') && (command[1] == 'D') &&
-      ((command[2] == '\0') || (command[2] == ' ') ||
-       (command[2] == '\t')))
+  if (Session_IsActive() &&
+      ((strcmp(command, "SD") == 0) || (strcmp(command, "SD STATUS") == 0)))
   {
-    (void)UsbTest_SendText("ERR SD unavailable while recording\r\n");
+    RadioRecorder_SendStorageStatus();
     return;
   }
   if (SdTest_HandleCommand(command))
@@ -461,15 +462,6 @@ static void UsbCliCommand(const char *line)
       return;
     }
     VolumeUsbSendStatus();
-    return;
-  }
-  if (RadioRecorder_IsActive() &&
-      ((strncmp(command, "BAND", 4U) == 0) ||
-       (strncmp(command, "TUNE", 4U) == 0) ||
-       (strcmp(command, "UP") == 0) ||
-       (strcmp(command, "DOWN") == 0)))
-  {
-    (void)UsbTest_SendText("ERR RADIO tuning disabled while recording\r\n");
     return;
   }
   if (strcmp(command, "BAND") == 0)
