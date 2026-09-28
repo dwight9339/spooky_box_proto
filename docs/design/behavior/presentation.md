@@ -27,9 +27,9 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | ID | Rule |
 |---|---|
 | PRES-R1 | Surfaces render published state and domain events only. They keep no competing copy of Context, Session or InputResolution state. |
-| PRES-R2 | A surface shows a state only after the machine publishes it. Recording is shown after RecordingStarted, never because StartSession was sent. |
+| PRES-R2 | A surface shows a state only after the machine publishes it. Recording is shown after `SES_PUB_RECORDING_STARTED`, never because StartSession was sent. |
 | PRES-R3 | Consequential domain events are acknowledged on display, lights and audio, consistently with one another. They include recording start and stop, band change, calibration, capture and faults. |
-| PRES-R4 | RecordingAborted is shown as a visible fault, never as a successful session. |
+| PRES-R4 | `SES_PUB_RECORDING_ABORTED` is shown as a visible fault, never as a successful session. |
 | PRES-R5 | Under load a surface may lower its frame rate or simplify, but it never delays capture and never changes what a signal means. |
 | PRES-R6 | Each engine may express a signal differently; the meaning of the signal stays the same in every engine. |
 
@@ -37,12 +37,12 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 
 | ID | Domain event | Required acknowledgement | CLI reply today |
 |---|---|---|---|
-| PRES-SES-01 | RecordingStarted | Display, lights and audio | `OK RECORD START file=... duration=...s format=...` |
-| PRES-SES-02 | RecordingRejected | Display, lights and audio, with the reason visible | `ERR RECORD <reason>` |
-| PRES-SES-03 | RecordingStopping | Display, lights and audio | `OK RECORD STOP requested; finalizing next matched block` |
-| PRES-SES-04 | RecordingCompleted | Display, lights and audio | `OK RECORD PASS file=... frames=... bytes=...` |
-| PRES-SES-05 | RecordingAborted | Display, lights and audio, as a fault that names the file and whether it was finalized | `ERR RECORD ABORT file=... reason=... finalized=...` |
-| PRES-SES-06 | StopIgnored | Reply to the command's source | `OK RECORD already idle` |
+| PRES-SES-01 | `SES_PUB_RECORDING_STARTED` | Display, lights and audio | `OK RECORD START file=... duration=...s format=...` |
+| PRES-SES-02 | `SES_PUB_RECORDING_REJECTED` | Display, lights and audio, with the reason visible | `ERR RECORD <reason>` |
+| PRES-SES-03 | `SES_PUB_RECORDING_STOPPING` | Display, lights and audio | `OK RECORD STOP requested; finalizing next matched block` |
+| PRES-SES-04 | `SES_PUB_RECORDING_COMPLETED` | Display, lights and audio | `OK RECORD PASS file=... frames=... bytes=...` |
+| PRES-SES-05 | `SES_PUB_RECORDING_ABORTED` | Display, lights and audio, as a fault that names the file and whether it was finalized | `ERR RECORD ABORT file=... reason=... finalized=...` |
+| PRES-SES-06 | `SES_PUB_STOP_IGNORED` | Reply to the command's source | `OK RECORD already idle` |
 
 ## Published session state
 
@@ -81,7 +81,7 @@ period stays configurable until bench trials set it.
 | PRES-LED-02 | Button 0 and Button 1 LEDs | Button pressed | Steady at 100% |
 | PRES-LED-03 | Button 0 LED | Button not pressed, `in(Session.Active)` | Slow breathing, which continues through finalizing |
 | PRES-LED-04 | Button 1 LED | Button not pressed, `in(Session.Active)` | Steady at 10% perceived brightness, as when idle |
-| PRES-LED-05 | Button 0 LED | RecordingRejected or RecordingAborted | A distinct fault pattern, starting as three fast blinks, then the rule for the current state resumes. Blink timing stays configurable. |
+| PRES-LED-05 | Button 0 LED | `SES_PUB_RECORDING_REJECTED` or `SES_PUB_RECORDING_ABORTED` | A distinct fault pattern, starting as three fast blinks, then the rule for the current state resumes. Blink timing stays configurable. |
 | PRES-LED-06 | Encoder 0 LED | From `INP_PUB_PROMPT_OPENED_START` or `_STOP` until the prompt closes | Lit, to show where to confirm. Its color follows the semantic color vocabulary, control map D-016. |
 | PRES-PRM-01 | Display | `INP_PUB_PROMPT_OPENED_START` or `INP_PUB_PROMPT_OPENED_STOP` | A prompt naming the action and the Encoder 0 confirm |
 | PRES-PRM-02 | Display | `INP_PUB_PROMPT_CONFIRMED_START`, `INP_PUB_PROMPT_CONFIRMED_STOP`, `INP_PUB_PROMPT_CANCELLED` or `INP_PUB_PROMPT_WITHDRAWN` | The prompt closes. The session's own events carry the outcome. |

@@ -51,7 +51,7 @@ stateDiagram-v2
 Operating is drawn as one state because Mermaid 11 cannot draw a composite state inside
 a parallel region. Its Field and Instrument substates are in the States table; the
 transitions between them are open. The Session, Radio and
-InputResolution regions are summarized; their machines are in [session.md](session.md),
+InputResolution regions are summarized; their machines are in [SessionSm.puml](SessionSm.puml),
 [radio.md](radio.md) and [InputResolutionSm.puml](InputResolutionSm.puml).
 
 ## Regions
@@ -62,7 +62,7 @@ commands and inputs are interpreted.
 | Region | Question it answers | Why it is a region | Detail |
 |---|---|---|---|
 | Context | Which operating mode, engine, view or utility has the controls | It decides what a resolved gesture means | This file |
-| Session | Whether a recording lifecycle is active | Active sessions reject SD maintenance and WAV transfer, and change how stop and faults are handled | [session.md](session.md) |
+| Session | Whether a recording lifecycle is active | Active sessions reject SD maintenance and WAV transfer, and change how stop and faults are handled | [SessionSm.puml](SessionSm.puml) |
 | Radio | Whether a band or tuning transition is in progress | Commands arriving mid-transition need defined handling | [radio.md](radio.md) |
 | InputResolution | How held controls, Shift and chords are being interpreted | The same press means different things while Shift is held or a chord is pending | [InputResolutionSm.puml](InputResolutionSm.puml), Button 0 session hold only; the rest is open in `full_spooky_proto-54w.2` |
 
@@ -90,6 +90,9 @@ This chart does not model them; the list is in the product
 |---|---|---|
 | DEV-I1 | Device | No Context transition stops, replaces or invalidates an active session. Session state is unchanged by every `CTX` row. |
 | DEV-I2 | Device | A restart, overflow or staleness in input reporting releases every held control before later input events are interpreted, so no control such as Shift or PTT stays latched. |
+| DEV-I3 | `in(Session.Active)` | SD maintenance and WAV transfer commands do not execute; they are rejected with a reason. |
+| DEV-I4 | Device | Session state never makes a radio command illegal. Tune, tune-step and band commands are handled the same in every Session state. |
+| DEV-I5 | `in(Session.Active)` | The radio track keeps its timeline through receiver transitions. Each radio half-buffer held back during a transition is written as digital silence of the same length, and the gap's start and end are published with their sample positions. |
 
 ## Guards
 
@@ -130,6 +133,9 @@ restarts the model at its initial state.
 | CTX-04 | Target | No utility is open, so there is nothing to restore |
 | DEV-I1 | Target | Constitution Principle I |
 | DEV-I2 | Target | Constitution Principle III |
+| DEV-I3 | Target | Implemented; no bench evidence |
+| DEV-I4 | Target | Product intent: [roadmap](../../../spec/product/roadmap.md) M3 scope, in-band tuning while recording, and M4 scope, band transitions qualified during recording; [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions; [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
+| DEV-I5 | Target | [Decision 0004](../../decisions/0004-radio-track-continuity-across-transitions.md); [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions |
 | DEV-01 | Proven | Sleep entry while idle: [radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | DEV-02 | Target | Implemented in the IPC experiment builds; no bench evidence |
 
@@ -137,4 +143,7 @@ restarts the model at its initial state.
 
 | Row | Firmware today | Tracked by |
 |---|---|---|
-| EnterSleep during a session | Accepted. The recording is finalized and reported as a pass with reason `stopped` just before USB disconnects. Found by code reading; not reproduced on hardware. | `full_spooky_proto-8lw.11` |
+| EnterSleep during a session | Accepted. The recording is finalized and reported as a pass with reason `stopped` just before USB disconnects. Found by code reading; not reproduced on hardware. The Session shadow machine is not told, so it records a `SESSION_MISMATCH` diagnostic fault if this happens. | `full_spooky_proto-8lw.11` |
+| DEV-I4 | Tune, band, `UP` and `DOWN` are rejected while a session is active with `ERR RADIO tuning disabled while recording`, shown in the [radio regression](../../evidence/2026-09-24-radio-regression.md). Principle VI keeps this guard until bench qualification passes. | `full_spooky_proto-54w.6`, `full_spooky_proto-54w.12` |
+| DEV-I5 | The band-switch stream gate drops radio half-buffers instead of passing silence. Unreachable during a session today, because the DEV-I4 guard rejects band changes while recording. | `full_spooky_proto-54w.12` |
+| Session domain events | Exist only as CLI reply lines and shadow log lines; nothing is published to presentation surfaces | `full_spooky_proto-54w.4` |

@@ -26,6 +26,14 @@ hold, withdrawal on a session change, pre-held releases delivered exactly once, 
 release-all from every state. A seeded random sequence checks that every input gets
 exactly one outcome and that only a confirming Encoder 0 press issues a command.
 
+The Session tests drive the generated Session machine through its port with scripted
+action results: start success, each rejection and abort path, stop and repeated stop,
+block-driven completion, failed finalization and capture faults, plus a seeded random
+check that a failure is never published as a success. The Session shadow tests post
+reports the way the recorder does, through the real event queue and dispatcher, and
+check that the disagreement diagnostic fires exactly when the machine and the recorder
+differ.
+
 The event-queue tests cover decision 0007: post order, sequence and time, admission
 by class with the internal reserve, reject-newest overrun, one reconcile event after
 rejected input, bounded run-to-completion dispatch, the reserve's exact limit when

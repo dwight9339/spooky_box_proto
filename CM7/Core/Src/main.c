@@ -25,6 +25,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include "app_dispatch.h"
 #include "audio_path_service.h"
 #include "board_diagnostics.h"
 #include "codec_volume_service.h"
@@ -40,6 +41,7 @@
 #include "radio_control_service.h"
 #include "radio_recorder.h"
 #include "sd_test.h"
+#include "session_shadow.h"
 #include "ui_board_test.h"
 #include "usb_test.h"
 #include "wav_transfer.h"
@@ -405,6 +407,7 @@ static void UsbCliCommand(const char *line)
        (command[12] == '\t')))
   {
     (void)UsbTest_SendText("ERR RECORD unavailable while SD test active\r\n");
+    SessionShadow_ReportStart(0U, SESSION_SHADOW_REJECTED, false); /* card_free */
     return;
   }
   if (RadioRecorder_HandleCommand(command, AudioPath_IsRunning()))
@@ -756,6 +759,7 @@ Error_Handler();
   Bringup_Run();
   SdTest_Start(&hsd1);
   RadioRecorder_Init(&hdfsdm1_filter0);
+  AppDispatch_Init();
   WavTransfer_Init(&hsd1);
   if (!FuelGaugeTest_Start(&hi2c2))
   {
@@ -794,6 +798,7 @@ Error_Handler();
     SdTest_Service();
     PrototypePower_Service(SleepStopRadioAudio);
     MagnetometerTest_Service();
+    AppDispatch_Service(); /* after every producer in this pass (decision 0007) */
     HAL_Delay(5U);
   }
   /* USER CODE END 3 */

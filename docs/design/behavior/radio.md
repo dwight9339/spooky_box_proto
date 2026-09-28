@@ -51,7 +51,7 @@ stateDiagram-v2
 
 | ID | While | Invariant |
 |---|---|---|
-| RAD-I1 | Every state | Session state never makes a radio command legal or illegal ([SES-I4](session.md#invariants)) |
+| RAD-I1 | Every state | Session state never makes a radio command legal or illegal ([DEV-I4](top-level.md#invariants)) |
 | RAD-I2 | Operational | The published band and frequency are the last completed result the receiver reported, never a requested target |
 | RAD-I3 | BandTransition | No receiver audio reaches the recorder or the monitored mix. Each gated radio half-buffer reaches the recorder as digital silence of the same length. |
 | RAD-I4 | Faulted | The receiver stays in reset and the monitored output stays muted. Only a system reset leaves Faulted. |
@@ -139,10 +139,10 @@ has never been measured.
 
 | Row | Effect |
 |---|---|
-| SES-I4 | Radio commands are legal in every Session state |
-| SES-14 | A radio SAI or DMA error during a session is also a session CaptureFault |
-| SES-I5 | During BandTransition the recorder receives silence and the session events mark the gap |
-| SES-01 | The session guard radio_running fails while the region is Faulted, so no session can start |
+| DEV-I4 | Radio commands are legal in every Session state |
+| Session `CAPTURE_FAULT` | A radio SAI or DMA error during a session is also a session capture fault ([SessionSm](SessionSm.puml)) |
+| DEV-I5 | During BandTransition the recorder receives silence and the session events mark the gap |
+| Session `can_start` | The session start guard needs the radio running, so it fails while the region is Faulted and no session can start ([SessionSm](SessionSm.puml)) |
 
 ## Open behavior
 
@@ -166,7 +166,7 @@ has never been measured.
 |---|---|---|
 | RAD-S1 to RAD-S4 | Proven | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | RAD-S5 | Target | Implemented; no bench evidence |
-| RAD-I1 | Target | [SES-I4](session.md#maturity) basis; decision 0003 |
+| RAD-I1 | Target | [DEV-I4](top-level.md#maturity) basis; decision 0003 |
 | RAD-I2 | Target | Implemented: the tune status changes only on completion. Constitution Principle II. |
 | RAD-I3 | Target | Decision 0004 |
 | RAD-I4 | Target | Implemented; no bench evidence |

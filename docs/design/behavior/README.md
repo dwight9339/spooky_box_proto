@@ -20,8 +20,8 @@ region's Markdown file is deleted in the change that lands its diagram.
 | File | Region | Form |
 |---|---|---|
 | [InputResolutionSm.puml](InputResolutionSm.puml) ([rendered](InputResolutionSm.svg)) | InputResolution: the Button 0 session hold and prompt ([decision 0005](../../decisions/0005-button-0-session-prompt.md)) | StateSmith diagram |
+| [SessionSm.puml](SessionSm.puml) ([rendered](SessionSm.svg)) | Session: the recording lifecycle, in shadow mode beside the recorder until `full_spooky_proto-8lw.4` | StateSmith diagram |
 | [top-level.md](top-level.md) | Device chart, parallel regions, the Context region, cross-region invariants | Tables |
-| [session.md](session.md) | Session: recording lifecycle | Tables |
 | [radio.md](radio.md) | Radio: tuning, band transitions and radio faults | Tables |
 | [presentation.md](presentation.md) | How domain events and published state reach the user | Hand-written contract |
 
@@ -129,7 +129,7 @@ Regions that have not yet moved to a diagram are specified as Markdown tables. T
 conventions apply to those files only.
 
 - **Stable IDs.** Every state, invariant and transition has an ID with its machine's
-  prefix: `SES-S1` for a state, `SES-I1` for an invariant, `SES-01` for a transition.
+  prefix: `RAD-S1` for a state, `RAD-I1` for an invariant, `RAD-01` for a transition.
   IDs are never reused or renumbered. When a row's meaning changes, it gets a new ID
   and the old ID moves to the file's Retired IDs table.
 - **Tables are authoritative.** Mermaid diagrams illustrate the tables and must not

@@ -76,7 +76,7 @@ removed, each of these questions has an answer backed by evidence or an accepted
 
 ## Consequences
 
-- The [behavior model](../design/behavior/session.md) treats "radio commands are legal
+- The [behavior model](../design/behavior/top-level.md#invariants) treats "radio commands are legal
   in every session state" as the target, and lists today's rejection as a deviation.
 - The Radio region is the next machine in the behavior model (`54w.15`).
 - Radio control must become non-blocking, or its blocking time must be proven to fit the

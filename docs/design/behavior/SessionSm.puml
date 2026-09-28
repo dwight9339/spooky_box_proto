@@ -1,0 +1,75 @@
+@startuml SessionSm
+' Session region: the recording lifecycle. Source of truth for
+' CM7/App/sm/SessionSm.[ch]; regenerate with host/tools/behavior_model.py.
+' Rules: docs/design/behavior/README.md. Guards and actions call only functions in
+' CM7/App/sm/session_port.h.
+'
+' Today the machine runs in shadow mode beside the recorder (decision 0006 item 18):
+' the recorder acts, and the port answers each guard from what the recorder reported.
+' Authority moves to the machine in full_spooky_proto-8lw.4.
+
+[*] --> Idle
+
+state Idle
+state Active {
+  state Recording
+  state Finalizing
+}
+state OpenResult <<choice>>
+state CaptureResult <<choice>>
+state FinalizeResult <<choice>>
+
+Idle : enter / ses_state_changed();
+Recording : enter / ses_state_changed();
+Finalizing : enter / ses_state_changed();
+
+' Start: the guard can_start covers card present, card free, radio running, PDM
+' ready and a duration of 1 to 3600 seconds.
+Idle : START [!ses_can_start()] / ses_publish(SES_PUB_RECORDING_REJECTED);
+Idle --> OpenResult : START [ses_can_start()] / ses_open_file();
+OpenResult --> Idle : [!ses_file_opened()] / ses_publish(SES_PUB_RECORDING_REJECTED);
+OpenResult --> CaptureResult : else / ses_start_capture();
+CaptureResult --> Recording : [ses_capture_started()] / ses_publish(SES_PUB_RECORDING_STARTED);
+CaptureResult --> Idle : else / ses_finalize_file(); ses_publish(SES_PUB_RECORDING_ABORTED);
+
+Idle : STOP / ses_publish(SES_PUB_STOP_IGNORED);
+Active : START / ses_publish(SES_PUB_RECORDING_REJECTED);
+
+' Stop at the next matched radio and microphone block.
+Recording --> Finalizing : STOP / ses_request_stop(); ses_publish(SES_PUB_RECORDING_STOPPING);
+Finalizing : STOP / ses_publish(SES_PUB_RECORDING_STOPPING);
+
+' A block below the target changes nothing. Radio and microphone are written only as
+' matched block pairs, so the tracks stay in sync.
+Recording --> FinalizeResult : BLOCK_WRITTEN [ses_target_reached()] / ses_stop_capture(); ses_finalize_file();
+Finalizing --> FinalizeResult : BLOCK_WRITTEN / ses_stop_capture(); ses_finalize_file();
+FinalizeResult --> Idle : [ses_finalize_ok()] / ses_publish(SES_PUB_RECORDING_COMPLETED);
+FinalizeResult --> Idle : else / ses_publish(SES_PUB_RECORDING_ABORTED);
+
+' Card removed, radio or PDM DMA error, queue overrun, or a failed block write. The
+' partial file is finalized where possible, and the abort reports whether it was.
+Active --> Idle : CAPTURE_FAULT / ses_stop_capture(); ses_finalize_file(); ses_publish(SES_PUB_RECORDING_ABORTED);
+
+note right of Idle
+  Open: Armed (rolling capture) and Reviewing are
+  named by the constitution; their behavior is open in
+  full_spooky_proto-hpq.2 and full_spooky_proto-hpq.3.
+  Physical start duration and which other commands are
+  allowed while recording: full_spooky_proto-54w.1.
+  Session folder and manifest: full_spooky_proto-hpq.3.
+end note
+note right of Active
+  Safety guard in force (Principle VI): tune and band
+  commands are rejected while Active, outside this machine,
+  until full_spooky_proto-54w.6 and -54w.12 qualify them
+  (decision 0003). Sleep during a session: full_spooky_proto-8lw.11.
+end note
+
+/'! $CONFIG : toml
+[RenderConfig.C]
+IncludeGuardLabel = "SPOOKY_SESSION_SM_H"
+CFileIncludes = """
+    #include "session_port.h"
+    """
+'/
+@enduml

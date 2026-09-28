@@ -35,6 +35,13 @@ spooky_test(logger_diag_test logger_diag_test.c stubs/fake_hal.c
     ../CM7/App/target_logger.c ../CM7/App/diagnostics.c
     ../CM7/App/event_queue.c ../CM7/App/app_events.c)
 spooky_test(event_queue_test event_queue_test.c ../CM7/App/event_queue.c)
+spooky_test(session_test session_test.c ../CM7/App/sm/session_port.c)
+spooky_generated_sm(session_test SessionSm.c)
+spooky_test(session_shadow_test session_shadow_test.c
+    ../CM7/App/session_shadow.c ../CM7/App/app_dispatch.c ../CM7/App/app_events.c
+    ../CM7/App/event_queue.c ../CM7/App/sm/session_port.c)
+spooky_generated_sm(session_shadow_test SessionSm.c)
+target_include_directories(session_shadow_test PRIVATE ../CM7/Core/Inc)
 spooky_test(input_resolution_test input_resolution_test.c ../CM7/App/sm/input_resolution_port.c)
 spooky_generated_sm(input_resolution_test InputResolutionSm.c)
 add_executable(ipc_smoke_protocol_test

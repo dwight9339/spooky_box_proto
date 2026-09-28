@@ -112,6 +112,7 @@ An accepted USB send is not proof of host receipt.
 | 12 LOG_ERROR | Cumulative transport errors | Cumulative transport discarded bytes |
 | 13 SLEEP | 1 entry, 2 charging report wake | Reserved 0 |
 | 14 EVENT_QUEUE_LOSS | Cumulative rejected internal events (a fault) | Queue high-water mark |
+| 15 SESSION_MISMATCH | Session shadow machine state: 0 idle, 1 recording, 2 finalizing (a fault) | Recorder active: 1 yes, 0 no |
 
 IPC events are present only in IPC experiment builds. Logger and event-queue loss
 events are sampled at most once per second, so one event can summarize multiple
