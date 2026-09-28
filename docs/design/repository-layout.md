@@ -59,17 +59,10 @@ used by `platformio/deploy.py`.
 
 ## Regeneration rule
 
-STM32CubeMX generation is currently frozen. The `.ioc` is an inventory and pin-map aid,
-not an authoritative source, because blocking runtime and ownership discrepancies remain
-and CubeMX 6.17 does not complete a scratch generation of this dual-core project. See the
-[CubeMX reconciliation register](cubemx-reconciliation.md).
-
-Any future evaluation must follow the
-[scratch-generation and diff procedure](../procedures/cubemx-scratch-generation.md).
-Start from a clean, preserved tree; generate only in isolated scratch space; inspect the
-complete generated-surface diff; restore every proven runtime override CubeMX cannot
-express; and pass all build and bench gates before adopting output. Never recursively
-copy a CubeMX export over the repository.
+Before running CubeMX code generation, commit or otherwise preserve a clean
+working tree. Generate, inspect the complete diff, and restore any proven
+runtime overrides that CubeMX cannot express. The known discrepancies are
+listed in the [CubeMX reconciliation register](cubemx-reconciliation.md).
 
 Board diagnostics and prototype-power policy live in `CM7/App`; hardware initialization and IRQ wrappers remain in generated shells.
 Portable IPC tests build independently through `tests/CMakeLists.txt` and never
