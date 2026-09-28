@@ -346,6 +346,8 @@ This workflow should not require file browsing during performance. A later edito
 
 Recording is a global capability, but its meaning may vary by context.
 
+Starting and stopping a session is a deliberate gesture in both Field and Instrument Mode: a hold that opens a prompt, which the user then confirms or cancels. A slip must not be able to start or stop a session, and while the gesture is in progress no other control changes the performance. The control map defines the controls.
+
 Field and Instrument sessions should be stored in separate directory trees and use distinct naming schemes. Each session should live in its own folder with a manifest that identifies the session type, start time, duration, firmware and format versions, stream files, and any incomplete or recovered state. Exact names remain to be finalized, but the intended shape is:
 
 ```text
@@ -380,8 +382,6 @@ Recording and rolling capture must not change how Field Mode moves through radio
 An Instrument session should initially record the performed stereo mix, an EMF stream, and the event data required to understand the performance. Where available, it should also preserve microphone injection as a separate source and record sequencer or external MIDI events in a standard or well-documented form.
 
 Button 1 may provide a parallel performance gesture in Instrument Mode: while held, the user can capture or inject microphone material into the active sampler, slicer, or granular buffer. The exact capture length, quantization, and latch behavior depend on the active engine.
-
-Button 0 may select how injected material interacts with the existing performance when it is triggered. Candidate behaviors include layering it over the mix, ducking the existing engine, or making the injected sample temporarily exclusive. This should be non-destructive: the underlying performance mix and microphone source should remain preserved so the policy can be changed during playback or later processing.
 
 The first implementation should prioritize reliable audio capture over exhaustive reconstruction. The user should receive consistent recording-state feedback regardless of the active mode or view.
 
@@ -496,9 +496,8 @@ The following questions should remain visible as prototypes are tested:
 12. How should the device behave if a top-level mode change is requested during recording, capture, or another time-critical operation?
 13. Should Playback remain inside the Settings hub, receive a direct Shift shortcut, or both?
 14. What file formats should store EMF, semantic events, and sequencer or MIDI data?
-15. How should button 0 select layered, ducked, or exclusive microphone injection in Instrument Mode?
-16. What Shift-layer chord timing feels reliable without making the controls feel delayed?
-17. Should tunes and band transitions play generated transition noise in the monitored mix, and which of its qualities, such as level, color and duration, should the user be able to tune? Transition noise would never be written to a raw track.
+15. What Shift-layer chord timing feels reliable without making the controls feel delayed?
+16. Should tunes and band transitions play generated transition noise in the monitored mix, and which of its qualities, such as level, color and duration, should the user be able to tune? Transition noise would never be written to a raw track.
 
 ## Design Guardrails
 

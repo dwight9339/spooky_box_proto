@@ -68,6 +68,24 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | PRES-RAD-08 | RadioFault | Display, lights and audio, as a fault | `ERR RADIO band switch failed; reset required`, or a `[bridge] FAIL` log line; the red board LED turns on |
 | PRES-RAD-09 | RadioCommandRejected | Reply to the command's source | `ERR RADIO audio path is not running` |
 
+## Session prompt and button lights
+
+The standalone button LEDs render published Session state and the physical press state
+of their buttons. Brightness is perceived brightness, CIE L\* lightness, converted to
+PWM duty through the inverse L\* curve; 10% perceived is roughly 1% duty. The breathing
+period stays configurable until bench trials set it.
+
+| ID | Surface | When | Expression |
+|---|---|---|---|
+| PRES-LED-01 | Button 0 and Button 1 LEDs | Button not pressed, not `in(Session.Active)` | Steady at 10% perceived brightness |
+| PRES-LED-02 | Button 0 and Button 1 LEDs | Button pressed | Steady at 100% |
+| PRES-LED-03 | Button 0 LED | Button not pressed, `in(Session.Active)` | Slow breathing, which continues through finalizing |
+| PRES-LED-04 | Button 1 LED | Button not pressed, `in(Session.Active)` | Steady at 10% perceived brightness, as when idle |
+| PRES-LED-05 | Button 0 LED | RecordingRejected or RecordingAborted | A distinct fault pattern, starting as three fast blinks, then the rule for the current state resumes. Blink timing stays configurable. |
+| PRES-LED-06 | Encoder 0 LED | SessionPrompt open | Lit, to show where to confirm. Its color follows the semantic color vocabulary, control map D-016. |
+| PRES-PRM-01 | Display | SessionPromptOpened(start or stop) | A prompt naming the action and the Encoder 0 confirm |
+| PRES-PRM-02 | Display | SessionPromptConfirmed, SessionPromptCancelled, SessionPromptWithdrawn | The prompt closes. The session's own events carry the outcome. |
+
 ## Device domain events
 
 | ID | Domain event | Required acknowledgement | CLI reply today |
@@ -84,7 +102,9 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | EMF, activity and warning expression | How do the matrix and LEDs express semantic EMF, radio activity and warnings? | `full_spooky_proto-54w.8` |
 | Utility entry and exit | What does the display show when a utility opens or closes? | `full_spooky_proto-54w.2` |
 | Band change during a session | How are band changes and radio faults acknowledged on display, lights and audio while recording? | `full_spooky_proto-54w.1`, [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
-| Transition noise | Should tunes and band transitions play generated noise in the monitored mix, with user-tunable level, color and duration? It would never reach a stored raw track or the activity metrics. | `full_spooky_proto-54w.16`; product open decision 17 |
+| Swallowed presses | Does a button that is pressed while its gesture is swallowed or dismissed still light at 100%? | `full_spooky_proto-54w.18` |
+| Prompt audio | Is opening, confirming or cancelling the prompt acknowledged with sound? | `full_spooky_proto-54w.1` |
+| Transition noise | Should tunes and band transitions play generated noise in the monitored mix, with user-tunable level, color and duration? It would never reach a stored raw track or the activity metrics. | `full_spooky_proto-54w.16`; product open decision 16 |
 
 ## Maturity
 
@@ -106,6 +126,9 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | PRES-RAD-07 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | PRES-RAD-08 | Target | CLI reply and log implemented; no bench evidence |
 | PRES-RAD-09 | Target | CLI reply implemented; no bench evidence |
+| PRES-LED-01 to PRES-LED-03 | Target | User direction 2026-09-27, recorded in `full_spooky_proto-54w.18`. Not implemented; the LED pins were chosen for PWM-capable timers. |
+| PRES-LED-04 to PRES-LED-06 | Target | [Decision 0005](../../decisions/0005-button-0-session-prompt.md), items 14 to 16. Not implemented. |
+| PRES-PRM-01, PRES-PRM-02 | Target | User direction 2026-09-27, `full_spooky_proto-54w.18`. Not implemented. |
 | PRES-DEV-01 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | PRES-DEV-02 | Target | CLI reply implemented; no bench evidence |
 | PRES-DEV-03 | Target | Product intent; no mode state exists in firmware |

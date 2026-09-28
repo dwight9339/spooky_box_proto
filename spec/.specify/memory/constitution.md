@@ -163,7 +163,7 @@ narrow vertical slices that deepen the instrument.
   and a tooling task's priority MUST NOT exceed that of the product work it serves. An
   automated check replaces a manual one only when it is at least as trustworthy, and
   judgment checks stay with a person.
-- A proposed or open product decision (for example from the control-map workbook) MUST
+- A proposed or open product decision (for example from the control map) MUST
   NOT be silently promoted to a requirement. It is settled through a short decision record
   and a test.
 
@@ -301,6 +301,7 @@ and then stop until the user approves it. The proposal contains:
 - the exact proposed text or diff;
 - the motivation, including evidence or the conflict that prompted it;
 - the principles affected;
+- for the control map, the audit that document defines;
 - for this constitution, the proposed version bump; and
 - the effect on dependent specs, plans, templates and agent instruction files.
 
@@ -324,4 +325,4 @@ existing code or documents file a Beads issue instead of making an unapproved sw
 fix. Day-to-day agent workflow guidance lives in `AGENTS.md` and `CLAUDE.md`. Those files
 MUST NOT contradict this constitution.
 
-**Version**: 1.3.0 | **Ratified**: 2026-09-25 | **Last Amended**: 2026-09-25
+**Version**: 1.4.0 | **Ratified**: 2026-09-25 | **Last Amended**: 2026-09-27

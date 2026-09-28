@@ -12,7 +12,7 @@ in these documents.
 - [Product philosophy](../spec/product/product-philosophy.md): what the instrument should
   feel like, and the stable meaning of its signals.
 - [Modes and interaction](../spec/product/modes-and-interaction.md) and the
-  [control map](../spec/product/spooky_box_control_map.xlsx): mode hierarchy, controls
+  [control map](../spec/product/control-map.md): mode hierarchy, controls
   and open product decisions.
 - [Development roadmap](../spec/product/roadmap.md): milestones, exit criteria,
   tooling-track rules, and the decisions each milestone waits on.

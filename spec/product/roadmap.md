@@ -127,9 +127,9 @@ followed by a test. They are listed in the order that unblocks the most work.
 
 | Order | Decision | Beads | Unblocks |
 | --- | --- | --- | --- |
-| 1 | Recording-safe command policy and physical session start/stop binding | `54w.1` | M2 command policy, then storage service and latency budget; most of M3 |
+| 1 | Recording-safe command policy | `54w.1` | M2 command policy, then storage service and latency budget; most of M3 |
 | 2 | First-slice gestures, reconciled with the control map (utility entry, hold priority, selector commit/cancel, chord arbitration) | `54w.2` | M3 interaction model, IPC and everything after it |
 | 3 | Rolling-window duration and memory/storage strategy | `hpq.2` | M4 formats and rolling save. Needs measurement first, so start early. |
-| 4 | Semantic EMF, activity and warning mappings (workbook D-016) | `54w.8` | M3 visual feedback |
+| 4 | Semantic EMF, activity and warning mappings (control map D-016) | `54w.8` | M3 visual feedback |
 | 5 | Session, asset and recovery formats | `hpq.3` | M4 transactions and playback |
 | 6 | Qualification for lifting the recording guards on tuning and band transitions (decisions 0003 and 0004) | `54w.6`, `54w.12` | Tuning and band transitions while recording in M3 and M4 |

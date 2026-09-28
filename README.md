@@ -12,7 +12,7 @@ not yet the complete product firmware.
 - [Product philosophy](spec/product/product-philosophy.md) - what the instrument should
   feel like and the meaning its controls and feedback should preserve.
 - [Modes and interaction](spec/product/modes-and-interaction.md) and
-  [control map](spec/product/spooky_box_control_map.xlsx) - intended experience,
+  [control map](spec/product/control-map.md) - intended experience,
   contextual controls, and open product decisions.
 - [Architecture](docs/design/architecture.md) - current implementation, target M7/M4
   split, boundaries, and open decisions.

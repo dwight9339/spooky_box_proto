@@ -18,6 +18,7 @@ shows the whole device; each region with enough behavior gets its own file.
 | [top-level.md](top-level.md) | Device chart, parallel regions, context transitions, cross-region invariants |
 | [session.md](session.md) | Session region: recording lifecycle |
 | [radio.md](radio.md) | Radio region: tuning, band transitions and radio faults |
+| [input-resolution.md](input-resolution.md) | InputResolution region: the Button 0 session hold and prompt |
 | [presentation.md](presentation.md) | How domain events and published state reach the user |
 
 ## What gets a state machine
