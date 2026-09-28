@@ -17,6 +17,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0005](0005-button-0-session-prompt.md) | Button 0 session prompt and standalone button lighting | Accepted |
 | [0006](0006-statesmith-behavior-model.md) | StateSmith PlantUML diagrams are the behavior model | Accepted |
 | [0007](0007-m7-event-queue.md) | One bounded M7 event queue with run-to-completion dispatch | Accepted |
+| [0008](0008-recording-safe-command-policy.md) | Recording-safe command policy | Accepted |
 
 ## Template
 
