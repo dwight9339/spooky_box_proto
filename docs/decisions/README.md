@@ -15,7 +15,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0003](0003-radio-control-during-recording.md) | Radio control stays available while recording | Accepted |
 | [0004](0004-radio-track-continuity-across-transitions.md) | Radio-track continuity across receiver transitions | Accepted |
 | [0005](0005-button-0-session-prompt.md) | Button 0 session prompt and standalone button lighting | Accepted |
-| [0006](0006-statesmith-behavior-model.md) | StateSmith PlantUML diagrams are the behavior model | Proposed |
+| [0006](0006-statesmith-behavior-model.md) | StateSmith PlantUML diagrams are the behavior model | Accepted |
 
 ## Template
 

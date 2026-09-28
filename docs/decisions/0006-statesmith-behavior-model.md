@@ -1,9 +1,11 @@
 # 0006. StateSmith PlantUML diagrams are the behavior model
 
-- **Status:** Proposed
+- **Status:** Accepted 2026-09-28
 - **Date:** 2026-09-28
 - **Supersedes:** none
-- **Beads:** none yet; implementing tasks are proposed with this record
+- **Beads:** `full_spooky_proto-8lw.12` (tooling), `full_spooky_proto-54w.21`
+  (InputResolution), `full_spooky_proto-8lw.13` (event queue), `full_spooky_proto-8lw.14`
+  (Session shadow)
 
 ## Context
 
