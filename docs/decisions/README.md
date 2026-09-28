@@ -16,6 +16,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0004](0004-radio-track-continuity-across-transitions.md) | Radio-track continuity across receiver transitions | Accepted |
 | [0005](0005-button-0-session-prompt.md) | Button 0 session prompt and standalone button lighting | Accepted |
 | [0006](0006-statesmith-behavior-model.md) | StateSmith PlantUML diagrams are the behavior model | Accepted |
+| [0007](0007-m7-event-queue.md) | One bounded M7 event queue with run-to-completion dispatch | Accepted |
 
 ## Template
 
