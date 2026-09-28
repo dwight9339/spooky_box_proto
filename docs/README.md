@@ -25,6 +25,10 @@ the old one.
 
 - [0001 Initial UI and bus ownership](decisions/0001-initial-ui-and-bus-ownership.md)
 - [0002 Windows-first Spooky Bench host](decisions/0002-windows-first-spooky-bench.md)
+- [0003 Radio control stays available while recording](decisions/0003-radio-control-during-recording.md)
+- [0004 Radio-track continuity across receiver transitions](decisions/0004-radio-track-continuity-across-transitions.md)
+- [0005 Button 0 session prompt and standalone button lighting](decisions/0005-button-0-session-prompt.md)
+- [0006 StateSmith PlantUML diagrams are the behavior model](decisions/0006-statesmith-behavior-model.md)
 
 ## Design and contracts — `design/`
 
@@ -33,7 +37,8 @@ Updated in the same change as the code they describe.
 - [Architecture](design/architecture.md): proven path, responsibility boundaries,
   application model, reliability rules.
 - [Behavior model](design/behavior/README.md): hierarchical state machines for the
-  M7 application, with vocabulary, transition tables and presentation mapping.
+  M7 application, one per region, as StateSmith diagrams that generate firmware or as
+  transition tables, with vocabulary and presentation mapping.
 - [Prototype hardware](design/prototype-hardware.md): installed hardware, bodges,
   wiring, clocks and bus devices.
 - [USB CLI contract](design/usb-cli.md): target commands, responses and the EMF

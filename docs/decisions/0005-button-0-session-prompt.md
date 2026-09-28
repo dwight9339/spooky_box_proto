@@ -90,7 +90,7 @@ Everything else is the user's direction.
 ## Consequences
 
 - The InputResolution region gets its first machine: the Button 0 hold and prompt
-  ([input-resolution.md](../design/behavior/input-resolution.md)).
+  ([InputResolutionSm.puml](../design/behavior/InputResolutionSm.puml)).
 - The standalone button LEDs need a hardware PWM driver with an L\* table. The per-pin
   timer and channel should be recorded in the prototype hardware document when that
   driver is written.

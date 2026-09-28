@@ -15,23 +15,26 @@ function(spooky_test name)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 # Adds StateSmith-generated machines from CM7/App/sm (decision 0006) to a test.
-# Some generated handlers ignore their `sm` argument, so unused-parameter
+# Some generated handlers ignore their `sm` argument, and MSVC reports the code
+# StateSmith emits after a transition's return as unreachable, so those two
 # warnings are suppressed for these files only. Pass paths relative to CM7/App/sm.
 function(spooky_generated_sm target)
     list(TRANSFORM ARGN PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/../CM7/App/sm/ OUTPUT_VARIABLE sources)
     target_sources(${target} PRIVATE ${sources})
     target_include_directories(${target} PRIVATE ../CM7/App/sm)
     if(MSVC)
-        set(no_unused_parameter /wd4100)
+        set(generated_options /wd4100 /wd4702)
     else()
-        set(no_unused_parameter -Wno-unused-parameter)
+        set(generated_options -Wno-unused-parameter)
     endif()
     set_source_files_properties(${sources} TARGET_DIRECTORY ${target}
-        PROPERTIES COMPILE_OPTIONS ${no_unused_parameter})
+        PROPERTIES COMPILE_OPTIONS "${generated_options}")
 endfunction()
 spooky_test(logger_diag_test logger_diag_test.c stubs/fake_hal.c
     ../Common/Src/log_buffer.c ../Common/Src/diag_history.c
     ../CM7/App/target_logger.c ../CM7/App/diagnostics.c)
+spooky_test(input_resolution_test input_resolution_test.c ../CM7/App/sm/input_resolution_port.c)
+spooky_generated_sm(input_resolution_test InputResolutionSm.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)

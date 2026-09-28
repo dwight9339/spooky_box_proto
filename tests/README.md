@@ -15,8 +15,16 @@ ctest --test-dir build/host --output-on-failure
 ```
 
 Tests of StateSmith machines add the generated C from `CM7/App/sm` with
-`spooky_generated_sm(<test> <Name>Sm.c)`. It suppresses unused-parameter warnings for
-those files only, because some generated handlers ignore their `sm` argument.
+`spooky_generated_sm(<test> <Name>Sm.c)`. It suppresses unused-parameter warnings, and
+MSVC's unreachable-code warning, for those files only.
+
+The InputResolution tests drive the generated machine through its real port against a
+fake integration that records deliveries, commands, published events and timer calls.
+They cover each behavior of decision 0005 items 1-9: the start and stop prompts,
+swallowing before the prompt, confirm, cancel, dismissal, the swallowed rest of the
+hold, withdrawal on a session change, pre-held releases delivered exactly once, and
+release-all from every state. A seeded random sequence checks that every input gets
+exactly one outcome and that only a confirming Encoder 0 press issues a command.
 
 The IPC tests compile the same portable protocol code as both cores. They
 exercise invalid headers, version/size mismatches, first handshake, missing

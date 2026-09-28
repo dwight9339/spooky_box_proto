@@ -101,5 +101,7 @@ diagram and with the file itself; it needs no Java and passes whichever platform
 rendered the file. Regeneration re-renders an SVG only when its stamp is out of date.
 
 Host tests add generated machines with `spooky_generated_sm()` in
-`tests/CMakeLists.txt`, which suppresses unused-parameter warnings for those files
-only.
+`tests/CMakeLists.txt`. It suppresses two warnings for those files only: unused
+parameters, because some generated handlers ignore their `sm` argument, and MSVC's
+unreachable-code warning, because StateSmith emits an ancestor check after a
+transition's `return`.

@@ -1,0 +1,83 @@
+@startuml InputResolutionSm
+' InputResolution region: the Button 0 session hold and prompt (decision 0005).
+' Source of truth for CM7/App/sm/InputResolutionSm.[ch]; regenerate with
+' host/tools/behavior_model.py. Rules: docs/design/behavior/README.md.
+' Guards and actions call only functions in CM7/App/sm/input_resolution_port.h.
+'
+' Every input event gets exactly one outcome: inp_deliver() passes it on to gesture
+' resolution, inp_swallow() drops it. A release is interpreted in the context where
+' its press began: the port remembers whether each press was delivered.
+
+[*] --> Neutral
+
+state Neutral
+state Btn0Held {
+  [*] --> Pending
+  state Pending
+  state Prompt {
+    state StartPrompt
+    state StopPrompt
+  }
+  state Consumed
+}
+
+' No Button 0 session hold in progress; other gestures resolve normally.
+Neutral --> Pending : BTN0_PRESS [inp_session_hold_allowed()] / inp_swallow();
+Neutral : BTN0_PRESS [!inp_session_hold_allowed()] / inp_deliver();
+Neutral : BTN0_RELEASE [inp_input_is_undelivered_release()] / inp_swallow();
+Neutral : BTN0_RELEASE [!inp_input_is_undelivered_release()] / inp_deliver();
+Neutral : ENC0_PRESS / inp_deliver();
+Neutral : INPUT [inp_input_is_undelivered_release()] / inp_swallow();
+Neutral : INPUT [!inp_input_is_undelivered_release()] / inp_deliver();
+Neutral : RECONCILE / inp_release_all();
+
+' Button 0 is held for the session hold. Everything is swallowed except the release
+' of a control whose press was delivered before Button 0 went down.
+Btn0Held --> Neutral : BTN0_RELEASE / inp_swallow();
+Btn0Held --> Neutral : RECONCILE / inp_release_all();
+Btn0Held : BTN0_PRESS / inp_swallow();
+Btn0Held : ENC0_PRESS / inp_swallow();
+Btn0Held : INPUT [inp_input_is_delivered_release()] / inp_deliver();
+Btn0Held : INPUT [!inp_input_is_delivered_release()] / inp_swallow();
+
+' The session hold threshold has not been reached. A short press has no action.
+Pending : enter / inp_start_hold_timer();
+Pending : exit / inp_cancel_hold_timer();
+Pending --> StartPrompt : HOLD_THRESHOLD [!inp_session_active()]
+Pending --> StopPrompt : HOLD_THRESHOLD [inp_session_active()]
+
+' The prompt is open. Encoder 0 button confirms, releasing Button 0 cancels, and
+' everything else is dismissed. Feedback on the outcome comes from the Session region.
+StartPrompt : enter / inp_publish(INP_PUB_PROMPT_OPENED_START);
+StopPrompt : enter / inp_publish(INP_PUB_PROMPT_OPENED_STOP);
+StartPrompt --> Consumed : ENC0_PRESS / inp_swallow(); inp_publish(INP_PUB_PROMPT_CONFIRMED_START); inp_issue(INP_CMD_START_SESSION);
+StopPrompt --> Consumed : ENC0_PRESS / inp_swallow(); inp_publish(INP_PUB_PROMPT_CONFIRMED_STOP); inp_issue(INP_CMD_STOP_SESSION);
+Prompt --> Neutral : BTN0_RELEASE / inp_swallow(); inp_publish(INP_PUB_PROMPT_CANCELLED);
+Prompt --> Neutral : RECONCILE / inp_publish(INP_PUB_PROMPT_CANCELLED); inp_release_all();
+Prompt --> Consumed : SESSION_CHANGED / inp_publish(INP_PUB_PROMPT_WITHDRAWN);
+
+' Consumed: the prompt closed without being cancelled; the rest of the hold is swallowed.
+
+note right of Neutral
+  Open: whether the session hold works outside
+  Field and Instrument (utility spaces), and the
+  Shift layer, holds, chords and selectors:
+  full_spooky_proto-54w.2 (decisions),
+  full_spooky_proto-54w.3 (implementation).
+end note
+note right of Pending
+  Open: the hold threshold stays configurable until
+  bench trials set it (full_spooky_proto-54w.2, control
+  map D-006). Which prompt
+  opens in Armed or Reviewing: full_spooky_proto-hpq.2,
+  full_spooky_proto-hpq.3.
+end note
+
+/'! $CONFIG : toml
+[RenderConfig.C]
+IncludeGuardLabel = "SPOOKY_INPUT_RESOLUTION_SM_H"
+CFileIncludes = """
+    #include "input_resolution_port.h"
+    """
+'/
+@enduml

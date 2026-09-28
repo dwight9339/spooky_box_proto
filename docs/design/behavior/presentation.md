@@ -82,9 +82,9 @@ period stays configurable until bench trials set it.
 | PRES-LED-03 | Button 0 LED | Button not pressed, `in(Session.Active)` | Slow breathing, which continues through finalizing |
 | PRES-LED-04 | Button 1 LED | Button not pressed, `in(Session.Active)` | Steady at 10% perceived brightness, as when idle |
 | PRES-LED-05 | Button 0 LED | RecordingRejected or RecordingAborted | A distinct fault pattern, starting as three fast blinks, then the rule for the current state resumes. Blink timing stays configurable. |
-| PRES-LED-06 | Encoder 0 LED | SessionPrompt open | Lit, to show where to confirm. Its color follows the semantic color vocabulary, control map D-016. |
-| PRES-PRM-01 | Display | SessionPromptOpened(start or stop) | A prompt naming the action and the Encoder 0 confirm |
-| PRES-PRM-02 | Display | SessionPromptConfirmed, SessionPromptCancelled, SessionPromptWithdrawn | The prompt closes. The session's own events carry the outcome. |
+| PRES-LED-06 | Encoder 0 LED | From `INP_PUB_PROMPT_OPENED_START` or `_STOP` until the prompt closes | Lit, to show where to confirm. Its color follows the semantic color vocabulary, control map D-016. |
+| PRES-PRM-01 | Display | `INP_PUB_PROMPT_OPENED_START` or `INP_PUB_PROMPT_OPENED_STOP` | A prompt naming the action and the Encoder 0 confirm |
+| PRES-PRM-02 | Display | `INP_PUB_PROMPT_CONFIRMED_START`, `INP_PUB_PROMPT_CONFIRMED_STOP`, `INP_PUB_PROMPT_CANCELLED` or `INP_PUB_PROMPT_WITHDRAWN` | The prompt closes. The session's own events carry the outcome. |
 
 ## Device domain events
 

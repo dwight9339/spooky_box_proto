@@ -39,10 +39,9 @@ stateDiagram-v2
         --
         state InputResolution {
             [*] --> Neutral
-            Neutral --> Btn0Pending
-            Btn0Pending --> Neutral
-            Btn0Pending --> SessionPrompt
-            SessionPrompt --> Neutral
+            Btn0Held : Pending, prompt, consumed
+            Neutral --> Btn0Held
+            Btn0Held --> Neutral
         }
     }
     Device --> LowPower : DEV-01 EnterSleep
@@ -53,7 +52,7 @@ Operating is drawn as one state because Mermaid 11 cannot draw a composite state
 a parallel region. Its Field and Instrument substates are in the States table; the
 transitions between them are open. The Session, Radio and
 InputResolution regions are summarized; their machines are in [session.md](session.md),
-[radio.md](radio.md) and [input-resolution.md](input-resolution.md).
+[radio.md](radio.md) and [InputResolutionSm.puml](InputResolutionSm.puml).
 
 ## Regions
 
@@ -65,7 +64,7 @@ commands and inputs are interpreted.
 | Context | Which operating mode, engine, view or utility has the controls | It decides what a resolved gesture means | This file |
 | Session | Whether a recording lifecycle is active | Active sessions reject SD maintenance and WAV transfer, and change how stop and faults are handled | [session.md](session.md) |
 | Radio | Whether a band or tuning transition is in progress | Commands arriving mid-transition need defined handling | [radio.md](radio.md) |
-| InputResolution | How held controls, Shift and chords are being interpreted | The same press means different things while Shift is held or a chord is pending | [input-resolution.md](input-resolution.md), Button 0 session hold only; the rest is open in `full_spooky_proto-54w.2` |
+| InputResolution | How held controls, Shift and chords are being interpreted | The same press means different things while Shift is held or a chord is pending | [InputResolutionSm.puml](InputResolutionSm.puml), Button 0 session hold only; the rest is open in `full_spooky_proto-54w.2` |
 
 Shift is part of InputResolution, not a peer of Session or Context: it changes how
 inputs resolve into commands, not what the product is doing.

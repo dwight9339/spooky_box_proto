@@ -114,7 +114,7 @@ session is never shown as a successful one.
 
 | From | Trigger | Question | Settled by |
 |---|---|---|---|
-| Idle | Physical start | What duration does a physical start request? The gesture itself is the Button 0 session hold in [input-resolution.md](input-resolution.md). | `full_spooky_proto-54w.1` |
+| Idle | Physical start | What duration does a physical start request? The gesture itself is the Button 0 session hold in [InputResolutionSm.puml](InputResolutionSm.puml). | `full_spooky_proto-54w.1` |
 | Active | Commands from other regions | Which are allowed, deferred or rejected while recording, and how is each acknowledged? | `full_spooky_proto-54w.1` |
 | Active | Tune, band | What must hold before today's guard is removed: stream continuity, timing against the queue budget, scan rate, raw-track semantics, event timestamps, failure isolation, acknowledgement and bus contention? | [Decision 0003](../../decisions/0003-radio-control-during-recording.md); `full_spooky_proto-54w.6`, `full_spooky_proto-54w.12` |
 | Active | Radio fault | Does a failed tune or band switch end the session, or publish a radio fault while capture continues? | `full_spooky_proto-54w.12` |
