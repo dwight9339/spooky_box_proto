@@ -2,13 +2,12 @@
 #define WAV_TRANSFER_H
 
 #include <stdbool.h>
-#include "stm32h7xx_hal.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void WavTransfer_Init(SD_HandleTypeDef *sd);
+void WavTransfer_Init(void);
 bool WavTransfer_HandleCommand(const char *command);
 void WavTransfer_Service(void);
 bool WavTransfer_IsActive(void);

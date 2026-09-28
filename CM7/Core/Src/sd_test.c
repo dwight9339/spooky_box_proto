@@ -1,16 +1,13 @@
 #include "sd_test.h"
 
 #include "ff.h"
-#include "main.h"
-#include "sd_diskio.h"
+#include "storage_service.h"
 #include "usb_test.h"
 
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
-#define SD_MOUNT_CLOCK_DIV       2U
-#define SD_TRANSFER_CLOCK_DIV    0U
 #define SD_TEST_DEFAULT_MIB     64U
 #define SD_TEST_MAX_MIB       1024U
 #define SD_TEST_DEFAULT_PASSES   1U
@@ -19,9 +16,6 @@
 #define SD_TEST_FILE_NAME       "SDTEST.BIN"
 #define SD_IO_BUFFER_BYTES   16384U
 
-static SD_HandleTypeDef *sd_handle;
-static FATFS sd_filesystem;
-static bool sd_mounted;
 static bool sd_card_was_present;
 static uint8_t sd_io_buffer[SD_IO_BUFFER_BYTES];
 static uint8_t sd_expected_buffer[SD_IO_BUFFER_BYTES];
@@ -41,21 +35,6 @@ static uint32_t sd_stress_verified;
 static uint32_t sd_stress_write_max_ms;
 static uint32_t sd_stress_read_max_ms;
 
-static const char *SdResultName(FRESULT result)
-{
-  static const char *const names[] = {
-    "FR_OK", "FR_DISK_ERR", "FR_INT_ERR", "FR_NOT_READY", "FR_NO_FILE",
-    "FR_NO_PATH", "FR_INVALID_NAME", "FR_DENIED", "FR_EXIST",
-    "FR_INVALID_OBJECT", "FR_WRITE_PROTECTED", "FR_INVALID_DRIVE",
-    "FR_NOT_ENABLED", "FR_NO_FILESYSTEM", "FR_MKFS_ABORTED", "FR_TIMEOUT",
-    "FR_LOCKED", "FR_NOT_ENOUGH_CORE", "FR_TOO_MANY_OPEN_FILES",
-    "FR_INVALID_PARAMETER"
-  };
-
-  return ((unsigned int)result < (sizeof(names) / sizeof(names[0])))
-    ? names[(unsigned int)result] : "FR_UNKNOWN";
-}
-
 static void SdSend(const char *text)
 {
   uint32_t start_ms = HAL_GetTick();
@@ -68,76 +47,6 @@ static void SdSend(const char *text)
   printf("[sd] %s", text);
 }
 
-static void SdSetClockDiv(uint32_t clock_div)
-{
-  if ((sd_handle == NULL) || (sd_handle->Instance == NULL))
-  {
-    return;
-  }
-
-  sd_handle->Init.ClockDiv = clock_div;
-  if (HAL_SD_GetState(sd_handle) != HAL_SD_STATE_RESET)
-  {
-    MODIFY_REG(sd_handle->Instance->CLKCR, SDMMC_CLKCR_CLKDIV, clock_div);
-  }
-}
-
-static void SdUnmount(void)
-{
-  if (sd_mounted)
-  {
-    (void)f_mount(NULL, "", 0U);
-    sd_mounted = false;
-  }
-  if ((sd_handle != NULL) &&
-      (HAL_SD_GetState(sd_handle) != HAL_SD_STATE_RESET))
-  {
-    (void)HAL_SD_DeInit(sd_handle);
-  }
-  SdDiskIo_Reset();
-}
-
-static FRESULT SdMount(void)
-{
-  FRESULT result;
-
-  if ((sd_handle == NULL) || !SD_CARD_IS_PRESENT())
-  {
-    return FR_NOT_READY;
-  }
-  if (sd_mounted)
-  {
-    return FR_OK;
-  }
-
-  SdSetClockDiv(SD_MOUNT_CLOCK_DIV);
-  result = f_mount(&sd_filesystem, "", 1U);
-  if (result != FR_OK)
-  {
-    SdUnmount();
-    return result;
-  }
-
-  sd_mounted = true;
-  SdSetClockDiv(SD_TRANSFER_CLOCK_DIV);
-  return FR_OK;
-}
-
-static bool SdGetFreeBytes(uint64_t *free_bytes)
-{
-  FATFS *filesystem;
-  DWORD free_clusters;
-
-  if ((free_bytes == NULL) ||
-      (f_getfree("", &free_clusters, &filesystem) != FR_OK))
-  {
-    return false;
-  }
-
-  *free_bytes = (uint64_t)free_clusters * filesystem->csize * 512U;
-  return true;
-}
-
 static void SdStatus(void)
 {
   HAL_SD_CardInfoTypeDef info;
@@ -148,28 +57,28 @@ static void SdStatus(void)
   const char *card_type;
   char response[192];
 
-  if (!SD_CARD_IS_PRESENT())
+  if (!StorageService_CardPresent())
   {
-    SdUnmount();
     SdSend("ERR SD no card detected\r\n");
     return;
   }
 
-  result = SdMount();
+  result = StorageService_Acquire(STORAGE_OWNER_STATUS);
   if (result != FR_OK)
   {
     (void)snprintf(response, sizeof(response),
                    "ERR SD mount failed result=%s(%u) hal=0x%08lX\r\n",
-                   SdResultName(result), (unsigned int)result,
-                   (unsigned long)HAL_SD_GetError(sd_handle));
+                   StorageService_ResultName(result), (unsigned int)result,
+                   (unsigned long)StorageService_HalError());
     SdSend(response);
     return;
   }
-  if (HAL_SD_GetCardInfo(sd_handle, &info) != HAL_OK)
+  if (!StorageService_GetCardInfo(STORAGE_OWNER_STATUS, &info))
   {
     (void)snprintf(response, sizeof(response),
                    "ERR SD card-info failed hal=0x%08lX\r\n",
-                   (unsigned long)HAL_SD_GetError(sd_handle));
+                   (unsigned long)StorageService_HalError());
+    (void)StorageService_Release(STORAGE_OWNER_STATUS);
     SdSend(response);
     return;
   }
@@ -179,7 +88,7 @@ static void SdStatus(void)
   card_type = (info.CardType == CARD_SDHC_SDXC) ? "SDHC/SDXC" :
               (info.CardType == CARD_SDSC) ? "SDSC" : "OTHER";
 
-  if (SdGetFreeBytes(&free_bytes))
+  if (StorageService_GetFreeBytes(STORAGE_OWNER_STATUS, &free_bytes))
   {
     free_mib = (uint32_t)(free_bytes / (1024U * 1024U));
     (void)snprintf(response, sizeof(response),
@@ -187,7 +96,7 @@ static void SdStatus(void)
                    "FREE=%luMiB BLOCKS=%lu BUS=4 CLOCKDIV=%lu\r\n",
                    card_type, (unsigned long)capacity_mib,
                    (unsigned long)free_mib, (unsigned long)info.LogBlockNbr,
-                   (unsigned long)sd_handle->Init.ClockDiv);
+                   (unsigned long)StorageService_ClockDiv());
   }
   else
   {
@@ -196,8 +105,9 @@ static void SdStatus(void)
                    "FREE=? BLOCKS=%lu BUS=4 CLOCKDIV=%lu\r\n",
                    card_type, (unsigned long)capacity_mib,
                    (unsigned long)info.LogBlockNbr,
-                   (unsigned long)sd_handle->Init.ClockDiv);
+                   (unsigned long)StorageService_ClockDiv());
   }
+  (void)StorageService_Release(STORAGE_OWNER_STATUS);
   SdSend(response);
 }
 
@@ -274,13 +184,13 @@ static void SdStressFailed(FRESULT result, uint32_t bad_offset)
   {
     result = close_result;
   }
+  (void)StorageService_Release(STORAGE_OWNER_SD_STRESS);
   (void)snprintf(response, sizeof(response),
                  "ERR SD STRESS failed result=%s(%u) offset=%lu "
                  "hal=0x%08lX; %s retained\r\n",
-                 SdResultName(result), (unsigned int)result,
+                 StorageService_ResultName(result), (unsigned int)result,
                  (unsigned long)bad_offset,
-                 (unsigned long)((sd_handle != NULL)
-                   ? HAL_SD_GetError(sd_handle) : 0U),
+                 (unsigned long)StorageService_HalError(),
                  SD_TEST_FILE_NAME);
   SdSend(response);
 }
@@ -302,12 +212,13 @@ static void SdStressPassed(void)
   {
     result = f_unlink(SD_TEST_FILE_NAME);
   }
+  (void)StorageService_Release(STORAGE_OWNER_SD_STRESS);
   if (result != FR_OK)
   {
     (void)snprintf(response, sizeof(response),
                    "ERR SD test passed but cleanup failed result=%s(%u); "
                    "use SD CLEAN\r\n",
-                   SdResultName(result), (unsigned int)result);
+                   StorageService_ResultName(result), (unsigned int)result);
     SdSend(response);
     return;
   }
@@ -349,16 +260,21 @@ static void SdStressAbort(bool announce)
     result = f_close(&sd_stress_file);
   }
   SdStressIdle();
-  if ((result == FR_OK) && sd_mounted)
+  if ((result == FR_OK) &&
+      (StorageService_Owner() == STORAGE_OWNER_SD_STRESS))
   {
     result = f_unlink(SD_TEST_FILE_NAME);
+  }
+  if (StorageService_Owner() == STORAGE_OWNER_SD_STRESS)
+  {
+    (void)StorageService_Release(STORAGE_OWNER_SD_STRESS);
   }
   if (!announce)
   {
     if ((result != FR_OK) && (result != FR_NO_FILE))
     {
       printf("[sd] stress cleanup failed result=%s(%u)\r\n",
-             SdResultName(result), (unsigned int)result);
+             StorageService_ResultName(result), (unsigned int)result);
     }
     return;
   }
@@ -372,7 +288,7 @@ static void SdStressAbort(bool announce)
   {
     (void)snprintf(response, sizeof(response),
                    "ERR SD STRESS STOP cleanup failed result=%s(%u)\r\n",
-                   SdResultName(result), (unsigned int)result);
+                   StorageService_ResultName(result), (unsigned int)result);
   }
   SdSend(response);
 }
@@ -385,14 +301,13 @@ static void SdStressStart(uint32_t size_mib, uint32_t passes)
   uint64_t requested_bytes = (uint64_t)size_mib * 1024U * 1024U;
   char response[160];
 
-  result = SdMount();
+  result = StorageService_Acquire(STORAGE_OWNER_SD_STRESS);
   if (result != FR_OK)
   {
     (void)snprintf(response, sizeof(response),
                    "ERR SD mount failed result=%s(%u) hal=0x%08lX\r\n",
-                   SdResultName(result), (unsigned int)result,
-                   (unsigned long)((sd_handle != NULL)
-                     ? HAL_SD_GetError(sd_handle) : 0U));
+                   StorageService_ResultName(result), (unsigned int)result,
+                   (unsigned long)StorageService_HalError());
     SdSend(response);
     return;
   }
@@ -400,19 +315,23 @@ static void SdStressStart(uint32_t size_mib, uint32_t passes)
   if (result == FR_OK)
   {
     SdSend("ERR SD SDTEST.BIN already exists; manual SD CLEAN required\r\n");
+    (void)StorageService_Release(STORAGE_OWNER_SD_STRESS);
     return;
   }
   if (result != FR_NO_FILE)
   {
     (void)snprintf(response, sizeof(response),
                    "ERR SD file check failed result=%s(%u)\r\n",
-                   SdResultName(result), (unsigned int)result);
+                   StorageService_ResultName(result), (unsigned int)result);
     SdSend(response);
+    (void)StorageService_Release(STORAGE_OWNER_SD_STRESS);
     return;
   }
-  if (!SdGetFreeBytes(&free_bytes) || (free_bytes < requested_bytes))
+  if (!StorageService_GetFreeBytes(STORAGE_OWNER_SD_STRESS, &free_bytes) ||
+      (free_bytes < requested_bytes))
   {
     SdSend("ERR SD insufficient or unknown free space\r\n");
+    (void)StorageService_Release(STORAGE_OWNER_SD_STRESS);
     return;
   }
   result = f_open(&sd_stress_file, SD_TEST_FILE_NAME,
@@ -421,8 +340,9 @@ static void SdStressStart(uint32_t size_mib, uint32_t passes)
   {
     (void)snprintf(response, sizeof(response),
                    "ERR SD create failed result=%s(%u)\r\n",
-                   SdResultName(result), (unsigned int)result);
+                   StorageService_ResultName(result), (unsigned int)result);
     SdSend(response);
+    (void)StorageService_Release(STORAGE_OWNER_SD_STRESS);
     return;
   }
 
@@ -450,12 +370,16 @@ static void SdStressStart(uint32_t size_mib, uint32_t passes)
 
 static void SdClean(void)
 {
-  FRESULT result = SdMount();
+  FRESULT result = StorageService_Acquire(STORAGE_OWNER_STATUS);
   char response[112];
 
   if (result == FR_OK)
   {
     result = f_unlink(SD_TEST_FILE_NAME);
+  }
+  if (StorageService_Owner() == STORAGE_OWNER_STATUS)
+  {
+    (void)StorageService_Release(STORAGE_OWNER_STATUS);
   }
   if ((result == FR_OK) || (result == FR_NO_FILE))
   {
@@ -465,28 +389,14 @@ static void SdClean(void)
 
   (void)snprintf(response, sizeof(response),
                  "ERR SD CLEAN failed result=%s(%u)\r\n",
-                 SdResultName(result), (unsigned int)result);
+                 StorageService_ResultName(result), (unsigned int)result);
   SdSend(response);
 }
 
-void SdTest_Start(SD_HandleTypeDef *sd)
+void SdTest_Start(void)
 {
-  sd_handle = sd;
-  sd_mounted = false;
-  sd_card_was_present = SD_CARD_IS_PRESENT();
+  sd_card_was_present = StorageService_CardPresent();
   SdStressIdle();
-  SdDiskIo_Reset();
-
-  if (sd_handle == NULL)
-  {
-    return;
-  }
-  sd_handle->Instance = SDMMC1;
-  sd_handle->Init.ClockEdge = SDMMC_CLOCK_EDGE_RISING;
-  sd_handle->Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
-  sd_handle->Init.BusWide = SDMMC_BUS_WIDE_4B;
-  sd_handle->Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_ENABLE;
-  sd_handle->Init.ClockDiv = SD_MOUNT_CLOCK_DIV;
   printf("[sd] CLI ready; card detect=%s, initialization deferred\r\n",
          sd_card_was_present ? "present" : "absent");
 }
@@ -529,7 +439,6 @@ bool SdTest_HandleCommand(const char *command)
   }
   if (strcmp(command, "SD REINIT") == 0)
   {
-    SdUnmount();
     SdStatus();
     return true;
   }
@@ -591,7 +500,7 @@ bool SdTest_IsActive(void)
 
 void SdTest_Service(void)
 {
-  bool present = SD_CARD_IS_PRESENT();
+  bool present = StorageService_CardPresent();
   FRESULT result;
   uint32_t started_ms;
   uint32_t elapsed_ms;
@@ -604,7 +513,6 @@ void SdTest_Service(void)
     {
       SdStressFailed(FR_NOT_READY, sd_stress_offset);
     }
-    SdUnmount();
     printf("[sd] card removed; filesystem unmounted\r\n");
   }
   sd_card_was_present = present;
@@ -721,5 +629,8 @@ void SdTest_Stop(void)
   {
     SdStressAbort(false);
   }
-  SdUnmount();
+  if (StorageService_Owner() == STORAGE_OWNER_SD_STRESS)
+  {
+    (void)StorageService_Release(STORAGE_OWNER_SD_STRESS);
+  }
 }

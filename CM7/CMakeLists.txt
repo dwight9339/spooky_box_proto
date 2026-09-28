@@ -73,6 +73,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/app_dispatch.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/command_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/session_control.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_lease.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/sm/session_port.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/sm/SessionSm.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/board_diagnostics.c

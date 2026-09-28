@@ -1,9 +1,7 @@
 #include "wav_transfer.h"
 
 #include "ff.h"
-#include "main.h"
-#include "sd_diskio.h"
-#include "sd_test.h"
+#include "storage_service.h"
 #include "usb_test.h"
 
 #include <stdint.h>
@@ -17,18 +15,12 @@
   (WAV_TRANSFER_FRAME_BYTES - WAV_TRANSFER_HEADER_BYTES)
 #define WAV_TRANSFER_MAX_FILE_BYTES (256U * 1024U * 1024U)
 #define WAV_TRANSFER_ACK_TIMEOUT_MS    10000U
-#define WAV_TRANSFER_MOUNT_CLOCK_DIV       2U
-#define WAV_TRANSFER_CLOCK_DIV             0U
 #define WAV_FRAME_DATA                      1U
 #define WAV_FRAME_END                       2U
 #define WAV_FRAME_ERROR                     4U
 
-static SD_HandleTypeDef *wav_sd;
-static FATFS wav_filesystem;
 static FIL wav_file;
-static bool wav_mounted;
 static bool wav_file_open;
-static bool wav_owns_sd;
 static bool wav_active;
 static bool wav_frame_ready;
 static bool wav_waiting_ack;
@@ -69,19 +61,6 @@ static uint32_t WavCrcUpdate(uint32_t crc, const uint8_t *data,
   return crc;
 }
 
-static void WavSetClockDiv(uint32_t clock_div)
-{
-  if ((wav_sd == NULL) || (wav_sd->Instance == NULL))
-  {
-    return;
-  }
-  wav_sd->Init.ClockDiv = clock_div;
-  if (HAL_SD_GetState(wav_sd) != HAL_SD_STATE_RESET)
-  {
-    MODIFY_REG(wav_sd->Instance->CLKCR, SDMMC_CLKCR_CLKDIV, clock_div);
-  }
-}
-
 static void WavClose(void)
 {
   if (wav_file_open)
@@ -89,21 +68,10 @@ static void WavClose(void)
     (void)f_close(&wav_file);
     wav_file_open = false;
   }
-  if (wav_mounted)
+  if (StorageService_Owner() == STORAGE_OWNER_WAV_TRANSFER)
   {
-    (void)f_mount(NULL, "", 0U);
-    wav_mounted = false;
+    (void)StorageService_Release(STORAGE_OWNER_WAV_TRANSFER);
   }
-  if (wav_owns_sd && (wav_sd != NULL) &&
-      (HAL_SD_GetState(wav_sd) != HAL_SD_STATE_RESET))
-  {
-    (void)HAL_SD_DeInit(wav_sd);
-  }
-  if (wav_owns_sd)
-  {
-    SdDiskIo_Reset();
-  }
-  wav_owns_sd = false;
   wav_active = false;
   wav_frame_ready = false;
   wav_waiting_ack = false;
@@ -178,15 +146,12 @@ static bool WavStart(const char *name)
   FRESULT result;
   char response[128];
 
-  if ((wav_sd == NULL) || !SD_CARD_IS_PRESENT())
+  if (!StorageService_CardPresent())
   {
     (void)UsbTest_SendText("ERR WAV no SD card detected\r\n");
     return false;
   }
-  SdTest_Stop();
-  wav_owns_sd = true;
-  WavSetClockDiv(WAV_TRANSFER_MOUNT_CLOCK_DIV);
-  result = f_mount(&wav_filesystem, "", 1U);
+  result = StorageService_Acquire(STORAGE_OWNER_WAV_TRANSFER);
   if (result != FR_OK)
   {
     (void)snprintf(response, sizeof(response),
@@ -195,8 +160,6 @@ static bool WavStart(const char *name)
     WavClose();
     return false;
   }
-  wav_mounted = true;
-  WavSetClockDiv(WAV_TRANSFER_CLOCK_DIV);
   result = f_open(&wav_file, name, FA_READ);
   if (result != FR_OK)
   {
@@ -235,12 +198,9 @@ static bool WavStart(const char *name)
   return true;
 }
 
-void WavTransfer_Init(SD_HandleTypeDef *sd)
+void WavTransfer_Init(void)
 {
-  wav_sd = sd;
-  wav_mounted = false;
   wav_file_open = false;
-  wav_owns_sd = false;
   wav_active = false;
   wav_frame_ready = false;
   wav_waiting_ack = false;
@@ -325,7 +285,7 @@ void WavTransfer_Service(void)
   }
   if (!wav_frame_ready)
   {
-    if (!SD_CARD_IS_PRESENT())
+    if (!StorageService_CardPresent())
     {
       WavPrepareError("SD card removed");
     }

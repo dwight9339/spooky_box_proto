@@ -2,13 +2,12 @@
 #define SD_TEST_H
 
 #include <stdbool.h>
-#include "stm32h7xx_hal.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void SdTest_Start(SD_HandleTypeDef *sd);
+void SdTest_Start(void);
 bool SdTest_HandleCommand(const char *command);
 bool SdTest_IsActive(void);
 void SdTest_Service(void);

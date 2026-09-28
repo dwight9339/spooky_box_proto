@@ -142,6 +142,10 @@ diagnostic mailbox as the full UI transport.
    outcomes. The UI cannot infer success solely from a command being sent.
 5. A removed/full/failing SD card must yield a visible fault and, where
    possible, a finalized partial recording.
+6. The M7 storage service is the sole owner of the FatFs volume lifecycle and
+   SDMMC clock/deinitialization policy. Recorder, SD stress/status, and WAV
+   transfer code retain their file-specific I/O, but only while holding one
+   explicit exclusive owner lease; a client cannot unmount another client.
 
 The present recorder is a successful workload proof, not a final guarantee
 for recording under full UI/display load. That combined test is a milestone
@@ -152,7 +156,8 @@ after M4/UI integration.
 Keep CubeMX-generated startup, HAL integration, and linker material under
 `CM7/Core` and `CM4/Core` while extracting hand-maintained application code
 incrementally into core-specific `App/` directories. `CM7/App` contains
-console/battery diagnostics, charging-sleep policy and the IPC CLI adapter.
+console/battery diagnostics, charging-sleep policy, the exclusive storage-volume
+service and the IPC CLI adapter.
 `Common` separates portable IPC protocol/health code from the STM32 transport.
 Refactor one service at a time
 from the large M7 `main.c`, building and rerunning the known hardware checks

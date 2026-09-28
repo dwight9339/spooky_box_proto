@@ -269,6 +269,9 @@ The host side is described in the
 ## SD card
 
 The SD commands initialize the audio-shield card slot only when requested.
+Recorder, SD stress/status, and WAV transfer operations serialize through one
+exclusive storage owner lease. A busy client is rejected without stopping or
+unmounting the current owner.
 `SD STATUS` mounts the volume and reports the card type, capacity, free space,
 logical block count, bus width, and active clock divider. `SD REINIT` unmounts,
 deinitializes, and mounts it again. The configuration uses four-bit mode, hardware

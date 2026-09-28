@@ -39,6 +39,10 @@ Finalizing, verify that no action is deferred, require one stable acknowledgemen
 every rejection, and check the current CLI-to-action mappings. These are portable
 policy tests, not recording evidence.
 
+The storage-lease test checks exclusive ownership across recorder, SD stress,
+WAV transfer and status clients, including busy acquisition and invalid-release
+counters. Media mounting and SDMMC behavior remain hardware-only evidence.
+
 The event-queue tests cover decision 0007: post order, sequence and time, admission
 by class with the internal reserve, reject-newest overrun, one reconcile event after
 rejected input, bounded run-to-completion dispatch, the reserve's exact limit when

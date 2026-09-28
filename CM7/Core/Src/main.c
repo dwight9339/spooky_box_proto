@@ -42,6 +42,7 @@
 #include "radio_control_service.h"
 #include "radio_recorder.h"
 #include "sd_test.h"
+#include "storage_service.h"
 #include "ui_board_test.h"
 #include "usb_test.h"
 #include "wav_transfer.h"
@@ -749,10 +750,11 @@ Error_Handler();
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   Bringup_Run();
-  SdTest_Start(&hsd1);
+  StorageService_Init(&hsd1);
+  SdTest_Start();
   RadioRecorder_Init(&hdfsdm1_filter0);
   AppDispatch_Init();
-  WavTransfer_Init(&hsd1);
+  WavTransfer_Init();
   if (!FuelGaugeTest_Start(&hi2c2))
   {
     BSP_LED_On(LED_RED);

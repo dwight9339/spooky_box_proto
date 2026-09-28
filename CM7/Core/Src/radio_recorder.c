@@ -2,10 +2,8 @@
 #include "diagnostics.h"
 #include "session_control.h"
 
-#include "diskio.h"
 #include "ff.h"
-#include "main.h"
-#include "sd_test.h"
+#include "storage_service.h"
 #include "usb_test.h"
 
 #include <stdarg.h>
@@ -33,8 +31,6 @@
 #define RECORDER_MAX_SECONDS               3600U
 #define RECORDER_PREALLOC_SECONDS            60U
 #define RECORDER_PROGRESS_PERIOD_MS        5000U
-#define RECORDER_MOUNT_CLOCK_DIV              2U
-#define RECORDER_TRANSFER_CLOCK_DIV           0U
 #define RECORDER_PDM_DC_POLE_Q15           32640
 #define RECORDER_PDM_DC_SCALE              32768
 #define RECORDER_WAV_MAX_FRAMES \
@@ -47,11 +43,9 @@ typedef enum
 } RecorderState;
 
 static DFSDM_Filter_HandleTypeDef *pdm_filter;
-static FATFS recorder_filesystem;
 static FIL recorder_file;
 static RecorderState recorder_state;
 static bool recorder_file_open;
-static bool recorder_filesystem_mounted;
 static bool pdm_dma_running;
 static volatile bool capture_enabled;
 static volatile bool stop_requested;
@@ -120,30 +114,6 @@ static void RecorderSend(const char *format, ...)
   printf("[record] %s", message);
 }
 
-static const char *RecorderFsResultName(FRESULT result)
-{
-  static const char *const names[] = {
-    "FR_OK", "FR_DISK_ERR", "FR_INT_ERR", "FR_NOT_READY", "FR_NO_FILE",
-    "FR_NO_PATH", "FR_INVALID_NAME", "FR_DENIED", "FR_EXIST",
-    "FR_INVALID_OBJECT", "FR_WRITE_PROTECTED", "FR_INVALID_DRIVE",
-    "FR_NOT_ENABLED", "FR_NO_FILESYSTEM", "FR_MKFS_ABORTED", "FR_TIMEOUT",
-    "FR_LOCKED", "FR_NOT_ENOUGH_CORE", "FR_TOO_MANY_OPEN_FILES",
-    "FR_INVALID_PARAMETER"
-  };
-
-  return ((unsigned int)result < (sizeof(names) / sizeof(names[0])))
-    ? names[(unsigned int)result] : "FR_UNKNOWN";
-}
-
-static void RecorderSetSdClockDiv(uint32_t clock_div)
-{
-  hsd1.Init.ClockDiv = clock_div;
-  if (HAL_SD_GetState(&hsd1) != HAL_SD_STATE_RESET)
-  {
-    MODIFY_REG(hsd1.Instance->CLKCR, SDMMC_CLKCR_CLKDIV, clock_div);
-  }
-}
-
 static void RecorderPutLe16(uint8_t *destination, uint16_t value)
 {
   destination[0] = (uint8_t)value;
@@ -184,10 +154,9 @@ static bool RecorderWriteHeader(uint32_t data_bytes)
 
 static void RecorderUnmount(void)
 {
-  if (recorder_filesystem_mounted)
+  if (StorageService_Owner() == STORAGE_OWNER_RECORDER)
   {
-    (void)f_mount(NULL, "", 0U);
-    recorder_filesystem_mounted = false;
+    (void)StorageService_Release(STORAGE_OWNER_RECORDER);
   }
 }
 
@@ -210,25 +179,20 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
   uint32_t prealloc_bytes;
   unsigned int index;
 
-  if (!SD_CARD_IS_PRESENT())
+  if (!StorageService_CardPresent())
   {
     RecorderSend("ERR RECORD no SD card detected\r\n");
     return false;
   }
 
-  SdTest_Stop();
-  RecorderSetSdClockDiv(RECORDER_MOUNT_CLOCK_DIV);
-  result = f_mount(&recorder_filesystem, "", 1U);
+  result = StorageService_Acquire(STORAGE_OWNER_RECORDER);
   if (result != FR_OK)
   {
     RecorderSend("ERR RECORD mount failed result=%s(%u) hal=0x%08lX\r\n",
-                 RecorderFsResultName(result), (unsigned int)result,
-                 (unsigned long)HAL_SD_GetError(&hsd1));
+                 StorageService_ResultName(result), (unsigned int)result,
+                 (unsigned long)StorageService_HalError());
     return false;
   }
-  recorder_filesystem_mounted = true;
-  RecorderSetSdClockDiv(RECORDER_TRANSFER_CLOCK_DIV);
-
   for (index = 0U; index < 1000U; ++index)
   {
     (void)snprintf(recorder_filename, sizeof(recorder_filename),
@@ -241,7 +205,7 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
     if (result != FR_OK)
     {
       RecorderSend("ERR RECORD filename scan failed result=%s(%u)\r\n",
-                   RecorderFsResultName(result), (unsigned int)result);
+                   StorageService_ResultName(result), (unsigned int)result);
       RecorderUnmount();
       return false;
     }
@@ -258,7 +222,7 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
   if (result != FR_OK)
   {
     RecorderSend("ERR RECORD create failed result=%s(%u)\r\n",
-                 RecorderFsResultName(result), (unsigned int)result);
+                 StorageService_ResultName(result), (unsigned int)result);
     RecorderUnmount();
     return false;
   }
@@ -279,7 +243,7 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
   else if (result != FR_OK)
   {
     RecorderSend("ERR RECORD preallocation failed result=%s(%u)\r\n",
-                 RecorderFsResultName(result), (unsigned int)result);
+                 StorageService_ResultName(result), (unsigned int)result);
     RecorderDiscardFile();
     return false;
   }
@@ -504,7 +468,7 @@ static bool RecorderWriteBlock(const int16_t *radio, const int32_t *pdm)
   {
     Diagnostics_Record(DIAG_SD_ERROR, (uint32_t)result, written);
     RecorderSend("ERR RECORD write failed result=%s(%u) bytes=%u/%u\r\n",
-                 RecorderFsResultName(result), (unsigned int)result,
+                 StorageService_ResultName(result), (unsigned int)result,
                  (unsigned int)written,
                  (unsigned int)RECORDER_OUTPUT_BYTES);
     return false;
@@ -587,9 +551,15 @@ bool RadioRecorder_CanStart(uint32_t seconds, bool radio_ready)
     RecorderSend("ERR RECORD duration must be 1..3600 seconds\r\n");
     return false;
   }
-  if (SdTest_IsActive())
+  if (StorageService_Owner() == STORAGE_OWNER_SD_STRESS)
   {
     RecorderSend("ERR RECORD unavailable while SD test active\r\n");
+    return false;
+  }
+  if (StorageService_Owner() != STORAGE_OWNER_NONE)
+  {
+    RecorderSend("ERR RECORD storage busy owner=%s\r\n",
+                 StorageOwner_Name(StorageService_Owner()));
     return false;
   }
   if (!radio_ready)
@@ -603,7 +573,7 @@ bool RadioRecorder_CanStart(uint32_t seconds, bool radio_ready)
     RecorderSend("ERR RECORD PDM path is not ready\r\n");
     return false;
   }
-  if (!SD_CARD_IS_PRESENT())
+  if (!StorageService_CardPresent())
   {
     RecorderSend("ERR RECORD no SD card detected\r\n");
     return false;
@@ -722,8 +692,9 @@ void RadioRecorder_PublishSessionEvent(SesPublished event)
 
 void RadioRecorder_SendStorageStatus(void)
 {
-  RecorderSend("OK SD STATUS CARD=%s OWNER=RECORDER FILE=%s FRAMES=%lu\r\n",
-               SD_CARD_IS_PRESENT() ? "PRESENT" : "ABSENT",
+  RecorderSend("OK SD STATUS CARD=%s OWNER=%s FILE=%s FRAMES=%lu\r\n",
+               StorageService_CardPresent() ? "PRESENT" : "ABSENT",
+               StorageOwner_Name(StorageService_Owner()),
                (recorder_filename[0] != '\0') ? recorder_filename : "none",
                (unsigned long)frames_written);
 }
@@ -753,7 +724,6 @@ void RadioRecorder_Init(DFSDM_Filter_HandleTypeDef *filter)
   pdm_filter = filter;
   recorder_state = RECORDER_IDLE;
   recorder_file_open = false;
-  recorder_filesystem_mounted = false;
   pdm_dma_running = false;
   capture_enabled = false;
   pending_seconds = RECORDER_DEFAULT_SECONDS;
@@ -850,7 +820,7 @@ void RadioRecorder_Service(void)
   {
     return;
   }
-  if (!SD_CARD_IS_PRESENT())
+  if (!StorageService_CardPresent())
   {
     finish_aborted = true;
     finish_reason = "SD card removed";
