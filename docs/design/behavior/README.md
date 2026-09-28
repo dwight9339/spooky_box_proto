@@ -113,7 +113,9 @@ about proof.
 6. A behavior that must not run exit and entry actions is written as a behavior of the
    state (`State : EVENT / action();`), not as a self-transition.
 7. Machines never dispatch into one another synchronously. Commands and cross-region
-   events pass through a bounded M7 event queue (`full_spooky_proto-8lw.13`).
+   events pass through the bounded M7 event queue of
+   [decision 0007](../../decisions/0007-m7-event-queue.md), which also fixes the
+   dispatch order across machines.
    Cross-region guards such as `in(Session.Active)` read another machine's state
    through the port.
 

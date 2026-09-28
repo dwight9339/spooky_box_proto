@@ -44,6 +44,8 @@ LOG STATUS
 OK LOG QUEUED=0 PEAK=300 DROP_WRITES=2 DROP_BYTES=120 TX_LOST=0 TX_BYTES=1024 TX_ERRORS=0 CONTEXT=0 FLIGHT=0
 DIAG STATUS
 OK DIAG V=1 CORE=7 COUNT=2 OVERWRITTEN=0 SD_MAX_MS=8 LOOP_MAX_MS=0 RADIO_OVR=0 PDM_OVR=0 SD_ERR=0 AUDIO_ERR=0 HAS_FAULT=0
+DIAG QUEUE
+OK DIAG QUEUE CAP=32 RESERVE=8 COUNT=0 PEAK=0 POSTED=0 DISPATCHED=0 REJ_INPUT=0 REJ_CMD=0 REJ_INTERNAL=0 RECONCILES=0 MAX_WAIT_MS=0
 DIAG LAST
 OK DIAG LAST NONE
 DIAG DUMP
@@ -59,6 +61,16 @@ OK DIAG END COUNT=2 GAPS=0
 bytes discarded on transport failure/timeout, conservatively including bytes
 that may already have left the UART. `TX_BYTES` counts completed chunks.
 `TX_ERRORS` counts transport failures/timeouts. All are boot-lifetime totals.
+
+`DIAG QUEUE` reports the M7 application event queue
+([decision 0007](../decisions/0007-m7-event-queue.md)). `CAP` and `RESERVE` are the
+capacity and the slots reserved for internal events. `COUNT` is the current number of
+queued events and `PEAK` its high-water mark. `POSTED` and `DISPATCHED` count admitted
+and handled events. `REJ_INPUT`, `REJ_CMD` and `REJ_INTERNAL` count rejected input
+events, CLI commands and internal events. `RECONCILES` counts reconcile events posted
+after rejected input. `MAX_WAIT_MS` is the longest time an event waited between post
+and dispatch. All are boot-lifetime totals. `REJ_INTERNAL` must stay zero; any
+increase is recorded as an `EVENT_QUEUE_LOSS` fault.
 
 The RAM history holds 128 events, overwrites oldest entries, and preserves the
 latest fault and cumulative counters separately. `DIAG LAST` returns either
@@ -99,9 +111,11 @@ An accepted USB send is not proof of host receipt.
 | 11 LOG_LOSS | Cumulative rejected writes | Cumulative rejected bytes |
 | 12 LOG_ERROR | Cumulative transport errors | Cumulative transport discarded bytes |
 | 13 SLEEP | 1 entry, 2 charging report wake | Reserved 0 |
+| 14 EVENT_QUEUE_LOSS | Cumulative rejected internal events (a fault) | Queue high-water mark |
 
-IPC events are present only in IPC experiment builds. Logger events are sampled
-at most once per second, so one event can summarize multiple losses. Overrun and
+IPC events are present only in IPC experiment builds. Logger and event-queue loss
+events are sampled at most once per second, so one event can summarize multiple
+losses. Overrun and
 audio error events are latched rather than emitted continuously in IRQs. SD_WRITE
 covers recorder data writes, not every filesystem operation or SD stress test.
 RECORD_END bit 0 also covers finalization failure. This is not a HardFault/NMI or

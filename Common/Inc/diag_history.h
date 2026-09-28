@@ -19,6 +19,7 @@ typedef enum
   DIAG_LOG_LOSS,
   DIAG_LOG_ERROR,
   DIAG_SLEEP,
+  DIAG_EVENT_QUEUE_LOSS,
   DIAG_EVENT_LIMIT
 } DiagEventType;
 

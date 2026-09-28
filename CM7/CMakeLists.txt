@@ -67,6 +67,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/diag_history.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/target_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/diagnostics.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/event_queue.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/app_events.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/board_diagnostics.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/audio_path_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/codec_volume_service.c

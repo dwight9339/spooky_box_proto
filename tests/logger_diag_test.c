@@ -2,6 +2,7 @@
 #include "diag_history.h"
 #include "target_logger.h"
 #include "diagnostics.h"
+#include "app_events.h"
 #include "fake_hal.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -220,12 +221,57 @@ static void test_cli(void)
   CHECK(test_primask == 0U);
 }
 
+static void count_dispatch(void *context, const EvqEvent *event)
+{
+  (void)event;
+  ++*(uint32_t *)context;
+}
+
+/* Decision 0007 item 14: queue counters on one DIAG line; a rejected internal
+ * event is recorded as a fault. Uses the firmware queue instance, so it runs last. */
+static void test_queue_diag(void)
+{
+  uint32_t dispatched = 0U;
+  cli_reset();
+  CHECK(Diagnostics_HandleCommand("DIAG QUEUE"));
+  Diagnostics_Service();
+  CHECK(strcmp(usb_lines[0], "OK DIAG QUEUE CAP=32 RESERVE=8 COUNT=0 PEAK=0 POSTED=0 "
+    "DISPATCHED=0 REJ_INPUT=0 REJ_CMD=0 REJ_INTERNAL=0 RECONCILES=0 MAX_WAIT_MS=0\r\n") == 0);
+  test_tick = 10U;
+  for (uint32_t i = 0; i < 33U; ++i) (void)AppEvents_Post(EVQ_CLASS_INTERNAL, 1U, i, 0U);
+  CHECK(!AppEvents_Post(EVQ_CLASS_EXTERNAL_COMMAND, 2U, 0U, 0U));
+  test_tick = 40U;
+  CHECK(AppEvents_Service(count_dispatch, &dispatched) == 32U && dispatched == 32U);
+  CHECK(Diagnostics_HandleCommand("DIAG QUEUE"));
+  Diagnostics_Service();
+  CHECK(strcmp(usb_lines[1], "OK DIAG QUEUE CAP=32 RESERVE=8 COUNT=0 PEAK=32 POSTED=32 "
+    "DISPATCHED=32 REJ_INPUT=0 REJ_CMD=1 REJ_INTERNAL=1 RECONCILES=0 MAX_WAIT_MS=30\r\n") == 0);
+  /* The loss is sampled with the logger counters, at most once a second. */
+  test_tick = 1000U;
+  Diagnostics_Service();
+  CHECK(Diagnostics_HandleCommand("DIAG LAST"));
+  Diagnostics_Service();
+  CHECK(strstr(usb_lines[2], "EVENT=EVENT_QUEUE_LOSS A=1 B=32") != NULL);
+  CHECK(Diagnostics_HandleCommand("DIAG STATUS"));
+  Diagnostics_Service();
+  CHECK(strstr(usb_lines[3], "HAS_FAULT=1") != NULL);
+  test_tick = 2000U;
+  Diagnostics_Service(); /* no new loss, no new event */
+  CHECK(Diagnostics_HandleCommand("DIAG DUMP"));
+  for (uint32_t i = 0; i < 10U; ++i) Diagnostics_Service();
+  uint32_t losses = 0U;
+  for (uint32_t i = 4U; i < usb_count; ++i)
+    if (strstr(usb_lines[i], "EVENT=EVENT_QUEUE_LOSS") != NULL) ++losses;
+  CHECK(losses == 1U);
+}
+
 int main(void)
 {
   test_buffer();
   test_history();
   test_logger();
   test_cli();
+  test_queue_diag();
   puts("logger/diagnostics tests passed");
   return 0;
 }

@@ -27,8 +27,10 @@ loss/errors, and charging sleep entry/wake are instrumented. The latest fault
 and cumulative counters are retained separately after history wraps. No heap,
 USB, or text formatting occurs in event producers.
 
-Use device USB CDC commands `LOG STATUS`, `DIAG STATUS`, `DIAG LAST`, `DIAG DUMP`,
-and `DIAG STOP`. HELP is also streamed in short lines; its former combined reply
+Use device USB CDC commands `LOG STATUS`, `DIAG STATUS`, `DIAG QUEUE`, `DIAG LAST`,
+`DIAG DUMP` and `DIAG STOP`. `DIAG QUEUE` reports the capacity and counters of the M7
+application event queue ([decision 0007](../decisions/0007-m7-event-queue.md)); a
+rejected internal event is recorded as an `EVENT_QUEUE_LOSS` fault. HELP is also streamed in short lines; its former combined reply
 exceeded the USB sender's 256-byte limit. See the
 [v1 contract](spookyprobe-v1.md) for exact formats, units, and decoder behavior.
 

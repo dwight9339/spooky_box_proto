@@ -26,6 +26,13 @@ hold, withdrawal on a session change, pre-held releases delivered exactly once, 
 release-all from every state. A seeded random sequence checks that every input gets
 exactly one outcome and that only a confirming Encoder 0 press issues a command.
 
+The event-queue tests cover decision 0007: post order, sequence and time, admission
+by class with the internal reserve, reject-newest overrun, one reconcile event after
+rejected input, bounded run-to-completion dispatch, the reserve's exact limit when
+handled events post internal events, tick and sequence wrap, and counters. The
+logger/diagnostic tests also check the `DIAG QUEUE` line and the `EVENT_QUEUE_LOSS`
+fault.
+
 The IPC tests compile the same portable protocol code as both cores. They
 exercise invalid headers, version/size mismatches, first handshake, missing
 acknowledgements, corrupted echoes, stale repeated packets, recovery, sequence

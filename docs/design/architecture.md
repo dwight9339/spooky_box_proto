@@ -97,7 +97,9 @@ A future application layer should distinguish:
   or change presentation settings.
 
 The CLI and physical UI should feed the same command handling and state
-machines. Scan engines should produce structured tune targets within named
+machines. Machines exchange commands and cross-region events only through one
+bounded M7 event queue, fed from the foreground and dispatched run-to-completion
+([decision 0007](../decisions/0007-m7-event-queue.md)). Scan engines should produce structured tune targets within named
 territories; the radio controller decides whether each target needs an
 in-band tune or an expensive band/RF-path transition.
 
@@ -105,7 +107,9 @@ The USB CLI ([contract](usb-cli.md)) and recorder are bring-up implementations o
 this model, not the final command router or `SessionManager`.
 
 The [behavior model](behavior/README.md) specifies these states, commands, events and
-their transitions as tables, one machine per region.
+their transitions, one machine per region, as StateSmith diagrams that generate the
+firmware ([decision 0006](../decisions/0006-statesmith-behavior-model.md)) or, for
+regions not yet moved, as tables.
 
 ## Inter-core contract to implement
 

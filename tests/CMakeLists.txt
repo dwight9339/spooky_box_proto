@@ -32,7 +32,9 @@ function(spooky_generated_sm target)
 endfunction()
 spooky_test(logger_diag_test logger_diag_test.c stubs/fake_hal.c
     ../Common/Src/log_buffer.c ../Common/Src/diag_history.c
-    ../CM7/App/target_logger.c ../CM7/App/diagnostics.c)
+    ../CM7/App/target_logger.c ../CM7/App/diagnostics.c
+    ../CM7/App/event_queue.c ../CM7/App/app_events.c)
+spooky_test(event_queue_test event_queue_test.c ../CM7/App/event_queue.c)
 spooky_test(input_resolution_test input_resolution_test.c ../CM7/App/sm/input_resolution_port.c)
 spooky_generated_sm(input_resolution_test InputResolutionSm.c)
 add_executable(ipc_smoke_protocol_test

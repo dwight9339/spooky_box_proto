@@ -1,4 +1,5 @@
 #include "diagnostics.h"
+#include "app_events.h"
 #include "target_logger.h"
 #include "usb_test.h"
 #include <stdio.h>
@@ -7,7 +8,7 @@
 #include "ipc_smoke.h"
 #endif
 
-typedef enum {REPLY_IDLE, REPLY_STATUS, REPLY_LOG, REPLY_LAST,
+typedef enum {REPLY_IDLE, REPLY_STATUS, REPLY_QUEUE, REPLY_LOG, REPLY_LAST,
   REPLY_DUMP_HEADER, REPLY_DUMP_ROWS, REPLY_DUMP_END, REPLY_HELP} ReplyState;
 static DiagHistory history;
 static ReplyState reply;
@@ -21,6 +22,7 @@ static uint32_t last_service_ms;
 static uint32_t last_log_sample_ms;
 static uint32_t last_log_drops;
 static uint32_t last_log_errors;
+static uint32_t last_queue_losses;
 static bool service_started;
 #if defined(SPOOKY_IPC_SMOKE)
 static uint32_t last_ipc_link = UINT32_MAX;
@@ -29,7 +31,7 @@ static uint32_t last_ipc_link = UINT32_MAX;
 static const char *const help_lines[] = {
   "OK RADIO BAND [FM|AM|SW|LW] | TUNE <kHz> | UP | DOWN | STATUS\r\n",
   "OK VOLUME READ | BATTERY READ | CHARGE STATUS | SLEEP START\r\n",
-  "OK IPC STATUS | LOG STATUS | DIAG STATUS|LAST|DUMP|STOP\r\n",
+  "OK IPC STATUS | LOG STATUS | DIAG STATUS|QUEUE|LAST|DUMP|STOP\r\n",
   "OK MAG READ|STATUS|STREAM START [ms]|STOP\r\n",
   "OK EMF READ|STATUS|ZERO|STREAM START [ms]|STOP\r\n",
   "OK RECORD STATUS|START [seconds]|STOP\r\n",
@@ -46,6 +48,7 @@ void Diagnostics_Init(void)
   service_started = false;
   last_log_drops = 0U;
   last_log_errors = 0U;
+  last_queue_losses = 0U;
 #if defined(SPOOKY_IPC_SMOKE)
   last_ipc_link = UINT32_MAX;
 #endif
@@ -94,6 +97,7 @@ bool Diagnostics_HandleCommand(const char *command)
   if (help) { help_index = 0U; reply = REPLY_HELP; }
   else if (strcmp(command, "LOG STATUS") == 0) reply = REPLY_LOG;
   else if (strcmp(command, "DIAG STATUS") == 0) reply = REPLY_STATUS;
+  else if (strcmp(command, "DIAG QUEUE") == 0) reply = REPLY_QUEUE;
   else if (strcmp(command, "DIAG LAST") == 0) reply = REPLY_LAST;
   else if (strcmp(command, "DIAG DUMP") == 0)
   {
@@ -105,7 +109,7 @@ bool Diagnostics_HandleCommand(const char *command)
   }
   else
   {
-    (void)UsbTest_SendText("ERR usage: LOG STATUS | DIAG STATUS|LAST|DUMP|STOP\r\n");
+    (void)UsbTest_SendText("ERR usage: LOG STATUS | DIAG STATUS|QUEUE|LAST|DUMP|STOP\r\n");
     return true;
   }
   last_send_ms = HAL_GetTick();
@@ -136,6 +140,20 @@ static void SendOneLine(uint32_t now)
       (unsigned long)s.totals[DIAG_RADIO_OVERRUN],
       (unsigned long)s.totals[DIAG_PDM_OVERRUN], (unsigned long)s.totals[DIAG_SD_ERROR],
       (unsigned long)s.totals[DIAG_AUDIO_ERROR], (unsigned int)s.have_fault);
+  }
+  else if (reply == REPLY_QUEUE)
+  {
+    EvqStats q;
+    AppEvents_GetStats(&q);
+    (void)snprintf(line, sizeof(line),
+      "OK DIAG QUEUE CAP=%lu RESERVE=%lu COUNT=%lu PEAK=%lu POSTED=%lu "
+      "DISPATCHED=%lu REJ_INPUT=%lu REJ_CMD=%lu REJ_INTERNAL=%lu RECONCILES=%lu "
+      "MAX_WAIT_MS=%lu\r\n", (unsigned long)q.capacity, (unsigned long)q.reserve,
+      (unsigned long)q.count, (unsigned long)q.high_water, (unsigned long)q.posted,
+      (unsigned long)q.dispatched, (unsigned long)q.rejected[EVQ_CLASS_INPUT],
+      (unsigned long)q.rejected[EVQ_CLASS_EXTERNAL_COMMAND],
+      (unsigned long)q.rejected[EVQ_CLASS_INTERNAL], (unsigned long)q.reconciles,
+      (unsigned long)q.max_wait_ms);
   }
   else if (reply == REPLY_LOG)
   {
@@ -219,6 +237,12 @@ void Diagnostics_Service(void)
       Diagnostics_Record(DIAG_LOG_ERROR, s.transport_errors, s.transport_dropped_bytes);
     last_log_drops = s.dropped_writes;
     last_log_errors = s.transport_errors;
+    /* Decision 0007 item 8: a rejected internal event is a design error. */
+    EvqStats q;
+    AppEvents_GetStats(&q);
+    if (q.rejected[EVQ_CLASS_INTERNAL] != last_queue_losses)
+      Diagnostics_Record(DIAG_EVENT_QUEUE_LOSS, q.rejected[EVQ_CLASS_INTERNAL], q.high_water);
+    last_queue_losses = q.rejected[EVQ_CLASS_INTERNAL];
     last_log_sample_ms = now;
   }
   SendOneLine(now);
