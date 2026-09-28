@@ -14,6 +14,10 @@ cmake --build build/host
 ctest --test-dir build/host --output-on-failure
 ```
 
+Tests of StateSmith machines add the generated C from `CM7/App/sm` with
+`spooky_generated_sm(<test> <Name>Sm.c)`. It suppresses unused-parameter warnings for
+those files only, because some generated handlers ignore their `sm` argument.
+
 The IPC tests compile the same portable protocol code as both cores. They
 exercise invalid headers, version/size mismatches, first handshake, missing
 acknowledgements, corrupted echoes, stale repeated packets, recovery, sequence

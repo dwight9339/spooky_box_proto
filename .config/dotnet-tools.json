@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "statesmith.cli": {
+      "version": "0.22.2",
+      "commands": [
+        "ss.cli"
+      ],
+      "rollForward": true
+    }
+  }
+}

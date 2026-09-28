@@ -78,6 +78,11 @@ cmake --build build/host
 ctest --test-dir build/host --output-on-failure
 ```
 
+Behavior model (StateSmith diagrams in `docs/design/behavior/*Sm.puml`, decision 0006):
+regenerate with `python host/tools/behavior_model.py` and verify with `--check` after any
+diagram change. Never edit the generated `CM7/App/sm/*Sm.[ch]` or `*Sm.svg` by hand. See
+[behavior-model regeneration](docs/design/repository-layout.md#behavior-model-regeneration).
+
 Spooky Bench Python tests (offline, no hardware):
 
 ```text

@@ -14,6 +14,21 @@ function(spooky_test name)
     endif()
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
+# Adds StateSmith-generated machines from CM7/App/sm (decision 0006) to a test.
+# Some generated handlers ignore their `sm` argument, so unused-parameter
+# warnings are suppressed for these files only. Pass paths relative to CM7/App/sm.
+function(spooky_generated_sm target)
+    list(TRANSFORM ARGN PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/../CM7/App/sm/ OUTPUT_VARIABLE sources)
+    target_sources(${target} PRIVATE ${sources})
+    target_include_directories(${target} PRIVATE ../CM7/App/sm)
+    if(MSVC)
+        set(no_unused_parameter /wd4100)
+    else()
+        set(no_unused_parameter -Wno-unused-parameter)
+    endif()
+    set_source_files_properties(${sources} TARGET_DIRECTORY ${target}
+        PROPERTIES COMPILE_OPTIONS ${no_unused_parameter})
+endfunction()
 spooky_test(logger_diag_test logger_diag_test.c stubs/fake_hal.c
     ../Common/Src/log_buffer.c ../Common/Src/diag_history.c
     ../CM7/App/target_logger.c ../CM7/App/diagnostics.c)
