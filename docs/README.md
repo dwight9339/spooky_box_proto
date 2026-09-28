@@ -47,6 +47,8 @@ Updated in the same change as the code they describe.
   ownership.
 - [CubeMX reconciliation register](design/cubemx-reconciliation.md): where the `.ioc`
   disagrees with the proven runtime configuration.
+- [CubeMX scratch generation](procedures/cubemx-scratch-generation.md): isolated
+  regeneration, complete-diff review and acceptance gates while generation is frozen.
 - [Diagnostic IPC contract](design/ipc-diagnostic-contract.md): opt-in M7/M4 mailbox
   experiment.
 - [Logger and diagnostics](design/logger-diag.md): bounded UART logger and numeric
