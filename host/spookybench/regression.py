@@ -143,6 +143,17 @@ def _deltas(before, after, keys):
 def _post_health(selected, options, profile, clock, shared, emit, context, detail):
     query = lambda command: boot_smoke._query(profile, selected, options, clock, shared,
                                               emit, command)
+    baseline_identity = context.get("target_identity")
+    if baseline_identity and baseline_identity.get("state") == "observed":
+        try:
+            final_identity = serial_io.target_identity(query("DIAG IDENTITY"))
+        except ValueError as exc:
+            raise BenchError("firmware_identity", str(exc), "fail") from exc
+        detail["target_identity"] = final_identity
+        if final_identity["build_id"] != baseline_identity["build_id"]:
+            raise BenchError("firmware_identity", "Target build changed during regression", "fail")
+        if final_identity["boot_epoch"] != baseline_identity["boot_epoch"]:
+            raise BenchError("unexpected_reset", "Target boot epoch changed during regression", "fail")
     final_diag = query("DIAG STATUS")
     detail["diag"] = final_diag["fields"]
     boot_smoke._check_diag(final_diag)
@@ -195,6 +206,8 @@ def _summary(details, stimulus):
     boot = details.get("boot_smoke", {})
     if "firmware" in boot:
         summary["firmware"] = boot["firmware"]
+    if "firmware_identity" in boot:
+        summary["firmware_identity"] = boot["firmware_identity"]
     if "ipc" in boot:
         summary.setdefault("ipc", {})["boot_delta"] = boot["ipc"].get("deltas")
     if "prerequisites" in details:
@@ -323,7 +336,8 @@ def run(options, profile, run, metrics, artifacts):
         context = {"baseline_diag": boot["diagnostics"]["status"]["fields"],
                    "baseline_log": boot["diagnostics"]["log_status"]["fields"],
                    "last_ipc": recording["ipc"]["snapshots"][-1]["response"],
-                   "sd": prerequisites["sd"], "file_bytes": inspected["transfer"]["bytes"]}
+                   "sd": prerequisites["sd"], "file_bytes": inspected["transfer"]["bytes"],
+                   "target_identity": boot.get("firmware_identity", {}).get("target")}
         stage("post_transfer_health", lambda detail, found: _post_health(
             selected, options, profile, clock, shared, lines.emit, context, detail))
     except BaseException as exc:

@@ -22,9 +22,11 @@ def main():
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     snapshot = None
+    snapshot_source = None
     if args.source_snapshot:
+        snapshot_source = Path(args.source_snapshot).resolve()
         digest = hashlib.sha256()
-        with Path(args.source_snapshot).open("rb") as stream:
+        with snapshot_source.open("rb") as stream:
             for chunk in iter(lambda: stream.read(65536), b""):
                 digest.update(chunk)
         snapshot = digest.hexdigest()
@@ -40,13 +42,31 @@ def main():
             parser.error("Image exceeds 16 MiB")
         elf_ranges(raw, core)
         manifest["images"][core] = {"path": str(path), "sha256": hashlib.sha256(raw).hexdigest()}
+    output = Path(args.output)
+    snapshot_output = output.with_name(output.name + ".source-snapshot")
+    if output.exists():
+        parser.error(f"Refusing to overwrite {output}")
+    if snapshot_source is not None:
+        if snapshot_output.exists():
+            parser.error(f"Refusing to overwrite {snapshot_output}")
+        manifest["source_snapshot_path"] = str(snapshot_source)
     # Validate the complete declaration before publishing the output.
     import tempfile
     with tempfile.TemporaryDirectory(prefix="spooky-manifest-") as folder:
         temporary = Path(folder) / "build-info.json"
         temporary.write_text(json.dumps(manifest), encoding="utf-8")
         validate_pair(temporary)
-    with Path(args.output).open("x", encoding="utf-8") as stream:
+    if snapshot_source is not None:
+        copied_digest = hashlib.sha256()
+        with snapshot_output.open("xb") as destination, snapshot_source.open("rb") as source:
+            for chunk in iter(lambda: source.read(65536), b""):
+                destination.write(chunk)
+                copied_digest.update(chunk)
+        if copied_digest.hexdigest() != snapshot:
+            snapshot_output.unlink()
+            parser.error("Source snapshot changed while it was being archived")
+        manifest["source_snapshot_path"] = snapshot_output.name
+    with output.open("x", encoding="utf-8") as stream:
         json.dump(manifest, stream, indent=2)
         stream.write("\n")
     print(args.output)

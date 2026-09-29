@@ -14,7 +14,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from spookybench.config import load_profile
-from spookybench.firmware import elf_ranges, validate_pair
+from spookybench.firmware import elf_ranges, embedded_build_id, validate_pair
 from spookybench.openocd import configuration, interpret, operation_script, LiveCapture
 from spookybench.artifacts import Run
 from spookybench import ipc_load, serial_io
@@ -68,6 +68,13 @@ class ControlTests(unittest.TestCase):
 
     def save_manifest(self):
         self.manifest_path.write_text(json.dumps(self.manifest))
+
+    def add_target_identity(self, build_id="test-build"):
+        path = self.root / self.manifest["images"]["CM7"]["path"]
+        raw = path.read_bytes() + f"SBID1:{build_id}\0".encode("ascii")
+        path.write_bytes(raw)
+        self.manifest["images"]["CM7"]["sha256"] = hashlib.sha256(raw).hexdigest()
+        self.save_manifest()
 
     def options(self, command="probe", scenario="happy"):
         return {"command": command, "scenario": scenario, "simulate": True,
@@ -203,6 +210,30 @@ class ControlTests(unittest.TestCase):
         self.assertGreater(result["metrics"]["capture"]["archived_bytes"], 0)
         self.assertTrue(Path(result["artifacts"]["diagnostics"]).is_file())
         self.assertTrue((Path(result["artifacts"]["uart"]) / "raw.bin").is_file())
+        self.assertEqual(result["metrics"]["firmware_identity"]["target"]["state"],
+                         "unavailable")
+
+    def test_boot_smoke_verifies_embedded_identity_and_schema(self):
+        self.add_target_identity()
+        result = execute(self.options("test boot-smoke"))
+        self.assertEqual(result["result"], "pass", result)
+        identity = result["metrics"]["firmware_identity"]["target"]
+        self.assertEqual(identity["build_id"], "test-build")
+        self.assertEqual(identity["boot_epoch"], 1)
+        for scenario, reason in (("identity-mismatch", "firmware_identity"),
+                                 ("identity-v2", "protocol_error")):
+            with self.subTest(scenario=scenario):
+                result = execute(self.options("test boot-smoke", scenario))
+                self.assertEqual(result["result"], "fail", result)
+                self.assertEqual(result["reason"], reason, result)
+
+    def test_manifest_rejects_embedded_identity_mismatch(self):
+        self.add_target_identity("different-build")
+        with self.assertRaisesRegex(BenchError, "embedded build identity"):
+            validate_pair(self.manifest_path)
+        self.assertEqual(embedded_build_id(
+            (self.root / self.manifest["images"]["CM7"]["path"]).read_bytes()),
+            "different-build")
 
     def test_boot_smoke_rejects_non_ipc_manifest_before_control(self):
         self.manifest["preset"] = "Debug"
@@ -410,6 +441,14 @@ class ControlTests(unittest.TestCase):
         self.assertTrue(alignment["drift_reliable"])
         self.assertEqual(result["metrics"]["stages"][-2]["name"], "alignment")
 
+    def test_recording_regression_detects_boot_epoch_change(self):
+        self.add_target_identity()
+        result = self.regression("identity-reset")
+        self.assertEqual(result["result"], "fail", result)
+        self.assertEqual(result["reason"], "unexpected_reset")
+        self.assertEqual(result["metrics"]["stages"][-1]["name"],
+                         "post_transfer_health")
+
     def test_recording_regression_failure_verdicts(self):
         cases = (("ipc-stale", "ambient", "ipc_no_progress", "boot_smoke", None),
                  ("audio-stopped", "ambient", "audio_path_stopped", "prerequisites", None),
@@ -506,6 +545,14 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(manifest["source_snapshot_sha256"], hashlib.sha256(snapshot.read_bytes()).hexdigest())
         self.assertEqual(manifest["compiler"], "test-compiler")
         self.assertEqual(manifest["build_flags"], ["-O2"])
+        archived = output.with_name(output.name + ".source-snapshot")
+        self.assertEqual(archived.read_bytes(), snapshot.read_bytes())
+        self.assertEqual(manifest["source_snapshot_path"], archived.name)
+        options = dict(self.options("flash"), manifest=str(output))
+        flash = execute(options)
+        self.assertEqual(flash["result"], "pass", flash)
+        self.assertEqual(Path(flash["artifacts"]["source_snapshot"]).read_bytes(),
+                         snapshot.read_bytes())
         previous = output.read_bytes()
         result = subprocess.run(args, capture_output=True, text=True, timeout=5)
         self.assertNotEqual(result.returncode, 0)

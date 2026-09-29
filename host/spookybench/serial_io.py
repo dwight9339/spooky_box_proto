@@ -1,5 +1,6 @@
 """Adapters around the pinned capture/decoder; one short command per session."""
 import base64
+import re
 import time
 from .result import BenchError
 
@@ -7,6 +8,74 @@ from .result import BenchError
 class Clock:
     now = staticmethod(time.monotonic)
     sleep = staticmethod(time.sleep)
+
+
+def target_identity(answer):
+    fields = answer.get("fields", {})
+    required = {"V", "CORE", "BUILD", "BOOT", "RESET", "CAPS"}
+    if not required <= fields.keys():
+        raise ValueError("incomplete identity response")
+    if fields["V"] != 1 or fields["CORE"] != 7:
+        raise ValueError("unsupported target identity schema/core")
+    if not isinstance(fields["BUILD"], str) or not re.fullmatch(
+            r"[A-Za-z0-9_.-]{1,128}", fields["BUILD"]):
+        raise ValueError("invalid target build identity")
+    for key in ("BOOT", "RESET", "CAPS"):
+        if not isinstance(fields[key], int) or not 0 <= fields[key] <= 0xffffffff:
+            raise ValueError("invalid target identity field " + key)
+    if fields["BOOT"] == 0 or fields["CAPS"] & 0x3 != 0x3:
+        raise ValueError("target lacks identity/boot-epoch capabilities")
+    return {"state": "observed", "schema_version": fields["V"],
+            "core": fields["CORE"], "build_id": fields["BUILD"],
+            "boot_epoch": fields["BOOT"], "reset_flags": fields["RESET"],
+            "capabilities": fields["CAPS"]}
+
+
+def _identity_request(serial, emit, clock, timeout):
+    """Request the additive identity command absent from pinned spookyprobe 0.1.0."""
+    from spookyprobe.protocol import Lines, parse_line
+
+    wire = b"DIAG IDENTITY\n"
+    if serial.write(wire) != len(wire):
+        raise OSError("short command write")
+    lines = Lines()
+    deadline = clock.now() + timeout
+    try:
+        while clock.now() < deadline:
+            for raw, complete in lines.feed(serial.read(4096)):
+                record = parse_line(raw, complete)
+                if complete:
+                    try:
+                        text = raw.decode("ascii").strip()
+                    except UnicodeDecodeError:
+                        text = ""
+                    if text == "OK IDENTITY" or text.startswith("OK IDENTITY "):
+                        fields = {}
+                        for token in text[len("OK IDENTITY"):].split():
+                            if "=" not in token:
+                                continue
+                            key, value = token.split("=", 1)
+                            if key in fields:
+                                record["error"] = "duplicate field " + key
+                            fields[key] = (int(value) if value.isascii() and
+                                           value.isdecimal() else value)
+                        record.update(kind="OK IDENTITY", fields=fields)
+                record["raw_base64"] = base64.b64encode(raw).decode("ascii")
+                record["host_receive_ns"] = time.time_ns()
+                emit(record)
+                if record.get("error"):
+                    raise ValueError(record["error"])
+                if record["kind"].startswith("ERR "):
+                    raise RuntimeError(record["text"].strip())
+                if record["kind"] == "OK IDENTITY":
+                    return record
+        raise TimeoutError("diagnostic response deadline exceeded")
+    finally:
+        for raw, complete in lines.finish():
+            record = parse_line(raw, complete)
+            record["raw_base64"] = base64.b64encode(raw).decode("ascii")
+            record["host_receive_ns"] = time.time_ns()
+            emit(record)
 
 
 def open_serial(port):
@@ -62,7 +131,6 @@ def capture(serial, run, seconds, clock, stats=None, stop=None, ready=None):
 
 
 def diagnostics(serial, command, emit, clock, deadline):
-    from spookyprobe.protocol import Lines, parse_line
     from spookyprobe.client import Client
     emit({"kind": "session_start", "command": command, "host_receive_ns": time.time_ns()})
     settle(serial, emit, clock, deadline)
@@ -71,28 +139,36 @@ def diagnostics(serial, command, emit, clock, deadline):
         raise BenchError("request_timeout", "No command budget remains")
     timeout = min(8.0, remaining)
     request_end = clock.now() + timeout
-    client = Client(serial, emit, clock=clock.now, timeout=timeout)
+    client = None
     try:
-        answer = client.request(command)
+        if command == "DIAG IDENTITY":
+            answer = _identity_request(serial, emit, clock, timeout)
+        else:
+            client = Client(serial, emit, clock=clock.now, timeout=timeout)
+            answer = client.request(command)
         if clock.now() > min(deadline, request_end):
             raise BenchError("request_timeout", "Late response exceeded operation budget")
         # The upstream parser preserves fields; validate required status fields too.
         fields = answer.get("fields", {})
         required = {
             "LOG STATUS": {"QUEUED", "PEAK", "DROP_WRITES", "DROP_BYTES", "TX_LOST", "TX_BYTES", "TX_ERRORS", "CONTEXT", "FLIGHT"},
-            "DIAG STATUS": {"V", "CORE", "COUNT", "OVERWRITTEN", "SD_MAX_MS", "LOOP_MAX_MS", "RADIO_OVR", "PDM_OVR", "SD_ERR", "AUDIO_ERR", "HAS_FAULT"}}
+            "DIAG STATUS": {"V", "CORE", "COUNT", "OVERWRITTEN", "SD_MAX_MS", "LOOP_MAX_MS", "RADIO_OVR", "PDM_OVR", "SD_ERR", "AUDIO_ERR", "HAS_FAULT"},
+            "DIAG IDENTITY": {"V", "CORE", "BUILD", "BOOT", "RESET", "CAPS"}}
         if command in required and not required[command] <= fields.keys():
             raise ValueError("incomplete status response")
         if command == "DIAG LAST" and answer.get("text", "").strip() != "OK DIAG LAST NONE":
             if not {"SEQ", "MS", "EVENT", "A", "B"} <= fields.keys() or not isinstance(fields["EVENT"], str):
                 raise ValueError("incomplete last-fault response")
+        if command == "DIAG IDENTITY":
+            target_identity(answer)
         return answer
     except TimeoutError as exc:
         raise BenchError("request_timeout", str(exc)) from exc
     except (ValueError, RuntimeError) as exc:
         raise BenchError("protocol_error", str(exc), "fail") from exc
     finally:
-        client.finish()
+        if client is not None:
+            client.finish()
         emit({"kind": "session_end", "host_receive_ns": time.time_ns()})
 
 

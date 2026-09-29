@@ -101,7 +101,8 @@ class BenchTests(unittest.TestCase):
             self.assertTrue(Path(result["artifacts"]["result"]).exists())
 
     def test_all_diagnostic_commands(self):
-        for command in ("log status", "diag status", "diag last", "diag dump"):
+        for command in ("log status", "diag status", "diag last", "diag dump",
+                        "diag identity"):
             with self.subTest(command=command):
                 result = self.run_direct(command)
                 self.assertEqual(result["result"], "pass", result)
@@ -111,6 +112,16 @@ class BenchTests(unittest.TestCase):
                 self.assertTrue(any("raw_base64" in record for record in records))
                 if command == "diag dump":
                     self.assertTrue(result["metrics"]["response"]["complete"])
+                if command == "diag identity":
+                    identity = result["metrics"]["firmware_identity"]["target"]
+                    self.assertEqual(identity["state"], "observed")
+                    self.assertEqual(identity["build_id"], "test-build")
+                    self.assertEqual(identity["boot_epoch"], 1)
+
+    def test_identity_rejects_unsupported_schema(self):
+        result = self.run_direct("diag identity", "identity-v2")
+        self.assertEqual(result["result"], "fail", result)
+        self.assertEqual(result["reason"], "protocol_error")
 
     def test_incomplete_schema_disconnect_deadlines(self):
         for scenario, reason in (("incomplete", "request_timeout"), ("invalid-schema", "protocol_error"),

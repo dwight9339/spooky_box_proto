@@ -176,6 +176,25 @@ def _check_ipc(answer):
         raise BenchError("ipc_unhealthy", "IPC error fields are nonzero", "fail")
 
 
+def _observe_identity(metrics, query):
+    expected = metrics["firmware"]["expected_target_identity"]
+    identities = metrics.setdefault("firmware_identity", {
+        "probe": {"state": "unavailable",
+                  "reason": "probe_protocol_does_not_report_firmware_identity"}})
+    if expected["state"] != "required":
+        identities["target"] = dict(expected)
+        return None
+    answer = query("DIAG IDENTITY")
+    try:
+        observed = serial_io.target_identity(answer)
+    except ValueError as exc:
+        raise BenchError("firmware_identity", str(exc), "fail") from exc
+    if observed["build_id"] != expected["build_id"]:
+        raise BenchError("firmware_identity", "Observed target build differs from staged CM7 image", "fail")
+    identities["target"] = observed
+    return observed
+
+
 def _progress(first, second):
     deltas = {}
     for key in ("TX", "RX", "ACK", "ROUNDTRIPS"):
@@ -233,6 +252,10 @@ def run(options, profile, run, metrics, artifacts, evidence="diagnostics.jsonl")
         _check_diag(diag)
         metrics["diagnostics"] = {"status": diag}
         metrics["checks"]["m7_liveness"] = "pass"
+        identity = _observe_identity(metrics, lambda command: _query(
+            profile, selected, options, clock, shared, lines.emit, command))
+        metrics["checks"]["target_identity"] = (
+            "pass" if identity is not None else "not_available_legacy_image")
 
         ipc_started = clock.now()
         snapshots = []

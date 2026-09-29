@@ -180,10 +180,25 @@ hardware access, and the exact checked bytes are staged under the run's firmware
 directory. Single images, raw BIN/address input and automatic retries are not
 supported.
 
-The manifest is a supplied build-provenance declaration, not cryptographic proof that
-the cores are semantically compatible, and it is not reported as target-asserted
-identity. No target-reported firmware identity exists. Firmware hashes, declared
-provenance and load ranges are reported separately from target health.
+`source_snapshot_path` is an optional schema-v1 extension. The manifest generator
+copies a supplied dirty-source snapshot next to the manifest, records its relative
+path, and the runner verifies and stages those exact bytes as `source-snapshot`.
+Older schema-v1 manifests that only carry the required snapshot hash remain valid;
+their source bytes are explicitly reported as not supplied.
+
+New CM7 ELFs carry an `SBID1:<build_id>` marker. Preflight requires that marker to
+match the supplied manifest, and boot smoke then requires `DIAG IDENTITY` to report
+the same build ID and supported capabilities. The result keeps supplied manifest
+provenance separate from observed target identity. Legacy schema-v1 images without
+the marker remain valid and are reported as identity unavailable rather than queried.
+The probe is likewise reported as unavailable because its protocol does not expose a
+firmware identity; USB version strings are never substituted. Recording regression
+compares the observed boot epoch before and after the workload and fails on an
+unexpected restart.
+
+The manifest remains a supplied build-provenance declaration, not cryptographic proof
+that the cores are semantically compatible. Firmware hashes, declared provenance,
+observed target identity and load ranges are reported separately from target health.
 
 ## Control semantics
 
@@ -239,6 +254,7 @@ changing directories during a run.
   wav-transfer.jsonl            # transfer start/end identity and checksums
   operation.cfg, scripts/, openocd-command.json, openocd.log   # controls
   build-info.json, firmware/CM7.elf, firmware/CM4.elf          # flash
+  source-snapshot              # dirty source archive, when manifest supplies bytes
 ```
 
 `metadata.json` alone is not a completed run. Missing `test-results.json`, a

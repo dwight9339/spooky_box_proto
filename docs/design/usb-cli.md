@@ -64,10 +64,31 @@ UI DISPLAY TEST 2
 UI DISPLAY OFF
 UI OFF
 SLEEP START
+DIAG IDENTITY
 DIAG LATENCY
 ```
 
 HELP is streamed in short lines.
+
+## Target build identity
+
+`DIAG IDENTITY` is a bounded read-only query owned by M7. Its single response is:
+
+```text
+OK IDENTITY V=1 CORE=7 BUILD=<token> BOOT=<u32> RESET=<u32> CAPS=<u32>
+```
+
+`BUILD` is the 1..128 character ASCII token supplied as `SPOOKY_BUILD_ID` when the
+paired firmware was configured. `BOOT` is a nonzero counter retained in RTC backup
+registers and advanced once per M7 startup; a changed value during one bench
+operation proves that the target restarted. It is not a globally unique boot ID and
+may restart after loss or reset of the backup domain. `RESET` is the startup snapshot
+of `RCC_RSR`, taken before firmware clears the reset flags.
+
+`CAPS` bit 0 declares identity reporting, bit 1 the retained boot epoch, bit 2 the
+diagnostic service, bit 3 WAV protocol v1, and bit 4 the opt-in IPC smoke service.
+Consumers must reject unsupported schema/core values and must not infer target or
+probe firmware identity from USB descriptors or package versions.
 
 ## Command admission while recording
 

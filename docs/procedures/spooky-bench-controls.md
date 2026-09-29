@@ -43,6 +43,15 @@ consumes prebuilt files and does not invoke a compiler. Preserve that build's
 revision, dirty snapshot if applicable, compiler identity and flags. Do not
 substitute current Git HEAD for the provenance of older ELF files.
 
+Choose one build token and pass it to CMake before building. Use the same token in
+the manifest; quoting the complete `-D` argument is required for reliable PowerShell
+argument handling:
+
+```powershell
+cmake --preset IpcSmoke "-DSPOOKY_BUILD_ID=UNIQUE_BUILD_ID"
+cmake --build --preset IpcSmoke
+```
+
 Create a manifest (replace the placeholders with the image build's values):
 
 ```powershell
@@ -50,10 +59,11 @@ host/.venv/Scripts/python.exe host/tools/make_manifest.py --cm7 build/IpcSmoke/f
 ```
 
 For a dirty build, add `--source-snapshot PATH_TO_ARCHIVED_PATCH_OR_SOURCE`;
-the manifest stores its SHA-256 identifier. Keep that source archive with the
-build evidence. Optional `--compiler` and repeated `--build-flag=...` record
-toolchain provenance; omitted values are explicitly null, not guessed.
-The generator refuses to overwrite an output manifest.
+the generator copies those bytes beside the manifest, stores their SHA-256 identifier
+and relative path, and the bench run stages the verified copy with its evidence.
+Optional `--compiler` and repeated `--build-flag=...` record toolchain provenance;
+omitted values are explicitly null, not guessed. The generator refuses to overwrite
+the manifest or its source-snapshot companion.
 
 ```powershell
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json flash --manifest build/ipc-build-info.json
