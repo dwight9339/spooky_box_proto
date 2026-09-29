@@ -19,6 +19,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0007](0007-m7-event-queue.md) | One bounded M7 event queue with run-to-completion dispatch | Accepted |
 | [0008](0008-recording-safe-command-policy.md) | Recording-safe command policy | Accepted |
 | [0009](0009-first-slice-field-controls.md) | First-slice Field controls and gesture resolution | Accepted |
+| [0010](0010-sd-backed-rolling-capture.md) | Sixty-second SD-backed rolling capture | Accepted |
 
 ## Template
 

@@ -151,7 +151,7 @@ The rolling capture set should include:
 - tune targets, band transitions, PTT state, and other significant semantic events
 - enough timing information to align every stream to a common monotonic clock
 
-The EMF and event buffers are timestamped data rings rather than audio buffers, but they should cover the same time window. The intended rolling duration remains an implementation decision based on available RAM, external memory, storage bandwidth, and audio format.
+The EMF and event buffers are timestamped data rings rather than audio buffers, but they should cover the same time window. For the first implementation, the rolling window is nominally 60 seconds: at the current 48 kHz, three-channel, 16-bit format it retains at least 704 matched audio blocks (60.074667 seconds). The M7 writes each immutable block once to an SD-backed journal and saves by pinning references rather than copying audio, as defined by decision 0010. EMF, activity, and semantic-event sidecars cover the same sample interval.
 
 Saving the buffer should take a coherent snapshot of all streams and continue capture into a new buffer without creating an audible gap. Disk writes should run as a background storage operation and must not block audio capture or an active recording session.
 
@@ -414,7 +414,7 @@ The following questions should remain visible as prototypes are tested:
 5. Which radio and audio features contribute to Seek's activity score, and how should that score decay?
 6. What is the simplest Orbit model that produces compelling, intelligible motion?
 7. Are Granular, Sampler, and Slice separate engines or performance behaviors over a shared buffer system?
-8. How long should the rolling capture window be, and where should its audio buffers live?
+8. Resolved for the first implementation (decision 0010): retain at least 704 matched blocks (60.074667 seconds) in an M7-owned, SD-backed immutable-block journal; saves pin references instead of copying audio.
 9. Which effects define the initial Instrument identity?
 10. How many modulation routes, macros, and sequencer lanes can the interface support without becoming menu-driven?
 11. Which settings persist across power cycles, and which should reset to safe defaults?
