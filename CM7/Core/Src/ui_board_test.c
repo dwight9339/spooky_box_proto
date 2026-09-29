@@ -1,6 +1,8 @@
 #include "ui_board_test.h"
 
 #include "main.h"
+#include "ui_input_service.h"
+#include "ui_render_service.h"
 #include "usb_test.h"
 
 #include <stdarg.h>
@@ -18,21 +20,13 @@
 #define UI_MATRIX_GLOBAL_CURRENT_REG 0x01U
 #define UI_MATRIX_RESET_REG          0x3FU
 #define UI_MATRIX_EXPECTED_ID        0x60U
-#define UI_MATRIX_LOGICAL_WIDTH      9U
-#define UI_MATRIX_LOGICAL_HEIGHT     9U
 #define UI_MATRIX_COLUMN_OFFSET      2U
-#define UI_MATRIX_PIXEL_COUNT        81U
-#define UI_MATRIX_TRAIL_LENGTH       4U
-#define UI_MATRIX_FRAME_MS           70U
 #define UI_MATRIX_GLOBAL_CURRENT     0x40U
-#define UI_SWITCH_DEBOUNCE_MS        15U
-#define UI_LED_STEP_MS               350U
 #define UI_MESSAGE_QUEUE_DEPTH       8U
 #define UI_MESSAGE_SIZE              224U
 #define UI_DISPLAY_WIDTH             128U
 #define UI_DISPLAY_HEIGHT            64U
 #define UI_DISPLAY_PAGES             (UI_DISPLAY_HEIGHT / 8U)
-#define UI_DISPLAY_BUFFER_SIZE       (UI_DISPLAY_WIDTH * UI_DISPLAY_PAGES)
 #define UI_DISPLAY_SPI_TIMEOUT_MS    100U
 #define UI_DISPLAY_DEFAULT_OFFSET    0U
 
@@ -42,9 +36,6 @@ typedef struct
   GPIO_TypeDef *port;
   uint16_t pin;
   bool active_high;
-  bool stable;
-  bool candidate;
-  uint32_t candidate_since_ms;
 } UiSwitch;
 
 typedef struct
@@ -54,12 +45,6 @@ typedef struct
   uint16_t a_pin;
   GPIO_TypeDef *b_port;
   uint16_t b_pin;
-  volatile uint8_t previous_ab;
-  volatile int8_t transition_accumulator;
-  volatile int32_t count;
-  volatile uint32_t invalid_transitions;
-  volatile uint32_t pending_cw;
-  volatile uint32_t pending_ccw;
 } UiEncoder;
 
 typedef struct
@@ -83,24 +68,20 @@ enum
 
 static UiSwitch ui_switches[UI_SWITCH_COUNT] =
 {
-  {"BTN0",     GPIOA, GPIO_PIN_4,  false, false, false, 0U},
-  {"BTN1",     GPIOC, GPIO_PIN_4,  false, false, false, 0U},
-  {"ENC0_BTN", GPIOD, GPIO_PIN_3,  true,  false, false, 0U},
-  {"ENC1_BTN", GPIOD, GPIO_PIN_6,  true,  false, false, 0U},
-  {"ENC2_BTN", GPIOE, GPIO_PIN_12, true,  false, false, 0U},
-  {"ENC3_BTN", GPIOG, GPIO_PIN_9,  true,  false, false, 0U}
+  {"BTN0",     GPIOA, GPIO_PIN_4,  false},
+  {"BTN1",     GPIOC, GPIO_PIN_4,  false},
+  {"ENC0_BTN", GPIOD, GPIO_PIN_3,  true},
+  {"ENC1_BTN", GPIOD, GPIO_PIN_6,  true},
+  {"ENC2_BTN", GPIOE, GPIO_PIN_12, true},
+  {"ENC3_BTN", GPIOG, GPIO_PIN_9,  true}
 };
 
 static UiEncoder ui_encoders[] =
 {
-  {"ENC0", GPIOD, GPIO_PIN_0, GPIOD, GPIO_PIN_1,
-   0U, 0, 0, 0U, 0U, 0U},
-  {"ENC1", GPIOD, GPIO_PIN_4, GPIOD, GPIO_PIN_5,
-   0U, 0, 0, 0U, 0U, 0U},
-  {"ENC2", GPIOD, GPIO_PIN_7, GPIOE, GPIO_PIN_10,
-   0U, 0, 0, 0U, 0U, 0U},
-  {"ENC3", GPIOF, GPIO_PIN_11, GPIOG, GPIO_PIN_14,
-   0U, 0, 0, 0U, 0U, 0U}
+  {"ENC0", GPIOD, GPIO_PIN_0, GPIOD, GPIO_PIN_1},
+  {"ENC1", GPIOD, GPIO_PIN_4, GPIOD, GPIO_PIN_5},
+  {"ENC2", GPIOD, GPIO_PIN_7, GPIOE, GPIO_PIN_10},
+  {"ENC3", GPIOF, GPIO_PIN_11, GPIOG, GPIO_PIN_14}
 };
 
 /*
@@ -126,14 +107,6 @@ static const UiLed ui_leds[] =
   {"ENC3_B", GPIOE, GPIO_PIN_13, true}
 };
 
-static const int8_t ui_quadrature_table[16] =
-{
-   0, -1,  1,  0,
-   1,  0,  0, -1,
-  -1,  0,  0,  1,
-   0,  1, -1,  0
-};
-
 static I2C_HandleTypeDef *ui_i2c;
 static SPI_HandleTypeDef *ui_display_spi;
 static volatile bool ui_ready;
@@ -141,14 +114,10 @@ static bool ui_watch_enabled;
 static bool ui_matrix_enabled;
 static bool ui_matrix_animation_active;
 static uint8_t ui_matrix_page;
-static uint16_t ui_matrix_frame;
-static uint32_t ui_matrix_next_ms;
 static bool ui_led_chase_active;
 static uint8_t ui_led_chase_index;
-static uint32_t ui_led_next_ms;
 static bool ui_display_spi_ready;
 static bool ui_display_on;
-static uint8_t ui_display_buffer[UI_DISPLAY_BUFFER_SIZE];
 static char ui_messages[UI_MESSAGE_QUEUE_DEPTH][UI_MESSAGE_SIZE];
 static uint8_t ui_message_head;
 static uint8_t ui_message_tail;
@@ -159,6 +128,13 @@ static uint32_t ui_dropped_messages;
 #define UI_LED_COUNT \
   ((uint32_t)(sizeof(ui_leds) / sizeof(ui_leds[0])))
 
+_Static_assert(UI_SWITCH_COUNT == UI_INPUT_SWITCH_COUNT,
+               "UI switch mapping must match input service");
+_Static_assert(UI_ENCODER_COUNT == UI_INPUT_ENCODER_COUNT,
+               "UI encoder mapping must match input service");
+_Static_assert(UI_LED_COUNT == UI_RENDER_LED_COUNT,
+               "UI LED mapping must match render service");
+
 static bool UiReadPin(GPIO_TypeDef *port, uint16_t pin)
 {
   return HAL_GPIO_ReadPin(port, pin) == GPIO_PIN_SET;
@@ -168,6 +144,27 @@ static uint8_t UiReadEncoder(const UiEncoder *encoder)
 {
   return (uint8_t)((UiReadPin(encoder->a_port, encoder->a_pin) ? 2U : 0U) |
                    (UiReadPin(encoder->b_port, encoder->b_pin) ? 1U : 0U));
+}
+
+static void UiSampleSwitches(bool raw_switches[UI_SWITCH_COUNT])
+{
+  uint32_t index;
+
+  for (index = 0U; index < UI_SWITCH_COUNT; ++index)
+  {
+    raw_switches[index] = UiReadPin(ui_switches[index].port,
+                                   ui_switches[index].pin);
+  }
+}
+
+static void UiSampleEncoders(uint8_t encoder_ab[UI_ENCODER_COUNT])
+{
+  uint32_t index;
+
+  for (index = 0U; index < UI_ENCODER_COUNT; ++index)
+  {
+    encoder_ab[index] = UiReadEncoder(&ui_encoders[index]);
+  }
 }
 
 static uint32_t UiEnterCritical(void)
@@ -267,21 +264,6 @@ static uint8_t UiFirstChaseLed(void)
   return (uint8_t)UI_LED_COUNT;
 }
 
-static uint8_t UiNextChaseLed(uint8_t current)
-{
-  uint8_t index;
-
-  for (index = (uint8_t)(current + 1U);
-       index < (uint8_t)UI_LED_COUNT; ++index)
-  {
-    if (ui_leds[index].chase)
-    {
-      return index;
-    }
-  }
-  return (uint8_t)UI_LED_COUNT;
-}
-
 static uint32_t UiChasePosition(uint8_t led_index)
 {
   uint32_t position = 0U;
@@ -310,30 +292,10 @@ static void UiSetChaseLed(uint8_t index)
   }
 }
 
-static void UiResetEncoderTracking(bool reset_counts)
-{
-  uint32_t index;
-  uint32_t primask = UiEnterCritical();
-
-  for (index = 0U; index < UI_ENCODER_COUNT; ++index)
-  {
-    ui_encoders[index].previous_ab = UiReadEncoder(&ui_encoders[index]);
-    ui_encoders[index].transition_accumulator = 0;
-    ui_encoders[index].pending_cw = 0U;
-    ui_encoders[index].pending_ccw = 0U;
-    if (reset_counts)
-    {
-      ui_encoders[index].count = 0;
-      ui_encoders[index].invalid_transitions = 0U;
-    }
-  }
-  UiExitCritical(primask);
-}
-
 static void UiSendStatus(void)
 {
   uint8_t encoder_ab[UI_ENCODER_COUNT];
-  int32_t encoder_count[UI_ENCODER_COUNT];
+  UiInputStatus status;
   uint32_t index;
   uint32_t primask;
 
@@ -342,10 +304,7 @@ static void UiSendStatus(void)
     encoder_ab[index] = UiReadEncoder(&ui_encoders[index]);
   }
   primask = UiEnterCritical();
-  for (index = 0U; index < UI_ENCODER_COUNT; ++index)
-  {
-    encoder_count[index] = ui_encoders[index].count;
-  }
+  (void)UiInputService_GetStatus(encoder_ab, &status);
   UiExitCritical(primask);
 
   UiQueueMessage(
@@ -360,19 +319,19 @@ static void UiSendStatus(void)
     (encoder_ab[0] >> 1U) & 1U, encoder_ab[0] & 1U,
     UiReadPin(ui_switches[UI_SWITCH_ENC0].port,
               ui_switches[UI_SWITCH_ENC0].pin),
-    (long)encoder_count[0],
+    (long)status.encoder_count[0],
     (encoder_ab[1] >> 1U) & 1U, encoder_ab[1] & 1U,
     UiReadPin(ui_switches[UI_SWITCH_ENC1].port,
               ui_switches[UI_SWITCH_ENC1].pin),
-    (long)encoder_count[1],
+    (long)status.encoder_count[1],
     (encoder_ab[2] >> 1U) & 1U, encoder_ab[2] & 1U,
     UiReadPin(ui_switches[UI_SWITCH_ENC2].port,
               ui_switches[UI_SWITCH_ENC2].pin),
-    (long)encoder_count[2],
+    (long)status.encoder_count[2],
     (encoder_ab[3] >> 1U) & 1U, encoder_ab[3] & 1U,
     UiReadPin(ui_switches[UI_SWITCH_ENC3].port,
               ui_switches[UI_SWITCH_ENC3].pin),
-    (long)encoder_count[3],
+    (long)status.encoder_count[3],
     ui_watch_enabled, ui_led_chase_active ? "RUN" : "IDLE",
     ui_matrix_enabled, ui_display_on ? "ON" : "OFF",
     (unsigned long)ui_dropped_messages);
@@ -380,71 +339,72 @@ static void UiSendStatus(void)
 
 static void UiServiceSwitches(uint32_t now_ms)
 {
+  bool raw_switches[UI_SWITCH_COUNT];
+  UiInputSwitchEvents events;
   uint32_t index;
 
   for (index = 0U; index < UI_SWITCH_COUNT; ++index)
   {
-    UiSwitch *input = &ui_switches[index];
-    bool raw = UiReadPin(input->port, input->pin);
+    raw_switches[index] = UiReadPin(ui_switches[index].port,
+                                   ui_switches[index].pin);
+  }
+  UiInputService_UpdateSwitches(raw_switches, now_ms, &events);
+  if (!ui_watch_enabled)
+  {
+    return;
+  }
+  for (index = 0U; index < UI_SWITCH_COUNT; ++index)
+  {
+    const uint8_t mask = (uint8_t)(1U << index);
+    const bool went_high = (events.high_mask & mask) != 0U;
+    const bool went_low = (events.low_mask & mask) != 0U;
 
-    if (raw != input->candidate)
+    if (went_high || went_low)
     {
-      input->candidate = raw;
-      input->candidate_since_ms = now_ms;
-    }
-    else if ((raw != input->stable) &&
-             ((now_ms - input->candidate_since_ms) >=
-              UI_SWITCH_DEBOUNCE_MS))
-    {
-      bool pressed;
+      const bool raw = went_high;
+      const bool pressed = ui_switches[index].active_high ? raw : !raw;
 
-      input->stable = raw;
-      pressed = input->active_high ? raw : !raw;
-      if (ui_watch_enabled)
-      {
-        UiQueueMessage("UI EVENT %s %s RAW=%u\r\n", input->name,
-                       pressed ? "PRESSED" : "RELEASED", raw);
-      }
+      UiQueueMessage("UI EVENT %s %s RAW=%u\r\n", ui_switches[index].name,
+                     pressed ? "PRESSED" : "RELEASED", raw);
     }
   }
 }
 
 static void UiServiceEncoderEvents(void)
 {
+  UiInputEncoderEvents events[UI_ENCODER_COUNT];
   uint32_t index;
+  uint32_t primask = UiEnterCritical();
+
+  UiInputService_TakeEncoderEvents(events);
+  UiExitCritical(primask);
 
   for (index = 0U; index < UI_ENCODER_COUNT; ++index)
   {
     UiEncoder *encoder = &ui_encoders[index];
-    uint32_t pending_cw;
-    uint32_t pending_ccw;
-    int32_t count;
     uint8_t current_ab;
-    uint32_t primask = UiEnterCritical();
 
-    pending_cw = encoder->pending_cw;
-    pending_ccw = encoder->pending_ccw;
-    encoder->pending_cw = 0U;
-    encoder->pending_ccw = 0U;
-    count = encoder->count;
-    UiExitCritical(primask);
-
-    if (!ui_watch_enabled || ((pending_cw == 0U) && (pending_ccw == 0U)))
+    if (!ui_watch_enabled ||
+        ((events[index].clockwise == 0U) &&
+         (events[index].counterclockwise == 0U)))
     {
       continue;
     }
 
     current_ab = UiReadEncoder(encoder);
-    if (pending_cw != 0U)
+    if (events[index].clockwise != 0U)
     {
       UiQueueMessage("UI EVENT %s DIR=CW STEPS=%lu COUNT=%ld AB=%u%u\r\n",
-                     encoder->name, (unsigned long)pending_cw, (long)count,
+                     encoder->name, (unsigned long)events[index].clockwise,
+                     (long)events[index].count,
                      (current_ab >> 1U) & 1U, current_ab & 1U);
     }
-    if (pending_ccw != 0U)
+    if (events[index].counterclockwise != 0U)
     {
       UiQueueMessage("UI EVENT %s DIR=CCW STEPS=%lu COUNT=%ld AB=%u%u\r\n",
-                     encoder->name, (unsigned long)pending_ccw, (long)count,
+                     encoder->name,
+                     (unsigned long)events[index].counterclockwise,
+                     (long)events[index].count,
                      (current_ab >> 1U) & 1U, current_ab & 1U);
     }
   }
@@ -516,6 +476,7 @@ static void UiMatrixHardwareOff(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
   ui_matrix_enabled = false;
   ui_matrix_animation_active = false;
+  UiRenderService_StopMatrixAnimation();
   ui_matrix_page = 0xFFU;
 }
 
@@ -573,7 +534,7 @@ static bool UiMatrixInitialize(uint8_t *device_id)
 static bool UiMatrixSetPixel(uint8_t logical_x, uint8_t logical_y,
                              uint8_t red, uint8_t green, uint8_t blue)
 {
-  static const uint8_t row_map[UI_MATRIX_LOGICAL_HEIGHT] =
+  static const uint8_t row_map[UI_RENDER_MATRIX_HEIGHT] =
     {8U, 5U, 4U, 3U, 2U, 1U, 0U, 7U, 6U};
   uint8_t physical_x;
   uint8_t mapped_y;
@@ -582,8 +543,8 @@ static bool UiMatrixSetPixel(uint8_t logical_x, uint8_t logical_y,
   uint8_t reg;
   uint8_t values[3];
 
-  if ((logical_x >= UI_MATRIX_LOGICAL_WIDTH) ||
-      (logical_y >= UI_MATRIX_LOGICAL_HEIGHT))
+  if ((logical_x >= UI_RENDER_MATRIX_WIDTH) ||
+      (logical_y >= UI_RENDER_MATRIX_HEIGHT))
   {
     return false;
   }
@@ -613,92 +574,26 @@ static bool UiMatrixSetPixel(uint8_t logical_x, uint8_t logical_y,
   return UiMatrixSelectPage(page) && UiMatrixWrite(reg, values, 3U);
 }
 
-static void UiMatrixPathPosition(uint16_t position, uint8_t *x, uint8_t *y)
-{
-  *y = (uint8_t)(position / UI_MATRIX_LOGICAL_WIDTH);
-  *x = (uint8_t)(position % UI_MATRIX_LOGICAL_WIDTH);
-  if ((*y & 1U) != 0U)
-  {
-    *x = (UI_MATRIX_LOGICAL_WIDTH - 1U) - *x;
-  }
-}
-
-static void UiMatrixPathColor(uint16_t position, uint8_t level,
-                              uint8_t *red, uint8_t *green, uint8_t *blue)
-{
-  uint8_t phase = (uint8_t)(position % UI_MATRIX_PIXEL_COUNT);
-  uint8_t blend;
-
-  *red = 0U;
-  *green = 0U;
-  *blue = 0U;
-  if (phase < 27U)
-  {
-    blend = phase;
-    *red = (uint8_t)(((uint16_t)level * (27U - blend)) / 27U);
-    *green = (uint8_t)(((uint16_t)level * blend) / 27U);
-  }
-  else if (phase < 54U)
-  {
-    blend = phase - 27U;
-    *green = (uint8_t)(((uint16_t)level * (27U - blend)) / 27U);
-    *blue = (uint8_t)(((uint16_t)level * blend) / 27U);
-  }
-  else
-  {
-    blend = phase - 54U;
-    *blue = (uint8_t)(((uint16_t)level * (27U - blend)) / 27U);
-    *red = (uint8_t)(((uint16_t)level * blend) / 27U);
-  }
-}
-
 static void UiServiceMatrixAnimation(uint32_t now_ms)
 {
-  static const uint8_t trail_levels[UI_MATRIX_TRAIL_LENGTH] =
-    {192U, 72U, 24U, 8U};
-  uint16_t phase;
-  uint8_t age;
+  UiRenderMatrixFrame frame;
+  uint8_t index;
   bool ok = true;
 
   if (!ui_matrix_animation_active ||
-      ((int32_t)(now_ms - ui_matrix_next_ms) < 0))
+      !UiRenderService_PrepareMatrixFrame(now_ms, &frame))
   {
     return;
   }
 
-  phase = ui_matrix_frame;
-  if ((phase >= UI_MATRIX_TRAIL_LENGTH) &&
-      ((phase - UI_MATRIX_TRAIL_LENGTH) < UI_MATRIX_PIXEL_COUNT))
+  for (index = 0U; ok && (index < frame.pixel_count); ++index)
   {
-    uint8_t x;
-    uint8_t y;
+    const UiRenderPixel *pixel = &frame.pixels[index];
 
-    UiMatrixPathPosition(phase - UI_MATRIX_TRAIL_LENGTH, &x, &y);
-    ok = UiMatrixSetPixel(x, y, 0U, 0U, 0U);
+    ok = UiMatrixSetPixel(pixel->x, pixel->y, pixel->red,
+                          pixel->green, pixel->blue);
   }
-
-  for (age = 0U; ok && (age < UI_MATRIX_TRAIL_LENGTH); ++age)
-  {
-    uint16_t position;
-    uint8_t x;
-    uint8_t y;
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-
-    if (phase < age)
-    {
-      continue;
-    }
-    position = phase - age;
-    if (position >= UI_MATRIX_PIXEL_COUNT)
-    {
-      continue;
-    }
-    UiMatrixPathPosition(position, &x, &y);
-    UiMatrixPathColor(position, trail_levels[age], &red, &green, &blue);
-    ok = UiMatrixSetPixel(x, y, red, green, blue);
-  }
+  UiRenderService_CommitMatrixFrame(now_ms, ok);
 
   if (!ok)
   {
@@ -706,12 +601,11 @@ static void UiServiceMatrixAnimation(uint32_t now_ms)
 
     UiMatrixHardwareOff();
     UiQueueMessage("ERR UI MATRIX ANIMATE frame=%u hal=0x%08lX disabled=1\r\n",
-                   (unsigned int)phase, (unsigned long)hal_error);
+                   (unsigned int)frame.phase, (unsigned long)hal_error);
     return;
   }
 
-  ++ui_matrix_frame;
-  if (ui_matrix_frame >= (UI_MATRIX_PIXEL_COUNT + UI_MATRIX_TRAIL_LENGTH))
+  if (frame.final_frame)
   {
     bool blanked = UiMatrixBlankAndDisable();
 
@@ -728,21 +622,20 @@ static void UiServiceMatrixAnimation(uint32_t now_ms)
     }
     return;
   }
-  ui_matrix_next_ms = now_ms + UI_MATRIX_FRAME_MS;
 }
 
 static void UiServiceLedChase(uint32_t now_ms)
 {
   uint8_t next_led;
+  bool finished;
 
   if (!ui_led_chase_active ||
-      ((int32_t)(now_ms - ui_led_next_ms) < 0))
+      !UiRenderService_NextLed(now_ms, &next_led, &finished))
   {
     return;
   }
 
-  next_led = UiNextChaseLed(ui_led_chase_index);
-  if (next_led >= UI_LED_COUNT)
+  if (finished)
   {
     ui_led_chase_active = false;
     UiAllLedsOff();
@@ -754,7 +647,6 @@ static void UiServiceLedChase(uint32_t now_ms)
 
   ui_led_chase_index = next_led;
   UiSetChaseLed(ui_led_chase_index);
-  ui_led_next_ms = now_ms + UI_LED_STEP_MS;
 }
 
 static bool UiDisplayConfigureSpi(SPI_HandleTypeDef *spi)
@@ -818,83 +710,8 @@ static bool UiDisplayCommand(uint8_t command)
   return UiDisplayTransfer(false, &command, 1U);
 }
 
-static void UiDisplaySetPixel(uint8_t x, uint8_t y)
-{
-  if ((x < UI_DISPLAY_WIDTH) && (y < UI_DISPLAY_HEIGHT))
-  {
-    ui_display_buffer[((uint16_t)(y >> 3U) * UI_DISPLAY_WIDTH) + x] |=
-      (uint8_t)(1U << (y & 7U));
-  }
-}
-
-static void UiDisplayDrawLine(int32_t x0, int32_t y0,
-                              int32_t x1, int32_t y1)
-{
-  int32_t dx = (x1 >= x0) ? (x1 - x0) : (x0 - x1);
-  int32_t sx = (x0 < x1) ? 1 : -1;
-  int32_t dy = -((y1 >= y0) ? (y1 - y0) : (y0 - y1));
-  int32_t sy = (y0 < y1) ? 1 : -1;
-  int32_t error = dx + dy;
-
-  for (;;)
-  {
-    UiDisplaySetPixel((uint8_t)x0, (uint8_t)y0);
-    if ((x0 == x1) && (y0 == y1))
-    {
-      break;
-    }
-    if ((2 * error) >= dy)
-    {
-      error += dy;
-      x0 += sx;
-    }
-    if ((2 * error) <= dx)
-    {
-      error += dx;
-      y0 += sy;
-    }
-  }
-}
-
-static void UiDisplayBuildTestPattern(void)
-{
-  uint16_t x;
-  uint8_t y;
-
-  (void)memset(ui_display_buffer, 0, sizeof(ui_display_buffer));
-
-  /* Border, diagonals, and center cross expose clipping and orientation. */
-  UiDisplayDrawLine(0, 0, 127, 0);
-  UiDisplayDrawLine(0, 63, 127, 63);
-  UiDisplayDrawLine(0, 0, 0, 63);
-  UiDisplayDrawLine(127, 0, 127, 63);
-  UiDisplayDrawLine(0, 0, 127, 63);
-  UiDisplayDrawLine(0, 63, 127, 0);
-  UiDisplayDrawLine(63, 0, 63, 63);
-  UiDisplayDrawLine(0, 31, 127, 31);
-
-  /* Asymmetric corner marks make rotation and mirroring unambiguous. */
-  for (y = 5U; y <= 12U; ++y)
-  {
-    for (x = 5U; x <= 12U; ++x)
-    {
-      UiDisplaySetPixel((uint8_t)x, y);
-    }
-  }
-  UiDisplayDrawLine(110, 5, 121, 5);
-  UiDisplayDrawLine(110, 5, 110, 16);
-  UiDisplayDrawLine(121, 5, 121, 16);
-  UiDisplayDrawLine(110, 16, 121, 16);
-  UiDisplayDrawLine(6, 49, 25, 49);
-  UiDisplayDrawLine(6, 53, 20, 53);
-  UiDisplayDrawLine(6, 57, 15, 57);
-  for (x = 106U; x <= 121U; x += 3U)
-  {
-    UiDisplayDrawLine((int32_t)x, 48, (int32_t)x, 58);
-  }
-}
-
-static bool UiDisplayWriteBuffer(uint8_t column_offset)
+static bool UiDisplayWriteBuffer(uint8_t column_offset,
+                                 const uint8_t *display_buffer)
 {
   uint8_t page;
 
@@ -909,8 +726,7 @@ static bool UiDisplayWriteBuffer(uint8_t column_offset)
 
     if (!UiDisplayTransfer(false, commands, sizeof(commands)) ||
         !UiDisplayTransfer(true,
-                           &ui_display_buffer[(uint16_t)page *
-                                              UI_DISPLAY_WIDTH],
+                           &display_buffer[(uint16_t)page * UI_DISPLAY_WIDTH],
                            UI_DISPLAY_WIDTH))
     {
       return false;
@@ -950,15 +766,16 @@ static bool UiDisplayRunTest(uint8_t column_offset)
     0xA4U,             /* show GDDRAM */
     0xA6U              /* normal (not inverted) display */
   };
+  const uint8_t *display_buffer;
 
   UiDisplayHardwareOff();
   HAL_Delay(100U);
   HAL_GPIO_WritePin(DISP_RST_GPIO_Port, DISP_RST_Pin, GPIO_PIN_SET);
   HAL_Delay(100U);
 
-  UiDisplayBuildTestPattern();
+  display_buffer = UiRenderService_BuildDisplayTestPattern();
   if (!UiDisplayTransfer(false, init_commands, sizeof(init_commands)) ||
-      !UiDisplayWriteBuffer(column_offset) ||
+      !UiDisplayWriteBuffer(column_offset, display_buffer) ||
       !UiDisplayCommand(0xAFU))
   {
     UiDisplayHardwareOff();
@@ -972,6 +789,8 @@ bool UiBoardTest_Start(I2C_HandleTypeDef *i2c,
                        SPI_HandleTypeDef *display_spi)
 {
   GPIO_InitTypeDef gpio = {0};
+  bool raw_switches[UI_SWITCH_COUNT];
+  uint8_t encoder_ab[UI_ENCODER_COUNT];
   uint32_t index;
   uint32_t now_ms;
 
@@ -982,13 +801,13 @@ bool UiBoardTest_Start(I2C_HandleTypeDef *i2c,
   ui_matrix_enabled = false;
   ui_matrix_animation_active = false;
   ui_matrix_page = 0xFFU;
-  ui_matrix_frame = 0U;
   ui_led_chase_active = false;
   ui_display_spi_ready = false;
   ui_display_on = false;
   ui_message_head = 0U;
   ui_message_tail = 0U;
   ui_dropped_messages = 0U;
+  UiRenderService_Init();
 
   UiEnableGpioClocks();
 
@@ -1039,14 +858,12 @@ bool UiBoardTest_Start(I2C_HandleTypeDef *i2c,
   }
 
   now_ms = HAL_GetTick();
-  for (index = 0U; index < UI_SWITCH_COUNT; ++index)
+  UiSampleSwitches(raw_switches);
+  UiSampleEncoders(encoder_ab);
+  if (!UiInputService_Init(raw_switches, encoder_ab, now_ms))
   {
-    bool raw = UiReadPin(ui_switches[index].port, ui_switches[index].pin);
-    ui_switches[index].stable = raw;
-    ui_switches[index].candidate = raw;
-    ui_switches[index].candidate_since_ms = now_ms;
+    return false;
   }
-  UiResetEncoderTracking(true);
   ui_ready = true;
 
   printf("\r\n[ui] Stage 1 UI-board bring-up ready on CM7\r\n");
@@ -1087,21 +904,17 @@ bool UiBoardTest_HandleCommand(const char *command)
   }
   else if (strcmp(command, "UI WATCH START") == 0)
   {
-    uint32_t index;
+    bool raw_switches[UI_SWITCH_COUNT];
+    uint8_t encoder_ab[UI_ENCODER_COUNT];
     uint32_t now_ms = HAL_GetTick();
 
-    for (index = 0U; index < UI_SWITCH_COUNT; ++index)
-    {
-      bool raw = UiReadPin(ui_switches[index].port, ui_switches[index].pin);
-      ui_switches[index].stable = raw;
-      ui_switches[index].candidate = raw;
-      ui_switches[index].candidate_since_ms = now_ms;
-    }
-    UiResetEncoderTracking(true);
+    UiSampleSwitches(raw_switches);
+    UiSampleEncoders(encoder_ab);
+    (void)UiInputService_Init(raw_switches, encoder_ab, now_ms);
     ui_watch_enabled = true;
     UiQueueMessage(
       "OK UI WATCH START counts-reset=1 debounce=%lu-ms sample=1-kHz\r\n",
-      (unsigned long)UI_SWITCH_DEBOUNCE_MS);
+      (unsigned long)UI_INPUT_DEBOUNCE_MS);
   }
   else if (strcmp(command, "UI WATCH STOP") == 0)
   {
@@ -1121,9 +934,10 @@ bool UiBoardTest_HandleCommand(const char *command)
     ui_led_chase_active = true;
     UiQueueMessage(
       "OK UI LEDS START channels=%lu step=%lu-ms\r\n",
-      (unsigned long)UiChaseLedCount(), (unsigned long)UI_LED_STEP_MS);
+      (unsigned long)UiChaseLedCount(),
+      (unsigned long)UI_RENDER_LED_STEP_MS);
     UiSetChaseLed(ui_led_chase_index);
-    ui_led_next_ms = HAL_GetTick() + UI_LED_STEP_MS;
+    UiRenderService_StartLedChase(HAL_GetTick());
   }
   else if ((strcmp(command, "UI MATRIX") == 0) ||
            (strcmp(command, "UI MATRIX PROBE") == 0))
@@ -1185,13 +999,12 @@ bool UiBoardTest_HandleCommand(const char *command)
         device_id, UI_MATRIX_EXPECTED_ID, (unsigned long)hal_error);
       return true;
     }
-    ui_matrix_frame = 0U;
-    ui_matrix_next_ms = HAL_GetTick();
+    UiRenderService_StartMatrixAnimation(HAL_GetTick());
     ui_matrix_animation_active = true;
     UiQueueMessage(
       "OK UI MATRIX ANIMATE START logical=9x9 physical-cols=2..10 "
       "step=%lu-ms current=0x%02X\r\n",
-      (unsigned long)UI_MATRIX_FRAME_MS, UI_MATRIX_GLOBAL_CURRENT);
+      (unsigned long)UI_RENDER_MATRIX_FRAME_MS, UI_MATRIX_GLOBAL_CURRENT);
   }
   else if ((strcmp(command, "UI DISPLAY") == 0) ||
            (strcmp(command, "UI DISPLAY TEST") == 0) ||
@@ -1272,55 +1085,21 @@ void UiBoardTest_Service(bool recording)
 
 void UiBoardTest_Tick1ms(void)
 {
-  uint32_t index;
+  uint8_t encoder_ab[UI_ENCODER_COUNT];
 
   if (!ui_ready)
   {
     return;
   }
-
-  for (index = 0U; index < UI_ENCODER_COUNT; ++index)
-  {
-    UiEncoder *encoder = &ui_encoders[index];
-    uint8_t current_ab = UiReadEncoder(encoder);
-    uint8_t transition;
-    int8_t delta;
-
-    if (current_ab == encoder->previous_ab)
-    {
-      continue;
-    }
-
-    transition = (uint8_t)((encoder->previous_ab << 2U) | current_ab);
-    delta = ui_quadrature_table[transition & 0x0FU];
-    encoder->previous_ab = current_ab;
-    if (delta == 0)
-    {
-      ++encoder->invalid_transitions;
-      encoder->transition_accumulator = 0;
-      continue;
-    }
-
-    encoder->transition_accumulator += delta;
-    if (encoder->transition_accumulator >= 4)
-    {
-      ++encoder->count;
-      ++encoder->pending_cw;
-      encoder->transition_accumulator = 0;
-    }
-    else if (encoder->transition_accumulator <= -4)
-    {
-      --encoder->count;
-      ++encoder->pending_ccw;
-      encoder->transition_accumulator = 0;
-    }
-  }
+  UiSampleEncoders(encoder_ab);
+  UiInputService_Tick1ms(encoder_ab);
 }
 
 void UiBoardTest_SafeOff(void)
 {
   ui_watch_enabled = false;
   ui_led_chase_active = false;
+  UiRenderService_SafeOff();
   UiAllLedsOff();
   UiMatrixHardwareOff();
   UiDisplayHardwareOff();

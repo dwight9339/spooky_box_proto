@@ -100,6 +100,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/radio_control_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/prototype_power.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/ipc_smoke_cli.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/ui_input_service.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/ui_render_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/fuel_gauge_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/magnetometer_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/radio_recorder.c

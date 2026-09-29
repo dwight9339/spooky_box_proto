@@ -72,8 +72,10 @@ express; and pass all build and bench gates before adopting output. Never recurs
 copy a CubeMX export over the repository.
 
 Board diagnostics, prototype-power policy, and the M7 storage-volume ownership
-service live in `CM7/App`; hardware initialization and IRQ wrappers remain in
-generated shells. The recorder, SD diagnostics, and WAV transfer clients keep
+service live in `CM7/App`. The UI input and rendering policy also live there behind
+fixed-bound APIs, while `Core/Src/ui_board_test.c` remains the current M7-only
+hardware/diagnostic adapter for the proven pin map. Hardware initialization and IRQ
+wrappers remain in generated shells. The recorder, SD diagnostics, and WAV transfer clients keep
 their own `FIL` objects but never mount, unmount, or reconfigure the shared
 volume directly.
 Portable IPC tests build independently through `tests/CMakeLists.txt` and never

@@ -67,6 +67,16 @@ summary:
 - Cross-core state uses the versioned IPC region and its barrier and cache policy, not
   shared driver objects. The M4 framebuffer stays core-local.
 
+The current M7 bring-up isolates transferable electrical processing in
+`ui_input_service` and hardware-neutral animation/framebuffer work in
+`ui_render_service`. The diagnostic `ui_board_test` adapter remains the sole owner of
+the proven GPIO, SPI6 and I2C2 mappings and preserves the existing USB commands. Input
+calls inspect at most six switches or four encoders. Each render-service pass emits at
+most one direct-LED action or five matrix pixels; the SSD1309 test image is a fixed
+1 KiB framebuffer. This split is an ownership seam, not an M4 transfer: normal images
+still have exactly one M7 hardware owner until product IPC and the PF6 reconciliation
+gates in decision 0001 are complete.
+
 The external Pico debugprobe is development-bench infrastructure, not an
 application coprocessor. Spooky Bench provides a Windows-hosted command surface
 around flashing, UART capture and target USB diagnostics; see
@@ -159,7 +169,8 @@ Keep CubeMX-generated startup, HAL integration, and linker material under
 `CM7/Core` and `CM4/Core` while extracting hand-maintained application code
 incrementally into core-specific `App/` directories. `CM7/App` contains
 console/battery diagnostics, charging-sleep policy, the exclusive storage-volume
-service and the IPC CLI adapter.
+service, the electrical UI input and bounded rendering services, and the IPC CLI
+adapter.
 `Common` separates portable IPC protocol/health code from the STM32 transport.
 Refactor one service at a time
 from the large M7 `main.c`, building and rerunning the known hardware checks
