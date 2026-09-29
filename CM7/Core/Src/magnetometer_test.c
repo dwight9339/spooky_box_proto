@@ -601,13 +601,13 @@ bool MagnetometerTest_Sleep(void)
   return MagSetContinuous(false);
 }
 
-void MagnetometerTest_Service(void)
+void MagnetometerTest_Service(bool allow_bus_io)
 {
   MagnetometerSample sample;
   char response[144];
   uint32_t now;
 
-  if (!mag_ready)
+  if (!mag_ready || !allow_bus_io)
   {
     return;
   }

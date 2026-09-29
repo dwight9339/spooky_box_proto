@@ -12,7 +12,7 @@ extern "C" {
 bool UiBoardTest_Start(I2C_HandleTypeDef *i2c, SPI_HandleTypeDef *display_spi);
 bool UiBoardTest_HandleCommand(const char *command);
 void UiBoardTest_Tick1ms(void);
-void UiBoardTest_Service(void);
+void UiBoardTest_Service(bool recording);
 void UiBoardTest_SafeOff(void);
 
 #ifdef __cplusplus

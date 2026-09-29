@@ -33,6 +33,7 @@ endfunction()
 spooky_test(logger_diag_test logger_diag_test.c stubs/fake_hal.c
     ../Common/Src/log_buffer.c ../Common/Src/diag_history.c
     ../CM7/App/target_logger.c ../CM7/App/diagnostics.c
+    ../CM7/App/foreground_budget.c
     ../CM7/App/event_queue.c ../CM7/App/app_events.c)
 spooky_test(event_queue_test event_queue_test.c ../CM7/App/event_queue.c)
 spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.c)

@@ -73,6 +73,8 @@ typedef struct
 static I2C_HandleTypeDef *fuel_i2c;
 static uint32_t fuel_last_report_ms;
 static bool fuel_running;
+static FuelGaugeSnapshot fuel_cached_snapshot;
+static bool fuel_cache_valid;
 
 static bool FuelGaugeReadBytes(uint8_t command, uint8_t *bytes,
                                uint16_t length)
@@ -524,6 +526,7 @@ bool FuelGaugeTest_Start(I2C_HandleTypeDef *i2c)
 
   fuel_i2c = i2c;
   fuel_running = false;
+  fuel_cache_valid = false;
 
   printf("\r\n[fuel] BQ27441-G1A fuel-gauge test\r\n");
   printf("[fuel] I2C2 PB10/PB11; expected address 0x55\r\n");
@@ -609,15 +612,17 @@ bool FuelGaugeTest_Start(I2C_HandleTypeDef *i2c)
   }
 
   fuel_last_report_ms = HAL_GetTick();
+  fuel_cached_snapshot = snapshot;
+  fuel_cache_valid = true;
   fuel_running = true;
   return true;
 }
 
-void FuelGaugeTest_Service(void)
+void FuelGaugeTest_Service(bool allow_bus_io)
 {
   uint32_t now;
 
-  if (!fuel_running)
+  if (!fuel_running || !allow_bus_io)
   {
     return;
   }
@@ -649,6 +654,8 @@ bool FuelGaugeTest_ReportNow(void)
   }
 
   fuel_last_report_ms = HAL_GetTick();
+  fuel_cached_snapshot = snapshot;
+  fuel_cache_valid = true;
   FuelGaugePrintChargingUpdate(&snapshot);
   return true;
 }
@@ -657,11 +664,11 @@ bool FuelGaugeTest_ReadTelemetry(FuelGaugeTelemetry *telemetry)
 {
   FuelGaugeSnapshot snapshot;
 
-  if ((telemetry == NULL) || !fuel_running ||
-      !FuelGaugeReadSnapshot(&snapshot))
+  if ((telemetry == NULL) || !fuel_running || !fuel_cache_valid)
   {
     return false;
   }
+  snapshot = fuel_cached_snapshot;
 
   telemetry->voltage_mV = snapshot.voltage_mV;
   telemetry->remaining_capacity_mAh = snapshot.remaining_capacity_mAh;

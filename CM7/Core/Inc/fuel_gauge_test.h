@@ -28,7 +28,7 @@ typedef struct
 bool FuelGaugeTest_Start(I2C_HandleTypeDef *i2c);
 bool FuelGaugeTest_ReportNow(void);
 bool FuelGaugeTest_ReadTelemetry(FuelGaugeTelemetry *telemetry);
-void FuelGaugeTest_Service(void);
+void FuelGaugeTest_Service(bool allow_bus_io);
 
 #ifdef __cplusplus
 }

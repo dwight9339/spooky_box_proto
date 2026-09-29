@@ -1246,7 +1246,7 @@ bool UiBoardTest_HandleCommand(const char *command)
   return true;
 }
 
-void UiBoardTest_Service(void)
+void UiBoardTest_Service(bool recording)
 {
   uint32_t now_ms;
 
@@ -1258,7 +1258,15 @@ void UiBoardTest_Service(void)
   UiServiceSwitches(now_ms);
   UiServiceEncoderEvents();
   UiServiceLedChase(now_ms);
-  UiServiceMatrixAnimation(now_ms);
+  if (recording && ui_matrix_animation_active)
+  {
+    UiMatrixHardwareOff();
+    UiQueueMessage("WARN UI MATRIX ANIMATE suspended recording=1 EN=0\r\n");
+  }
+  else if (!recording)
+  {
+    UiServiceMatrixAnimation(now_ms);
+  }
   UiFlushOneMessage();
 }
 

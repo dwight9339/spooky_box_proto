@@ -11,7 +11,7 @@ extern "C" {
 bool MagnetometerTest_Start(I2C_HandleTypeDef *i2c);
 bool MagnetometerTest_HandleCommand(const char *command);
 bool MagnetometerTest_Sleep(void);
-void MagnetometerTest_Service(void);
+void MagnetometerTest_Service(bool allow_bus_io);
 
 #ifdef __cplusplus
 }

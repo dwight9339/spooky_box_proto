@@ -26,6 +26,9 @@ void RadioRecorder_OnRadioSamples(const int16_t *samples,
                                   uint32_t sample_count);
 void RadioRecorder_NotifyRadioError(void);
 bool RadioRecorder_IsActive(void);
+/* True only while DMA producers may enqueue recording blocks. Final file sync
+ * and close keep IsActive true but return false here. */
+bool RadioRecorder_IsCapturing(void);
 void RadioRecorder_Stop(void);
 
 #ifdef __cplusplus

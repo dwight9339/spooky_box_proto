@@ -64,6 +64,7 @@ UI DISPLAY TEST 2
 UI DISPLAY OFF
 UI OFF
 SLEEP START
+DIAG LATENCY
 ```
 
 HELP is streamed in short lines.
@@ -75,6 +76,10 @@ The CLI and future physical-control commands share the recording-safe policy fro
 and `RECORD STOP` are admitted to the bounded M7 event queue as external commands;
 if its non-reserved capacity is exhausted, the CLI replies `ERR BUSY` and changes
 nothing. Session actions then run through the authoritative Session machine.
+
+`DIAG LATENCY` streams the recording-only maximum and violation count for every
+foreground service. The budget table and queue-headroom rationale are in
+[foreground latency](foreground-latency.md).
 
 While Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
 transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE` and `UI DISPLAY TEST`

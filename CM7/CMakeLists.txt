@@ -68,6 +68,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/diag_history.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/target_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/diagnostics.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/foreground_budget.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/event_queue.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/app_events.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/app_dispatch.c

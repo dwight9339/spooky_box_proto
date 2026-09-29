@@ -31,6 +31,7 @@
 #define RECORDER_MAX_SECONDS               3600U
 #define RECORDER_PREALLOC_SECONDS            60U
 #define RECORDER_PROGRESS_PERIOD_MS        5000U
+#define RECORDER_USB_QUEUE_DEPTH              4U
 #define RECORDER_PDM_DC_POLE_Q15           32640
 #define RECORDER_PDM_DC_SCALE              32768
 #define RECORDER_WAV_MAX_FRAMES \
@@ -88,13 +89,27 @@ static uint32_t pending_seconds;
 static const char *finish_reason;
 static bool finish_aborted;
 static bool session_event_pending;
+static char recorder_usb_queue[RECORDER_USB_QUEUE_DEPTH][240];
+static uint8_t recorder_usb_head;
+static uint8_t recorder_usb_count;
+
+static void RecorderFlushUsb(void)
+{
+  if ((recorder_usb_count == 0U) ||
+      !UsbTest_SendText(recorder_usb_queue[recorder_usb_head]))
+  {
+    return;
+  }
+  recorder_usb_head = (uint8_t)((recorder_usb_head + 1U) %
+                                RECORDER_USB_QUEUE_DEPTH);
+  --recorder_usb_count;
+}
 
 static void RecorderSend(const char *format, ...)
 {
   char message[240];
   va_list args;
   int length;
-  uint32_t start_ms;
 
   va_start(args, format);
   length = vsnprintf(message, sizeof(message), format, args);
@@ -105,11 +120,21 @@ static void RecorderSend(const char *format, ...)
   }
   message[sizeof(message) - 1U] = '\0';
 
-  start_ms = HAL_GetTick();
-  while (!UsbTest_SendText(message) &&
-         ((HAL_GetTick() - start_ms) < 250U))
+  if ((recorder_usb_count != 0U) || !UsbTest_SendText(message))
   {
-    HAL_Delay(1U);
+    if (recorder_usb_count < RECORDER_USB_QUEUE_DEPTH)
+    {
+      uint8_t tail = (uint8_t)((recorder_usb_head + recorder_usb_count) %
+                               RECORDER_USB_QUEUE_DEPTH);
+      (void)snprintf(recorder_usb_queue[tail], sizeof(recorder_usb_queue[tail]),
+                     "%s", message);
+      ++recorder_usb_count;
+    }
+    else
+    {
+      Diagnostics_Record(DIAG_USB_BACKPRESSURE, (uint32_t)length,
+                         RECORDER_USB_QUEUE_DEPTH);
+    }
   }
   printf("[record] %s", message);
 }
@@ -812,6 +837,7 @@ void RadioRecorder_Service(void)
   int32_t *pdm;
   uint32_t now;
 
+  RecorderFlushUsb();
   if (recorder_state != RECORDER_ACTIVE)
   {
     return;
@@ -894,6 +920,11 @@ void RadioRecorder_NotifyRadioError(void)
 bool RadioRecorder_IsActive(void)
 {
   return recorder_state == RECORDER_ACTIVE;
+}
+
+bool RadioRecorder_IsCapturing(void)
+{
+  return capture_enabled;
 }
 
 void RadioRecorder_Stop(void)

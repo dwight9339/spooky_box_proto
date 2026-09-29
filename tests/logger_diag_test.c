@@ -71,6 +71,10 @@ static void test_history(void)
   CHECK(DiagHistory_Get(&h, 0U, &e) && e.type == DIAG_LOOP_STALL);
   CHECK(!DiagHistory_Get(&h, 1U, &e));
   CHECK(h.summary.max_loop_gap_ms == 75U);
+  DiagHistory_Add(&h, 1U, DIAG_FOREGROUND_BUDGET,
+                  FOREGROUND_SERVICE_USB, 11U);
+  CHECK(h.summary.have_fault);
+  CHECK(h.summary.last_fault.type == DIAG_FOREGROUND_BUDGET);
 }
 
 static void test_logger(void)
@@ -221,6 +225,29 @@ static void test_cli(void)
   CHECK(test_primask == 0U);
 }
 
+static void test_foreground_latency(void)
+{
+  cli_reset();
+  Diagnostics_ObserveForeground(FOREGROUND_SERVICE_USB, 99U, false);
+  Diagnostics_ObserveForeground(FOREGROUND_SERVICE_USB, 10U, true);
+  Diagnostics_ObserveForeground(FOREGROUND_SERVICE_USB, 11U, true);
+  Diagnostics_ObserveForeground(FOREGROUND_SERVICE_RECORDER, 51U, true);
+  Diagnostics_ObserveForeground(FOREGROUND_SERVICE_LOOP, 76U, true);
+  CHECK(Diagnostics_HandleCommand("DIAG LATENCY"));
+  for (uint32_t i = 0U; i < FOREGROUND_SERVICE_COUNT + 2U; ++i)
+    Diagnostics_Service();
+  CHECK(strstr(usb_lines[0], "BLOCK_MS=86 SERVICES=14 recording-only=1") != NULL);
+  CHECK(strstr(usb_lines[1], "SERVICE=LOOP BUDGET_MS=75 MAX_MS=76 VIOLATIONS=1") != NULL);
+  CHECK(strstr(usb_lines[4], "SERVICE=RECORDER BUDGET_MS=70 MAX_MS=51 VIOLATIONS=0") != NULL);
+  CHECK(strstr(usb_lines[6], "SERVICE=USB BUDGET_MS=10 MAX_MS=11 VIOLATIONS=1") != NULL);
+  CHECK(strcmp(usb_lines[FOREGROUND_SERVICE_COUNT + 1U],
+               "OK DIAG LATENCY END\r\n") == 0);
+  CHECK(Diagnostics_HandleCommand("DIAG LAST"));
+  Diagnostics_Service();
+  CHECK(strstr(usb_lines[FOREGROUND_SERVICE_COUNT + 2U],
+               "EVENT=FOREGROUND_BUDGET A=0 B=76") != NULL);
+}
+
 static void count_dispatch(void *context, const EvqEvent *event)
 {
   (void)event;
@@ -271,6 +298,7 @@ int main(void)
   test_history();
   test_logger();
   test_cli();
+  test_foreground_latency();
   test_queue_diag();
   puts("logger/diagnostics tests passed");
   return 0;

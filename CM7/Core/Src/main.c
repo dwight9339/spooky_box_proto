@@ -32,6 +32,7 @@
 #include "command_policy.h"
 #include "target_logger.h"
 #include "diagnostics.h"
+#include "foreground_budget.h"
 #include "ipc_smoke_cli.h"
 #if defined(SPOOKY_IPC_SMOKE)
 #include "ipc_smoke.h"
@@ -75,6 +76,15 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+
+#define RUN_FOREGROUND(service_id, statement) do { \
+  bool foreground_capture_before = RadioRecorder_IsCapturing(); \
+  uint32_t foreground_started_ms = HAL_GetTick(); \
+  statement; \
+  Diagnostics_ObserveForeground((service_id), \
+    HAL_GetTick() - foreground_started_ms, \
+    foreground_capture_before && RadioRecorder_IsCapturing()); \
+} while (0)
 
 /* USER CODE END PM */
 
@@ -774,25 +784,44 @@ Error_Handler();
   }
   while (1)
   {
+    static uint32_t previous_loop_started_ms;
+    static bool previous_loop_capturing;
+    static bool foreground_started;
+    uint32_t loop_started_ms = HAL_GetTick();
+    bool loop_capturing = RadioRecorder_IsCapturing();
+
+    if (foreground_started)
+    {
+      Diagnostics_ObserveForeground(FOREGROUND_SERVICE_LOOP,
+        loop_started_ms - previous_loop_started_ms,
+        previous_loop_capturing && loop_capturing);
+    }
+    previous_loop_started_ms = loop_started_ms;
+    foreground_started = true;
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 #if defined(SPOOKY_IPC_SMOKE)
-    IpcSmoke_Service();
+    RUN_FOREGROUND(FOREGROUND_SERVICE_IPC, IpcSmoke_Service());
 #endif
-    RadioAudio_Service();
-    RadioRecorder_Service();
-    FuelGaugeTest_Service();
-    UsbTest_Service();
-    WavTransfer_Service();
-    TargetLogger_Service();
-    Diagnostics_Service();
-    UiBoardTest_Service();
-    SdTest_Service();
-    PrototypePower_Service(SleepStopRadioAudio);
-    MagnetometerTest_Service();
-    AppDispatch_Service(); /* after every producer in this pass (decision 0007) */
+    RUN_FOREGROUND(FOREGROUND_SERVICE_AUDIO, RadioAudio_Service());
+    RUN_FOREGROUND(FOREGROUND_SERVICE_RECORDER, RadioRecorder_Service());
+    RUN_FOREGROUND(FOREGROUND_SERVICE_FUEL,
+      FuelGaugeTest_Service(!RadioRecorder_IsCapturing()));
+    RUN_FOREGROUND(FOREGROUND_SERVICE_USB, UsbTest_Service());
+    RUN_FOREGROUND(FOREGROUND_SERVICE_WAV, WavTransfer_Service());
+    RUN_FOREGROUND(FOREGROUND_SERVICE_LOGGER, TargetLogger_Service());
+    RUN_FOREGROUND(FOREGROUND_SERVICE_DIAGNOSTICS, Diagnostics_Service());
+    RUN_FOREGROUND(FOREGROUND_SERVICE_UI,
+      UiBoardTest_Service(RadioRecorder_IsCapturing()));
+    RUN_FOREGROUND(FOREGROUND_SERVICE_SD_TEST, SdTest_Service());
+    RUN_FOREGROUND(FOREGROUND_SERVICE_POWER,
+      PrototypePower_Service(SleepStopRadioAudio));
+    RUN_FOREGROUND(FOREGROUND_SERVICE_MAGNETOMETER,
+      MagnetometerTest_Service(!RadioRecorder_IsCapturing()));
+    RUN_FOREGROUND(FOREGROUND_SERVICE_DISPATCH, AppDispatch_Service());
+    previous_loop_capturing = RadioRecorder_IsCapturing();
     HAL_Delay(5U);
   }
   /* USER CODE END 3 */

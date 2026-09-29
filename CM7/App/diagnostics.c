@@ -9,7 +9,8 @@
 #endif
 
 typedef enum {REPLY_IDLE, REPLY_STATUS, REPLY_QUEUE, REPLY_LOG, REPLY_LAST,
-  REPLY_DUMP_HEADER, REPLY_DUMP_ROWS, REPLY_DUMP_END, REPLY_HELP} ReplyState;
+  REPLY_DUMP_HEADER, REPLY_DUMP_ROWS, REPLY_DUMP_END, REPLY_HELP,
+  REPLY_LATENCY_HEADER, REPLY_LATENCY_ROWS, REPLY_LATENCY_END} ReplyState;
 static DiagHistory history;
 static ReplyState reply;
 static uint32_t dump_sequence;
@@ -24,6 +25,9 @@ static uint32_t last_log_drops;
 static uint32_t last_log_errors;
 static uint32_t last_queue_losses;
 static bool service_started;
+static uint32_t foreground_max_ms[FOREGROUND_SERVICE_COUNT];
+static uint32_t foreground_violations[FOREGROUND_SERVICE_COUNT];
+static uint32_t latency_index;
 #if defined(SPOOKY_IPC_SMOKE)
 static uint32_t last_ipc_link = UINT32_MAX;
 #endif
@@ -31,7 +35,7 @@ static uint32_t last_ipc_link = UINT32_MAX;
 static const char *const help_lines[] = {
   "OK RADIO BAND [FM|AM|SW|LW] | TUNE <kHz> | UP | DOWN | STATUS\r\n",
   "OK VOLUME READ | BATTERY READ | CHARGE STATUS | SLEEP START\r\n",
-  "OK IPC STATUS | LOG STATUS | DIAG STATUS|QUEUE|LAST|DUMP|STOP\r\n",
+  "OK IPC STATUS | LOG STATUS | DIAG STATUS|QUEUE|LATENCY|LAST|DUMP|STOP\r\n",
   "OK MAG READ|STATUS|STREAM START [ms]|STOP\r\n",
   "OK EMF READ|STATUS|ZERO|STREAM START [ms]|STOP\r\n",
   "OK RECORD STATUS|START [seconds]|STOP\r\n",
@@ -49,11 +53,28 @@ void Diagnostics_Init(void)
   last_log_drops = 0U;
   last_log_errors = 0U;
   last_queue_losses = 0U;
+  (void)memset(foreground_max_ms, 0, sizeof(foreground_max_ms));
+  (void)memset(foreground_violations, 0, sizeof(foreground_violations));
 #if defined(SPOOKY_IPC_SMOKE)
   last_ipc_link = UINT32_MAX;
 #endif
   last_log_sample_ms = HAL_GetTick();
   Diagnostics_Record(DIAG_BOOT, 1U, 7U); /* Diagnostic schema v1, core M7. */
+}
+
+void Diagnostics_ObserveForeground(ForegroundService service,
+                                   uint32_t duration_ms, bool recording)
+{
+  uint32_t budget_ms;
+  if (!recording || ((uint32_t)service >= FOREGROUND_SERVICE_COUNT)) return;
+  if (duration_ms > foreground_max_ms[service])
+    foreground_max_ms[service] = duration_ms;
+  budget_ms = ForegroundBudget_Milliseconds(service);
+  if (duration_ms > budget_ms)
+  {
+    ++foreground_violations[service];
+    Diagnostics_Record(DIAG_FOREGROUND_BUDGET, (uint32_t)service, duration_ms);
+  }
 }
 
 void Diagnostics_Record(DiagEventType type, uint32_t arg0, uint32_t arg1)
@@ -98,6 +119,11 @@ bool Diagnostics_HandleCommand(const char *command)
   else if (strcmp(command, "LOG STATUS") == 0) reply = REPLY_LOG;
   else if (strcmp(command, "DIAG STATUS") == 0) reply = REPLY_STATUS;
   else if (strcmp(command, "DIAG QUEUE") == 0) reply = REPLY_QUEUE;
+  else if (strcmp(command, "DIAG LATENCY") == 0)
+  {
+    latency_index = 0U;
+    reply = REPLY_LATENCY_HEADER;
+  }
   else if (strcmp(command, "DIAG LAST") == 0) reply = REPLY_LAST;
   else if (strcmp(command, "DIAG DUMP") == 0)
   {
@@ -109,7 +135,7 @@ bool Diagnostics_HandleCommand(const char *command)
   }
   else
   {
-    (void)UsbTest_SendText("ERR usage: LOG STATUS | DIAG STATUS|QUEUE|LAST|DUMP|STOP\r\n");
+    (void)UsbTest_SendText("ERR usage: LOG STATUS | DIAG STATUS|QUEUE|LATENCY|LAST|DUMP|STOP\r\n");
     return true;
   }
   last_send_ms = HAL_GetTick();
@@ -177,6 +203,23 @@ static void SendOneLine(uint32_t now)
   else if (reply == REPLY_DUMP_HEADER)
     (void)snprintf(line, sizeof(line), "OK DIAG DUMP V=1 CORE=7 FIRST=%lu COUNT=%lu\r\n",
       (unsigned long)dump_sequence, (unsigned long)dump_count);
+  else if (reply == REPLY_LATENCY_HEADER)
+    (void)snprintf(line, sizeof(line),
+      "OK DIAG LATENCY BLOCK_MS=%lu SERVICES=%lu recording-only=1\r\n",
+      (unsigned long)FOREGROUND_RECORDER_BLOCK_MS,
+      (unsigned long)FOREGROUND_SERVICE_COUNT);
+  else if (reply == REPLY_LATENCY_ROWS)
+  {
+    ForegroundService service = (ForegroundService)latency_index;
+    (void)snprintf(line, sizeof(line),
+      "DIAG LATENCY ID=%lu SERVICE=%s BUDGET_MS=%lu MAX_MS=%lu VIOLATIONS=%lu\r\n",
+      (unsigned long)latency_index, ForegroundBudget_Name(service),
+      (unsigned long)ForegroundBudget_Milliseconds(service),
+      (unsigned long)foreground_max_ms[service],
+      (unsigned long)foreground_violations[service]);
+  }
+  else if (reply == REPLY_LATENCY_END)
+    (void)snprintf(line, sizeof(line), "OK DIAG LATENCY END\r\n");
   else if (reply == REPLY_DUMP_ROWS)
   {
     DiagEvent event;
@@ -198,6 +241,15 @@ static void SendOneLine(uint32_t now)
   last_send_ms = now;
   if (reply == REPLY_DUMP_HEADER)
     reply = dump_remaining != 0U ? REPLY_DUMP_ROWS : REPLY_DUMP_END;
+  else if (reply == REPLY_LATENCY_HEADER)
+    reply = REPLY_LATENCY_ROWS;
+  else if (reply == REPLY_LATENCY_ROWS)
+  {
+    if (++latency_index == FOREGROUND_SERVICE_COUNT)
+      reply = REPLY_LATENCY_END;
+  }
+  else if (reply == REPLY_LATENCY_END)
+    reply = REPLY_IDLE;
   else if (reply == REPLY_DUMP_ROWS)
   {
     if (gap) ++dump_gaps;
