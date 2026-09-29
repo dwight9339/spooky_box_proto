@@ -61,6 +61,9 @@ cmake --preset Debug
 cmake --build --preset Debug
 ```
 
+On Windows, see [Windows Ninja firmware builds](docs/procedures/windows-ninja-build.md)
+if an automated or sandboxed build waits before launching its first command.
+
 Each preset has its own complete child builds and firmware images:
 
 ```text

@@ -67,6 +67,7 @@ Kept in step with the current tooling. Hardware bring-up checks are in
 
 - [Spooky Bench setup](procedures/spooky-bench-setup.md) and
   [controls](procedures/spooky-bench-controls.md)
+- [Windows Ninja firmware builds](procedures/windows-ninja-build.md)
 - [Boot smoke](procedures/spooky-bench-boot-smoke.md),
   [IPC recording load](procedures/spooky-bench-ipc-load.md),
   [SD basic](procedures/spooky-bench-sd-basic.md),
