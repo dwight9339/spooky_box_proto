@@ -54,7 +54,7 @@ One row per contextual binding. Filter by mode, workspace, layer, control, or st
 | C-009 | Field | Field engine page | Any | Shift | Button 1 | Press | Save synchronized rolling buffers | Standalone Field capture saved | Defined | Modes and interaction document | Allowed during a session (decision 0008 item 7); the save resolves on release. |
 | C-010 | Field | Field engine page | Any | Shift | Buttons 0 and 1 | Chord | Save buffers, switch modes, and load capture | Instrument mode with capture as active sample | Defined | Modes and interaction document | Chord resolver must delay component actions until the combination is known (D-006). During a session the chord performs the capture save only; the mode switch is suppressed (decision 0008 item 7). |
 | C-014 | Field | Engine menu | Menu open | Normal | Encoder 0 | Turn | Scroll scan-engine choices | Highlighted engine changes | Defined | User control notes |  |
-| C-016 | Field | Field engine page | Monitoring | Normal | Button 1 | Momentary press | Mute radio in monitored mix while held | Mic remains audible; both raw tracks continue recording | Defined | Modes and interaction document | PTT is resolved on release (decision 0009 item 24). PTT events are timestamped for playback. |
+| C-016 | Field | Field engine page | Monitoring | Normal | Button 1 | Momentary press | Mute radio in monitored mix while held | Mic remains audible; both raw tracks continue recording | Defined | Modes and interaction document | PTT mutes from press to release; a momentary press, not a threshold hold (decision 0009 item 37). PTT events are timestamped for playback. |
 | C-017 | Field | Field engine page | Monitoring | Normal | Button 1 | Release | Restore radio monitoring | Normal monitored mix resumes | Defined | Modes and interaction document |  |
 | C-018 | Instrument | Main engine page | Any | Normal | Encoder 1 button | Hold | Open instrument-engine selector | Instrument-engine popover remains open while held | Defined | User control notes |  |
 | C-019 | Instrument | Instrument-engine selector | Popover open | Popover | Encoder 0 | Turn | Scroll instrument-engine choices | Highlighted engine changes | Defined | User control notes |  |
@@ -131,21 +131,21 @@ One row per contextual binding. Filter by mode, workspace, layer, control, or st
 | C-091 | Instrument | Main engine page or performance view | Any | Normal | Button 0 | Hold | Open session prompt | Same as C-090 | Defined | User direction 2026-09-27 | Same as C-090. |
 | C-092 | Field and Instrument | Session prompt | Prompt open | Prompt | Encoder 0 button | Press | Confirm the prompt | Session starts or stops | Defined | User direction 2026-09-27 | Feedback follows the session outcome, not the confirmation. |
 | C-093 | Field and Instrument | Session prompt | Prompt open | Prompt | Button 0 | Release | Cancel the prompt | No change to the session | Defined | User direction 2026-09-27 | Every other gesture is dismissed while the prompt is open. |
-| C-094 | Field | Manual engine page | Any | Shift | Encoder 1 button | Press | Manual quick-jump | Jump to the saved territory | Defined | Decision 0009 item 28 | Second press returns; one-entry return slot. |
-| C-095 | Field | Manual engine page | Jumped | Shift | Encoder 1 button | Press | Return from quick-jump | Restore the previous territory | Defined | Decision 0009 item 28 |  |
+| C-094 | Field | Field engine page | Non-manual engine | Shift | Encoder 1 button | Press | Manual quick-jump | Manual engine at current tune target | Defined | Decision 0009 item 28 | Second press returns; one-entry return slot. |
+| C-095 | Field | Manual engine page | Jumped | Shift | Encoder 1 button | Press | Return from quick-jump | Restore previous Field engine and state; clear the return slot | Defined | Decision 0009 item 28 |  |
 | C-096 | Field | Field engine page | Menu closed | Normal | Encoder 2 button | Long press | Open engine menu | Engine menu stays open | Defined | Decision 0009 item 16 | Timeout closes the menu. |
-| C-097 | Field | Engine menu | Menu open | Normal | Encoder 0 button | Press | Select highlighted engine | Engine switches; menu closes | Defined | Decision 0009 item 16 |  |
-| C-098 | Field | Engine menu | Menu open | Normal | Encoder 1 button | Press | Close menu without switching | Previous engine page | Defined | Decision 0009 item 16 |  |
-| C-099 | Field | Field engine page | Menu closed | Normal | Encoder 1 button | Long press | Open band menu | Band menu stays open | Defined | Decision 0009 item 16 | Classic and Manual pages. |
-| C-100 | Field | Band menu | Menu open | Normal | Encoder 0 | Turn | Choose band | Highlighted band changes | Defined | Decision 0009 items 16-17 |  |
-| C-101 | Field | Band menu | Menu open | Normal | Encoder 0 button | Press | Confirm band | Band changes; consequential transition (decision 0008 item 13) | Defined | Decision 0009 item 17 |  |
-| C-102 | Field | Band menu | Menu open | Normal | Encoder 1 button | Press | Dismiss band menu | Previous page | Defined | Decision 0009 item 17 |  |
-| C-103 | Field | Classic engine page | Any | Normal | Encoder 0 button | Click | Run or pause the scan | Scan state toggles | Defined | Decision 0009 item 22 |  |
-| C-104 | Field | Classic engine page | Any | Normal | Encoder 0 | Turn | Set jump rate | Jump rate changes | Defined | Decision 0009 item 22 |  |
-| C-105 | Field | Classic engine page | Any | Normal | Encoder 1 button | Click | Toggle scan direction | Direction reverses | Defined | Decision 0009 item 22 |  |
-| C-106 | Field | Classic engine page | Any | Normal | Encoder 1 | Turn | Set jump distance | Jump distance changes | Defined | Decision 0009 item 22 |  |
-| C-107 | Field | Manual engine page | Any | Normal | Encoder 0 | Turn | Tune | Frequency changes | Defined | Decision 0009 item 25 | Only tuning control for now. |
-| C-108 | Field | Manual engine page | Any | Normal | Encoder 0 button | Click | Toggle wrap at band edges | Wrap toggles | Defined | Decision 0009 item 26 |  |
+| C-097 | Field | Engine menu | Menu open | Normal | Encoder 0 button | Press | Select highlighted engine | Engine switches; menu closes | Defined | Decision 0009 items 18-19 |  |
+| C-098 | Field | Engine menu | Menu open | Normal | Encoder 1 button | Press | Close menu without switching | Previous engine page | Defined | Decision 0009 item 18 |  |
+| C-099 | Field | Field engine page | Menu closed | Normal | Encoder 1 button | Long press | Open band menu | Band menu stays open | Defined | Decision 0009 item 16 | Classic and Manual pages. Timeout closes the menu. |
+| C-100 | Field | Band menu | Menu open | Normal | Encoder 0 | Turn | Choose band | Highlighted band changes | Defined | Decision 0009 item 18 |  |
+| C-101 | Field | Band menu | Menu open | Normal | Encoder 0 button | Press | Confirm band | Band changes; consequential transition (decision 0008 item 13) | Defined | Decision 0009 items 18-19 |  |
+| C-102 | Field | Band menu | Menu open | Normal | Encoder 1 button | Press | Dismiss band menu | Previous page | Defined | Decision 0009 item 18 |  |
+| C-103 | Field | Classic engine page | Any | Normal | Encoder 0 button | Click | Run or pause the scan | Scan state toggles | Defined | Decision 0009 item 9 |  |
+| C-104 | Field | Classic engine page | Any | Normal | Encoder 0 | Turn | Set jump rate | Jump rate changes | Defined | Decision 0009 item 8 |  |
+| C-105 | Field | Classic engine page | Any | Normal | Encoder 1 button | Click | Toggle scan direction | Direction reverses | Defined | Decision 0009 item 10 |  |
+| C-106 | Field | Classic engine page | Any | Normal | Encoder 1 | Turn | Set jump distance | Jump distance changes | Defined | Decision 0009 item 8 |  |
+| C-107 | Field | Manual engine page | Any | Normal | Encoder 0 | Turn | Tune | Frequency changes | Defined | Decision 0009 item 13 | Only tuning control for now. |
+| C-108 | Field | Manual engine page | Any | Normal | Encoder 0 button | Click | Toggle wrap at band edges | Wrap toggles | Defined | Decision 0009 item 14 |  |
 
 ## Workspace index
 

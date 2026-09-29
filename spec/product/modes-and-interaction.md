@@ -82,7 +82,7 @@ Holding the encoder 3 button enters a temporary **Shift layer** for as long as i
 
 While Shift is held, the physical commands it exposes are defined in the control map; only controls with an available Shift action are lit (recording-safe command policy, decision 0008).
 
-The input handler must distinguish a chord from its component buttons before executing an action. A short chord-resolution window or execution-on-release policy should prevent Shift plus button 0 from switching modes before the user has time to add button 1. Releasing encoder 3 after using a shifted command must not also advance the parameter page.
+The input handler must distinguish a chord from its component buttons before executing an action. Individual Shift button actions fire on release, so Shift plus button 0 cannot switch modes before the user has time to add button 1; when the second chord button is pressed while the first is still held, the chord fires immediately on that press and both releases are consumed (decision 0009). Releasing encoder 3 after using a shifted command must not also advance the parameter page.
 
 Equivalent or complementary shifted commands may be defined in Instrument Mode after its performance controls are better understood. The Shift layer should remain small enough to memorize.
 
