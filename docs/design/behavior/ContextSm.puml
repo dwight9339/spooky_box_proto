@@ -1,0 +1,141 @@
+@startuml ContextSm
+' Context region: which operating mode, engine page, menu or utility has the
+' controls, and what a resolved gesture means there (decision 0009, first slice).
+' Source of truth for CM7/App/sm/ContextSm.[ch]; regenerate with
+' host/tools/behavior_model.py. Rules: docs/design/behavior/README.md.
+' Guards and actions call only functions in CM7/App/sm/context_port.h.
+'
+' Events are gestures from the InputResolution region (CM7/App/sm/gesture.h), the
+' menu inactivity timeout, the Session region's change event and reconciliation.
+' An event a state does not handle is ignored. No transition here changes the
+' Session region (top-level invariant DEV-I1); commands go out through the port and
+' the shared command policy decides them (decision 0008).
+'
+' Returning to a previous context (Principle VII): each page records itself on entry,
+' and the resume choice points re-enter the recorded page. Engine and page state is
+' kept by the port and the engine service, not reset by navigation.
+
+[*] --> Running
+
+state Running {
+  [*] --> Field
+  state Field {
+    [*] --> FieldPage
+    state FieldPage {
+      [*] --> Classic
+      state Classic
+      state Manual {
+        state ManualDirect
+        state ManualQuickJump
+      }
+    }
+    state Menu {
+      state EngineMenu
+      state BandMenu
+    }
+    state FieldResume <<choice>>
+    state EngineChoice <<choice>>
+  }
+  state Instrument
+  state Utility
+  state UtilityResume <<choice>>
+}
+
+' --- Everywhere -----------------------------------------------------------------
+' PTT ends on its release or on reconciliation wherever the controls are, so it can
+' never stay latched (Principle III).
+Running : PTT_OFF / ctx_ptt_off();
+Running : RECONCILE / ctx_ptt_off();
+
+' --- Field ----------------------------------------------------------------------
+' Button 1 is PTT on Field pages and while a Field menu is open (item 37).
+Field : PTT_ON / ctx_ptt_on();
+
+' Shared by Classic and Manual (items 16, 21, 23, 28 to 36).
+FieldPage : E3_CLICK / ctx_page_advance();
+FieldPage --> EngineMenu : E2_HOLD
+FieldPage --> BandMenu : E1_HOLD [ctx_band_change_allowed()]
+FieldPage : E1_HOLD [!ctx_band_change_allowed()] / ctx_reject(CTX_ACTION_BAND_CHANGE);
+FieldPage : SHIFT_B1 / ctx_command(CTX_CMD_CAPTURE_SAVE, 0);
+FieldPage --> Instrument : SHIFT_B0 [!ctx_session_active()] / ctx_mode_changed(CTX_MODE_INSTRUMENT);
+FieldPage : SHIFT_B0 [ctx_session_active()] / ctx_reject(CTX_ACTION_MODE_SWITCH);
+FieldPage --> Instrument : SHIFT_CHORD [!ctx_session_active()] / ctx_command(CTX_CMD_CAPTURE_SAVE, 0); ctx_command(CTX_CMD_LOAD_CAPTURE, 0); ctx_mode_changed(CTX_MODE_INSTRUMENT);
+FieldPage : SHIFT_CHORD [ctx_session_active()] / ctx_command(CTX_CMD_CAPTURE_SAVE, 0); ctx_reject(CTX_ACTION_MODE_SWITCH);
+FieldPage --> Utility : SHIFT_E0
+
+' Classic page bindings (items 8 to 12).
+Classic : enter / ctx_page_entered(CTX_PAGE_CLASSIC);
+Classic : E0_TURN / ctx_command(CTX_CMD_JUMP_RATE, ctx_detents());
+Classic : E1_TURN / ctx_command(CTX_CMD_JUMP_DISTANCE, ctx_detents());
+Classic : E0_CLICK / ctx_command(CTX_CMD_RUN_PAUSE, 0);
+Classic : E1_CLICK / ctx_command(CTX_CMD_TOGGLE_DIRECTION, 0);
+' Manual quick-jump from Classic saves Classic in the return slot (item 28).
+Classic --> ManualQuickJump : SHIFT_E1 / ctx_select_engine(CTX_ENGINE_MANUAL);
+
+' Manual page bindings (items 13 to 15).
+Manual : E0_TURN / ctx_command(CTX_CMD_TUNE, ctx_detents());
+Manual : E0_CLICK / ctx_command(CTX_CMD_TOGGLE_WRAP, 0);
+' ManualDirect: the return slot is empty; Shift plus Encoder 1 has no action (item 29).
+ManualDirect : enter / ctx_page_entered(CTX_PAGE_MANUAL);
+ManualQuickJump : enter / ctx_page_entered(CTX_PAGE_MANUAL_QUICK_JUMP);
+ManualQuickJump --> Classic : SHIFT_E1 / ctx_select_engine(CTX_ENGINE_CLASSIC);
+
+' --- Engine and band menus (items 16 to 21) -------------------------------------
+' Every gesture a menu does not name is ignored, except PTT, which Field handles.
+Menu : exit / ctx_menu_close();
+EngineMenu : enter / ctx_menu_open(CTX_MENU_ENGINE);
+BandMenu : enter / ctx_menu_open(CTX_MENU_BAND);
+Menu : E0_TURN / ctx_menu_scroll();
+Menu --> FieldResume : E1_CLICK
+Menu --> FieldResume : MENU_TIMEOUT
+Menu --> FieldResume : RECONCILE / ctx_ptt_off();
+EngineMenu --> EngineChoice : E0_CLICK
+BandMenu --> FieldResume : E0_CLICK / ctx_select_band();
+' A session that starts while the band menu is open withdraws it (item 21).
+BandMenu --> FieldResume : SESSION_CHANGED [!ctx_band_change_allowed()] / ctx_publish(CTX_PUB_MENU_WITHDRAWN, CTX_MENU_BAND);
+
+' Selecting the current item just closes the menu. For engines this keeps the return
+' slot (item 29); ctx_select_band() switches only when another band is highlighted.
+EngineChoice --> FieldResume : [ctx_highlight_is_current()]
+EngineChoice --> Classic : [ctx_highlight_is(CTX_ENGINE_CLASSIC)] / ctx_select_engine(CTX_ENGINE_CLASSIC);
+EngineChoice --> ManualDirect : / ctx_select_engine(CTX_ENGINE_MANUAL);
+
+' Re-enter the Field page that last had the controls.
+FieldResume --> Classic : [ctx_field_page_is(CTX_PAGE_CLASSIC)]
+FieldResume --> ManualQuickJump : [ctx_field_page_is(CTX_PAGE_MANUAL_QUICK_JUMP)]
+FieldResume --> ManualDirect
+
+' --- Instrument -----------------------------------------------------------------
+' Instrument engines and views are outside the first slice; only the mode switch
+' back and the utility entry are defined here.
+Instrument : enter / ctx_page_entered(CTX_PAGE_INSTRUMENT);
+Instrument --> FieldResume : SHIFT_B0 [!ctx_session_active()] / ctx_mode_changed(CTX_MODE_FIELD);
+Instrument : SHIFT_B0 [ctx_session_active()] / ctx_reject(CTX_ACTION_MODE_SWITCH);
+Instrument --> Utility : SHIFT_E0
+
+' --- Global utility root (item 31) ----------------------------------------------
+' The utility service owns the menu tree; Context only decides when the utility
+' closes and restores the page that opened it.
+Utility : enter / ctx_utility_opened();
+Utility : exit / ctx_utility_closed();
+Utility : E0_TURN / ctx_command(CTX_CMD_UTILITY_SCROLL, ctx_detents());
+Utility : E0_CLICK / ctx_command(CTX_CMD_UTILITY_SELECT, 0);
+Utility --> UtilityResume : E1_CLICK [ctx_utility_at_root()]
+Utility : E1_CLICK [!ctx_utility_at_root()] / ctx_command(CTX_CMD_UTILITY_BACK, 0);
+Utility --> UtilityResume : E3_HOLD
+UtilityResume --> Instrument : [ctx_current_page_is(CTX_PAGE_INSTRUMENT)]
+UtilityResume --> FieldResume
+
+note right of Instrument
+  Instrument engines, views and bindings:
+  the Instrument slice (full_spooky_proto-v7l).
+end note
+
+/'! $CONFIG : toml
+[RenderConfig.C]
+IncludeGuardLabel = "SPOOKY_CONTEXT_SM_H"
+CFileIncludes = """
+    #include "context_port.h"
+    """
+'/
+@enduml

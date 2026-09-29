@@ -7,41 +7,60 @@
 
 typedef enum InputResolutionSm_EventId
 {
-    InputResolutionSm_EventId_BTN0_PRESS = 0,
-    InputResolutionSm_EventId_BTN0_RELEASE = 1,
-    InputResolutionSm_EventId_ENC0_PRESS = 2,
-    InputResolutionSm_EventId_HOLD_THRESHOLD = 3,
-    InputResolutionSm_EventId_INPUT = 4,
-    InputResolutionSm_EventId_RECONCILE = 5,
-    InputResolutionSm_EventId_SESSION_CHANGED = 6
+    InputResolutionSm_EventId_B0_HOLD = 0,
+    InputResolutionSm_EventId_B0_PRESS = 1,
+    InputResolutionSm_EventId_B0_RELEASE = 2,
+    InputResolutionSm_EventId_B1_PRESS = 3,
+    InputResolutionSm_EventId_B1_RELEASE = 4,
+    InputResolutionSm_EventId_E_PRESS = 5,
+    InputResolutionSm_EventId_E_RELEASE = 6,
+    InputResolutionSm_EventId_E0_PRESS = 7,
+    InputResolutionSm_EventId_E3_PRESS = 8,
+    InputResolutionSm_EventId_E3_RELEASE = 9,
+    InputResolutionSm_EventId_HOLD = 10,
+    InputResolutionSm_EventId_RECONCILE = 11,
+    InputResolutionSm_EventId_SESSION_CHANGED = 12,
+    InputResolutionSm_EventId_TURN = 13
 } InputResolutionSm_EventId;
 
-#define InputResolutionSm_EventIdCount (7)
+#define InputResolutionSm_EventIdCount (14)
 
 typedef enum InputResolutionSm_StateId
 {
     InputResolutionSm_StateId_ROOT = 0,
-    InputResolutionSm_StateId_BTN0HELD = 1,
-    InputResolutionSm_StateId_CONSUMED = 2,
-    InputResolutionSm_StateId_PENDING = 3,
-    InputResolutionSm_StateId_PROMPT = 4,
-    InputResolutionSm_StateId_STARTPROMPT = 5,
-    InputResolutionSm_StateId_STOPPROMPT = 6,
-    InputResolutionSm_StateId_NEUTRAL = 7
+    InputResolutionSm_StateId_RESOLVING = 1,
+    InputResolutionSm_StateId_BTN0HELD = 2,
+    InputResolutionSm_StateId_CONSUMED = 3,
+    InputResolutionSm_StateId_PENDING = 4,
+    InputResolutionSm_StateId_PROMPT = 5,
+    InputResolutionSm_StateId_STARTPROMPT = 6,
+    InputResolutionSm_StateId_STOPPROMPT = 7,
+    InputResolutionSm_StateId_NEUTRAL = 8,
+    InputResolutionSm_StateId_SHIFT = 9,
+    InputResolutionSm_StateId_SHIFTBUTTON0 = 10,
+    InputResolutionSm_StateId_SHIFTBUTTON1 = 11,
+    InputResolutionSm_StateId_SHIFTREADY = 12,
+    InputResolutionSm_StateId_SHIFTSPENT = 13
 } InputResolutionSm_StateId;
 
-#define InputResolutionSm_StateIdCount (8)
+#define InputResolutionSm_StateIdCount (14)
 
 // Subtree meta data generation can be disabled in settings.
 // Details: https://github.com/StateSmith/StateSmith/issues/538
-#define InputResolutionSm_ROOT_SubtreeEndId (7)  // State 'InputResolutionSm' subtree extends from itself (id: 0) to state 'Neutral' (id: 7)
-#define InputResolutionSm_BTN0HELD_SubtreeEndId (6)  // State 'Btn0Held' subtree extends from itself (id: 1) to state 'StopPrompt' (id: 6)
-#define InputResolutionSm_CONSUMED_SubtreeEndId (2)  // State 'Consumed' subtree extends from itself (id: 2) to state 'Consumed' (id: 2)
-#define InputResolutionSm_PENDING_SubtreeEndId (3)  // State 'Pending' subtree extends from itself (id: 3) to state 'Pending' (id: 3)
-#define InputResolutionSm_PROMPT_SubtreeEndId (6)  // State 'Prompt' subtree extends from itself (id: 4) to state 'StopPrompt' (id: 6)
-#define InputResolutionSm_STARTPROMPT_SubtreeEndId (5)  // State 'StartPrompt' subtree extends from itself (id: 5) to state 'StartPrompt' (id: 5)
-#define InputResolutionSm_STOPPROMPT_SubtreeEndId (6)  // State 'StopPrompt' subtree extends from itself (id: 6) to state 'StopPrompt' (id: 6)
-#define InputResolutionSm_NEUTRAL_SubtreeEndId (7)  // State 'Neutral' subtree extends from itself (id: 7) to state 'Neutral' (id: 7)
+#define InputResolutionSm_ROOT_SubtreeEndId (13)  // State 'InputResolutionSm' subtree extends from itself (id: 0) to state 'ShiftSpent' (id: 13)
+#define InputResolutionSm_RESOLVING_SubtreeEndId (13)  // State 'Resolving' subtree extends from itself (id: 1) to state 'ShiftSpent' (id: 13)
+#define InputResolutionSm_BTN0HELD_SubtreeEndId (7)  // State 'Btn0Held' subtree extends from itself (id: 2) to state 'StopPrompt' (id: 7)
+#define InputResolutionSm_CONSUMED_SubtreeEndId (3)  // State 'Consumed' subtree extends from itself (id: 3) to state 'Consumed' (id: 3)
+#define InputResolutionSm_PENDING_SubtreeEndId (4)  // State 'Pending' subtree extends from itself (id: 4) to state 'Pending' (id: 4)
+#define InputResolutionSm_PROMPT_SubtreeEndId (7)  // State 'Prompt' subtree extends from itself (id: 5) to state 'StopPrompt' (id: 7)
+#define InputResolutionSm_STARTPROMPT_SubtreeEndId (6)  // State 'StartPrompt' subtree extends from itself (id: 6) to state 'StartPrompt' (id: 6)
+#define InputResolutionSm_STOPPROMPT_SubtreeEndId (7)  // State 'StopPrompt' subtree extends from itself (id: 7) to state 'StopPrompt' (id: 7)
+#define InputResolutionSm_NEUTRAL_SubtreeEndId (8)  // State 'Neutral' subtree extends from itself (id: 8) to state 'Neutral' (id: 8)
+#define InputResolutionSm_SHIFT_SubtreeEndId (13)  // State 'Shift' subtree extends from itself (id: 9) to state 'ShiftSpent' (id: 13)
+#define InputResolutionSm_SHIFTBUTTON0_SubtreeEndId (10)  // State 'ShiftButton0' subtree extends from itself (id: 10) to state 'ShiftButton0' (id: 10)
+#define InputResolutionSm_SHIFTBUTTON1_SubtreeEndId (11)  // State 'ShiftButton1' subtree extends from itself (id: 11) to state 'ShiftButton1' (id: 11)
+#define InputResolutionSm_SHIFTREADY_SubtreeEndId (12)  // State 'ShiftReady' subtree extends from itself (id: 12) to state 'ShiftReady' (id: 12)
+#define InputResolutionSm_SHIFTSPENT_SubtreeEndId (13)  // State 'ShiftSpent' subtree extends from itself (id: 13) to state 'ShiftSpent' (id: 13)
 
 
 // Generated state machine

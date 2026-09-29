@@ -47,6 +47,11 @@ spooky_generated_sm(session_authority_test SessionSm.c)
 target_include_directories(session_authority_test PRIVATE ../CM7/Core/Inc)
 spooky_test(input_resolution_test input_resolution_test.c ../CM7/App/sm/input_resolution_port.c)
 spooky_generated_sm(input_resolution_test InputResolutionSm.c)
+spooky_test(context_test context_test.c ../CM7/App/sm/context_port.c)
+spooky_generated_sm(context_test ContextSm.c)
+spooky_test(input_context_test input_context_test.c ../CM7/App/event_queue.c
+    ../CM7/App/sm/input_resolution_port.c ../CM7/App/sm/context_port.c)
+spooky_generated_sm(input_context_test InputResolutionSm.c ContextSm.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)

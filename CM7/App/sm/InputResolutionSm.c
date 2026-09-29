@@ -13,19 +13,35 @@ static void exit_up_to_state_handler(InputResolutionSm* sm, InputResolutionSm_St
 
 static void ROOT_enter(InputResolutionSm* sm);
 
+static void RESOLVING_enter(InputResolutionSm* sm);
+
+static void RESOLVING_exit(InputResolutionSm* sm);
+
+static void RESOLVING_b0_release(InputResolutionSm* sm);
+
+static void RESOLVING_b1_release(InputResolutionSm* sm);
+
+static void RESOLVING_e_release(InputResolutionSm* sm);
+
+static void RESOLVING_e3_release(InputResolutionSm* sm);
+
+static void RESOLVING_reconcile(InputResolutionSm* sm);
+
+static void RESOLVING_turn(InputResolutionSm* sm);
+
 static void BTN0HELD_enter(InputResolutionSm* sm);
 
 static void BTN0HELD_exit(InputResolutionSm* sm);
 
-static void BTN0HELD_btn0_press(InputResolutionSm* sm);
+static void BTN0HELD_b0_release(InputResolutionSm* sm);
 
-static void BTN0HELD_btn0_release(InputResolutionSm* sm);
+static void BTN0HELD_b1_press(InputResolutionSm* sm);
 
-static void BTN0HELD_enc0_press(InputResolutionSm* sm);
+static void BTN0HELD_e_press(InputResolutionSm* sm);
 
-static void BTN0HELD_input(InputResolutionSm* sm);
+static void BTN0HELD_e0_press(InputResolutionSm* sm);
 
-static void BTN0HELD_reconcile(InputResolutionSm* sm);
+static void BTN0HELD_e3_press(InputResolutionSm* sm);
 
 static void CONSUMED_enter(InputResolutionSm* sm);
 
@@ -35,13 +51,13 @@ static void PENDING_enter(InputResolutionSm* sm);
 
 static void PENDING_exit(InputResolutionSm* sm);
 
-static void PENDING_hold_threshold(InputResolutionSm* sm);
+static void PENDING_b0_hold(InputResolutionSm* sm);
 
 static void PROMPT_enter(InputResolutionSm* sm);
 
 static void PROMPT_exit(InputResolutionSm* sm);
 
-static void PROMPT_btn0_release(InputResolutionSm* sm);
+static void PROMPT_b0_release(InputResolutionSm* sm);
 
 static void PROMPT_reconcile(InputResolutionSm* sm);
 
@@ -51,27 +67,83 @@ static void STARTPROMPT_enter(InputResolutionSm* sm);
 
 static void STARTPROMPT_exit(InputResolutionSm* sm);
 
-static void STARTPROMPT_enc0_press(InputResolutionSm* sm);
+static void STARTPROMPT_e0_press(InputResolutionSm* sm);
 
 static void STOPPROMPT_enter(InputResolutionSm* sm);
 
 static void STOPPROMPT_exit(InputResolutionSm* sm);
 
-static void STOPPROMPT_enc0_press(InputResolutionSm* sm);
+static void STOPPROMPT_e0_press(InputResolutionSm* sm);
 
 static void NEUTRAL_enter(InputResolutionSm* sm);
 
 static void NEUTRAL_exit(InputResolutionSm* sm);
 
-static void NEUTRAL_btn0_press(InputResolutionSm* sm);
+static void NEUTRAL_b0_press(InputResolutionSm* sm);
 
-static void NEUTRAL_btn0_release(InputResolutionSm* sm);
+static void NEUTRAL_b1_press(InputResolutionSm* sm);
 
-static void NEUTRAL_enc0_press(InputResolutionSm* sm);
+static void NEUTRAL_e_press(InputResolutionSm* sm);
 
-static void NEUTRAL_input(InputResolutionSm* sm);
+static void NEUTRAL_e_release(InputResolutionSm* sm);
 
-static void NEUTRAL_reconcile(InputResolutionSm* sm);
+static void NEUTRAL_e0_press(InputResolutionSm* sm);
+
+static void NEUTRAL_e3_press(InputResolutionSm* sm);
+
+static void NEUTRAL_e3_release(InputResolutionSm* sm);
+
+static void NEUTRAL_hold(InputResolutionSm* sm);
+
+static void NEUTRAL_turn(InputResolutionSm* sm);
+
+static void SHIFT_enter(InputResolutionSm* sm);
+
+static void SHIFT_exit(InputResolutionSm* sm);
+
+static void SHIFT_b0_press(InputResolutionSm* sm);
+
+static void SHIFT_b1_press(InputResolutionSm* sm);
+
+static void SHIFT_e_press(InputResolutionSm* sm);
+
+static void SHIFT_e0_press(InputResolutionSm* sm);
+
+static void SHIFT_e3_press(InputResolutionSm* sm);
+
+static void SHIFT_e3_release(InputResolutionSm* sm);
+
+static void SHIFTBUTTON0_enter(InputResolutionSm* sm);
+
+static void SHIFTBUTTON0_exit(InputResolutionSm* sm);
+
+static void SHIFTBUTTON0_b0_release(InputResolutionSm* sm);
+
+static void SHIFTBUTTON0_b1_press(InputResolutionSm* sm);
+
+static void SHIFTBUTTON1_enter(InputResolutionSm* sm);
+
+static void SHIFTBUTTON1_exit(InputResolutionSm* sm);
+
+static void SHIFTBUTTON1_b0_press(InputResolutionSm* sm);
+
+static void SHIFTBUTTON1_b1_release(InputResolutionSm* sm);
+
+static void SHIFTREADY_enter(InputResolutionSm* sm);
+
+static void SHIFTREADY_exit(InputResolutionSm* sm);
+
+static void SHIFTREADY_b0_press(InputResolutionSm* sm);
+
+static void SHIFTREADY_b1_press(InputResolutionSm* sm);
+
+static void SHIFTREADY_e_press(InputResolutionSm* sm);
+
+static void SHIFTREADY_e0_press(InputResolutionSm* sm);
+
+static void SHIFTSPENT_enter(InputResolutionSm* sm);
+
+static void SHIFTSPENT_exit(InputResolutionSm* sm);
 
 
 // State machine constructor. Must be called before start or dispatch event functions. Not thread safe.
@@ -95,17 +167,28 @@ void InputResolutionSm_start(InputResolutionSm* sm)
         // ROOT.<InitialState> is a pseudo state and cannot have an `enter` trigger.
         
         // ROOT.<InitialState> behavior
-        // uml: TransitionTo(Neutral)
+        // uml: TransitionTo(Resolving)
         {
             // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
             
             // Step 2: Transition action: ``.
             
-            // Step 3: Enter/move towards transition target `Neutral`.
-            NEUTRAL_enter(sm);
+            // Step 3: Enter/move towards transition target `Resolving`.
+            RESOLVING_enter(sm);
             
-            // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
-            return;
+            // Resolving.<InitialState> behavior
+            // uml: TransitionTo(Neutral)
+            {
+                // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
+                
+                // Step 2: Transition action: ``.
+                
+                // Step 3: Enter/move towards transition target `Neutral`.
+                NEUTRAL_enter(sm);
+                
+                // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+                return;
+            } // end of behavior for Resolving.<InitialState>
         } // end of behavior for ROOT.<InitialState>
     } // end of behavior for ROOT
 }
@@ -121,15 +204,35 @@ void InputResolutionSm_dispatch_event(InputResolutionSm* sm, InputResolutionSm_E
             // No events handled by this state (or its ancestors).
             break;
         
+        // STATE: Resolving
+        case InputResolutionSm_StateId_RESOLVING:
+            switch (event_id)
+            {
+                case InputResolutionSm_EventId_B0_RELEASE: RESOLVING_b0_release(sm); break;
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break;
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break;
+                case InputResolutionSm_EventId_E3_RELEASE: RESOLVING_e3_release(sm); break;
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break;
+                case InputResolutionSm_EventId_RECONCILE: RESOLVING_reconcile(sm); break;
+                
+                default: break; // to avoid "unused enumeration value in switch" warning
+            }
+            break;
+        
         // STATE: Btn0Held
         case InputResolutionSm_StateId_BTN0HELD:
             switch (event_id)
             {
-                case InputResolutionSm_EventId_BTN0_PRESS: BTN0HELD_btn0_press(sm); break;
-                case InputResolutionSm_EventId_ENC0_PRESS: BTN0HELD_enc0_press(sm); break;
-                case InputResolutionSm_EventId_INPUT: BTN0HELD_input(sm); break;
-                case InputResolutionSm_EventId_BTN0_RELEASE: BTN0HELD_btn0_release(sm); break;
-                case InputResolutionSm_EventId_RECONCILE: BTN0HELD_reconcile(sm); break;
+                case InputResolutionSm_EventId_B1_PRESS: BTN0HELD_b1_press(sm); break;
+                case InputResolutionSm_EventId_E0_PRESS: BTN0HELD_e0_press(sm); break;
+                case InputResolutionSm_EventId_E_PRESS: BTN0HELD_e_press(sm); break;
+                case InputResolutionSm_EventId_E3_PRESS: BTN0HELD_e3_press(sm); break;
+                case InputResolutionSm_EventId_B0_RELEASE: BTN0HELD_b0_release(sm); break;
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_RELEASE: RESOLVING_e3_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_RECONCILE: RESOLVING_reconcile(sm); break; // First ancestor handler for this event
                 
                 default: break; // to avoid "unused enumeration value in switch" warning
             }
@@ -139,11 +242,16 @@ void InputResolutionSm_dispatch_event(InputResolutionSm* sm, InputResolutionSm_E
         case InputResolutionSm_StateId_CONSUMED:
             switch (event_id)
             {
-                case InputResolutionSm_EventId_BTN0_PRESS: BTN0HELD_btn0_press(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_BTN0_RELEASE: BTN0HELD_btn0_release(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_ENC0_PRESS: BTN0HELD_enc0_press(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_INPUT: BTN0HELD_input(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_RECONCILE: BTN0HELD_reconcile(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B0_RELEASE: BTN0HELD_b0_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_RELEASE: RESOLVING_e3_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_RECONCILE: RESOLVING_reconcile(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_PRESS: BTN0HELD_b1_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E0_PRESS: BTN0HELD_e0_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_PRESS: BTN0HELD_e_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_PRESS: BTN0HELD_e3_press(sm); break; // First ancestor handler for this event
                 
                 default: break; // to avoid "unused enumeration value in switch" warning
             }
@@ -153,12 +261,17 @@ void InputResolutionSm_dispatch_event(InputResolutionSm* sm, InputResolutionSm_E
         case InputResolutionSm_StateId_PENDING:
             switch (event_id)
             {
-                case InputResolutionSm_EventId_HOLD_THRESHOLD: PENDING_hold_threshold(sm); break;
-                case InputResolutionSm_EventId_BTN0_PRESS: BTN0HELD_btn0_press(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_BTN0_RELEASE: BTN0HELD_btn0_release(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_ENC0_PRESS: BTN0HELD_enc0_press(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_INPUT: BTN0HELD_input(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_RECONCILE: BTN0HELD_reconcile(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B0_HOLD: PENDING_b0_hold(sm); break;
+                case InputResolutionSm_EventId_B0_RELEASE: BTN0HELD_b0_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_RELEASE: RESOLVING_e3_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_RECONCILE: RESOLVING_reconcile(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_PRESS: BTN0HELD_b1_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E0_PRESS: BTN0HELD_e0_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_PRESS: BTN0HELD_e_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_PRESS: BTN0HELD_e3_press(sm); break; // First ancestor handler for this event
                 
                 default: break; // to avoid "unused enumeration value in switch" warning
             }
@@ -168,12 +281,17 @@ void InputResolutionSm_dispatch_event(InputResolutionSm* sm, InputResolutionSm_E
         case InputResolutionSm_StateId_PROMPT:
             switch (event_id)
             {
-                case InputResolutionSm_EventId_BTN0_RELEASE: PROMPT_btn0_release(sm); break;
+                case InputResolutionSm_EventId_B0_RELEASE: PROMPT_b0_release(sm); break;
                 case InputResolutionSm_EventId_RECONCILE: PROMPT_reconcile(sm); break;
                 case InputResolutionSm_EventId_SESSION_CHANGED: PROMPT_session_changed(sm); break;
-                case InputResolutionSm_EventId_BTN0_PRESS: BTN0HELD_btn0_press(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_ENC0_PRESS: BTN0HELD_enc0_press(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_INPUT: BTN0HELD_input(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_RELEASE: RESOLVING_e3_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_PRESS: BTN0HELD_b1_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E0_PRESS: BTN0HELD_e0_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_PRESS: BTN0HELD_e_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_PRESS: BTN0HELD_e3_press(sm); break; // First ancestor handler for this event
                 
                 default: break; // to avoid "unused enumeration value in switch" warning
             }
@@ -183,11 +301,16 @@ void InputResolutionSm_dispatch_event(InputResolutionSm* sm, InputResolutionSm_E
         case InputResolutionSm_StateId_STARTPROMPT:
             switch (event_id)
             {
-                case InputResolutionSm_EventId_ENC0_PRESS: STARTPROMPT_enc0_press(sm); break;
-                case InputResolutionSm_EventId_BTN0_PRESS: BTN0HELD_btn0_press(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_BTN0_RELEASE: PROMPT_btn0_release(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_INPUT: BTN0HELD_input(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E0_PRESS: STARTPROMPT_e0_press(sm); break;
+                case InputResolutionSm_EventId_B0_RELEASE: PROMPT_b0_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_RELEASE: RESOLVING_e3_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
                 case InputResolutionSm_EventId_RECONCILE: PROMPT_reconcile(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_PRESS: BTN0HELD_b1_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_PRESS: BTN0HELD_e_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_PRESS: BTN0HELD_e3_press(sm); break; // First ancestor handler for this event
                 case InputResolutionSm_EventId_SESSION_CHANGED: PROMPT_session_changed(sm); break; // First ancestor handler for this event
                 
                 default: break; // to avoid "unused enumeration value in switch" warning
@@ -198,11 +321,16 @@ void InputResolutionSm_dispatch_event(InputResolutionSm* sm, InputResolutionSm_E
         case InputResolutionSm_StateId_STOPPROMPT:
             switch (event_id)
             {
-                case InputResolutionSm_EventId_ENC0_PRESS: STOPPROMPT_enc0_press(sm); break;
-                case InputResolutionSm_EventId_BTN0_PRESS: BTN0HELD_btn0_press(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_BTN0_RELEASE: PROMPT_btn0_release(sm); break; // First ancestor handler for this event
-                case InputResolutionSm_EventId_INPUT: BTN0HELD_input(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E0_PRESS: STOPPROMPT_e0_press(sm); break;
+                case InputResolutionSm_EventId_B0_RELEASE: PROMPT_b0_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_RELEASE: RESOLVING_e3_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
                 case InputResolutionSm_EventId_RECONCILE: PROMPT_reconcile(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_PRESS: BTN0HELD_b1_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_PRESS: BTN0HELD_e_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_PRESS: BTN0HELD_e3_press(sm); break; // First ancestor handler for this event
                 case InputResolutionSm_EventId_SESSION_CHANGED: PROMPT_session_changed(sm); break; // First ancestor handler for this event
                 
                 default: break; // to avoid "unused enumeration value in switch" warning
@@ -213,11 +341,118 @@ void InputResolutionSm_dispatch_event(InputResolutionSm* sm, InputResolutionSm_E
         case InputResolutionSm_StateId_NEUTRAL:
             switch (event_id)
             {
-                case InputResolutionSm_EventId_BTN0_PRESS: NEUTRAL_btn0_press(sm); break;
-                case InputResolutionSm_EventId_BTN0_RELEASE: NEUTRAL_btn0_release(sm); break;
-                case InputResolutionSm_EventId_ENC0_PRESS: NEUTRAL_enc0_press(sm); break;
-                case InputResolutionSm_EventId_INPUT: NEUTRAL_input(sm); break;
-                case InputResolutionSm_EventId_RECONCILE: NEUTRAL_reconcile(sm); break;
+                case InputResolutionSm_EventId_B0_PRESS: NEUTRAL_b0_press(sm); break;
+                case InputResolutionSm_EventId_B1_PRESS: NEUTRAL_b1_press(sm); break;
+                case InputResolutionSm_EventId_E0_PRESS: NEUTRAL_e0_press(sm); break;
+                case InputResolutionSm_EventId_E_PRESS: NEUTRAL_e_press(sm); break;
+                case InputResolutionSm_EventId_E3_PRESS: NEUTRAL_e3_press(sm); break;
+                case InputResolutionSm_EventId_E_RELEASE: NEUTRAL_e_release(sm); break;
+                case InputResolutionSm_EventId_E3_RELEASE: NEUTRAL_e3_release(sm); break;
+                case InputResolutionSm_EventId_TURN: NEUTRAL_turn(sm); break;
+                case InputResolutionSm_EventId_HOLD: NEUTRAL_hold(sm); break;
+                case InputResolutionSm_EventId_B0_RELEASE: RESOLVING_b0_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_RECONCILE: RESOLVING_reconcile(sm); break; // First ancestor handler for this event
+                
+                default: break; // to avoid "unused enumeration value in switch" warning
+            }
+            break;
+        
+        // STATE: Shift
+        case InputResolutionSm_StateId_SHIFT:
+            switch (event_id)
+            {
+                case InputResolutionSm_EventId_B0_PRESS: SHIFT_b0_press(sm); break;
+                case InputResolutionSm_EventId_B1_PRESS: SHIFT_b1_press(sm); break;
+                case InputResolutionSm_EventId_E0_PRESS: SHIFT_e0_press(sm); break;
+                case InputResolutionSm_EventId_E_PRESS: SHIFT_e_press(sm); break;
+                case InputResolutionSm_EventId_E3_PRESS: SHIFT_e3_press(sm); break;
+                case InputResolutionSm_EventId_E3_RELEASE: SHIFT_e3_release(sm); break;
+                case InputResolutionSm_EventId_B0_RELEASE: RESOLVING_b0_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_RECONCILE: RESOLVING_reconcile(sm); break; // First ancestor handler for this event
+                
+                default: break; // to avoid "unused enumeration value in switch" warning
+            }
+            break;
+        
+        // STATE: ShiftButton0
+        case InputResolutionSm_StateId_SHIFTBUTTON0:
+            switch (event_id)
+            {
+                case InputResolutionSm_EventId_B1_PRESS: SHIFTBUTTON0_b1_press(sm); break;
+                case InputResolutionSm_EventId_B0_RELEASE: SHIFTBUTTON0_b0_release(sm); break;
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_RELEASE: SHIFT_e3_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_RECONCILE: RESOLVING_reconcile(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B0_PRESS: SHIFT_b0_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E0_PRESS: SHIFT_e0_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_PRESS: SHIFT_e_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_PRESS: SHIFT_e3_press(sm); break; // First ancestor handler for this event
+                
+                default: break; // to avoid "unused enumeration value in switch" warning
+            }
+            break;
+        
+        // STATE: ShiftButton1
+        case InputResolutionSm_StateId_SHIFTBUTTON1:
+            switch (event_id)
+            {
+                case InputResolutionSm_EventId_B0_PRESS: SHIFTBUTTON1_b0_press(sm); break;
+                case InputResolutionSm_EventId_B1_RELEASE: SHIFTBUTTON1_b1_release(sm); break;
+                case InputResolutionSm_EventId_B0_RELEASE: RESOLVING_b0_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_RELEASE: SHIFT_e3_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_RECONCILE: RESOLVING_reconcile(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_PRESS: SHIFT_b1_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E0_PRESS: SHIFT_e0_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_PRESS: SHIFT_e_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_PRESS: SHIFT_e3_press(sm); break; // First ancestor handler for this event
+                
+                default: break; // to avoid "unused enumeration value in switch" warning
+            }
+            break;
+        
+        // STATE: ShiftReady
+        case InputResolutionSm_StateId_SHIFTREADY:
+            switch (event_id)
+            {
+                case InputResolutionSm_EventId_E_PRESS: SHIFTREADY_e_press(sm); break;
+                case InputResolutionSm_EventId_E0_PRESS: SHIFTREADY_e0_press(sm); break;
+                case InputResolutionSm_EventId_B0_PRESS: SHIFTREADY_b0_press(sm); break;
+                case InputResolutionSm_EventId_B1_PRESS: SHIFTREADY_b1_press(sm); break;
+                case InputResolutionSm_EventId_B0_RELEASE: RESOLVING_b0_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_RELEASE: SHIFT_e3_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_RECONCILE: RESOLVING_reconcile(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_PRESS: SHIFT_e3_press(sm); break; // First ancestor handler for this event
+                
+                default: break; // to avoid "unused enumeration value in switch" warning
+            }
+            break;
+        
+        // STATE: ShiftSpent
+        case InputResolutionSm_StateId_SHIFTSPENT:
+            switch (event_id)
+            {
+                case InputResolutionSm_EventId_B0_RELEASE: RESOLVING_b0_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_RELEASE: RESOLVING_b1_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_RELEASE: RESOLVING_e_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_RELEASE: SHIFT_e3_release(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_TURN: RESOLVING_turn(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_RECONCILE: RESOLVING_reconcile(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B0_PRESS: SHIFT_b0_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_B1_PRESS: SHIFT_b1_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E0_PRESS: SHIFT_e0_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E_PRESS: SHIFT_e_press(sm); break; // First ancestor handler for this event
+                case InputResolutionSm_EventId_E3_PRESS: SHIFT_e3_press(sm); break; // First ancestor handler for this event
                 
                 default: break; // to avoid "unused enumeration value in switch" warning
             }
@@ -234,6 +469,8 @@ static void exit_up_to_state_handler(InputResolutionSm* sm, InputResolutionSm_St
     {
         switch (sm->state_id)
         {
+            case InputResolutionSm_StateId_RESOLVING: RESOLVING_exit(sm); break;
+            
             case InputResolutionSm_StateId_BTN0HELD: BTN0HELD_exit(sm); break;
             
             case InputResolutionSm_StateId_CONSUMED: CONSUMED_exit(sm); break;
@@ -247,6 +484,16 @@ static void exit_up_to_state_handler(InputResolutionSm* sm, InputResolutionSm_St
             case InputResolutionSm_StateId_STOPPROMPT: STOPPROMPT_exit(sm); break;
             
             case InputResolutionSm_StateId_NEUTRAL: NEUTRAL_exit(sm); break;
+            
+            case InputResolutionSm_StateId_SHIFT: SHIFT_exit(sm); break;
+            
+            case InputResolutionSm_StateId_SHIFTBUTTON0: SHIFTBUTTON0_exit(sm); break;
+            
+            case InputResolutionSm_StateId_SHIFTBUTTON1: SHIFTBUTTON1_exit(sm); break;
+            
+            case InputResolutionSm_StateId_SHIFTREADY: SHIFTREADY_exit(sm); break;
+            
+            case InputResolutionSm_StateId_SHIFTSPENT: SHIFTSPENT_exit(sm); break;
             
             default: return;  // Just to be safe. Prevents infinite loop if state ID memory is somehow corrupted.
         }
@@ -265,6 +512,128 @@ static void ROOT_enter(InputResolutionSm* sm)
 
 
 ////////////////////////////////////////////////////////////////////////////////
+// event handlers for state RESOLVING
+////////////////////////////////////////////////////////////////////////////////
+
+static void RESOLVING_enter(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_RESOLVING;
+}
+
+static void RESOLVING_exit(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_ROOT;
+}
+
+static void RESOLVING_b0_release(InputResolutionSm* sm)
+{
+    // Resolving behavior
+    // uml: B0_RELEASE [inp_release_is(INP_RELEASE_SHIFT_PENDING)] / { inp_fire_shift_release(); }
+    if (inp_release_is(INP_RELEASE_SHIFT_PENDING))
+    {
+        // Step 1: execute action `inp_fire_shift_release();`
+        inp_fire_shift_release();
+    } // end of behavior for Resolving
+    
+    // Resolving behavior
+    // uml: B0_RELEASE [!inp_release_is(INP_RELEASE_SHIFT_PENDING)] / { inp_swallow(); }
+    if (!inp_release_is(INP_RELEASE_SHIFT_PENDING))
+    {
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
+    } // end of behavior for Resolving
+    
+    // No ancestor handles this event.
+}
+
+static void RESOLVING_b1_release(InputResolutionSm* sm)
+{
+    // Resolving behavior
+    // uml: B1_RELEASE [inp_release_is(INP_RELEASE_DELIVERED)] / { inp_emit_release(); }
+    if (inp_release_is(INP_RELEASE_DELIVERED))
+    {
+        // Step 1: execute action `inp_emit_release();`
+        inp_emit_release();
+    } // end of behavior for Resolving
+    
+    // Resolving behavior
+    // uml: B1_RELEASE [inp_release_is(INP_RELEASE_SHIFT_PENDING)] / { inp_fire_shift_release(); }
+    if (inp_release_is(INP_RELEASE_SHIFT_PENDING))
+    {
+        // Step 1: execute action `inp_fire_shift_release();`
+        inp_fire_shift_release();
+    } // end of behavior for Resolving
+    
+    // Resolving behavior
+    // uml: B1_RELEASE [inp_release_is(INP_RELEASE_SWALLOWED) || inp_release_is(INP_RELEASE_CLICK)] / { inp_swallow(); }
+    if (inp_release_is(INP_RELEASE_SWALLOWED) || inp_release_is(INP_RELEASE_CLICK))
+    {
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
+    } // end of behavior for Resolving
+    
+    // No ancestor handles this event.
+}
+
+static void RESOLVING_e_release(InputResolutionSm* sm)
+{
+    // Resolving behavior
+    // uml: E_RELEASE / { inp_swallow(); }
+    {
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
+    } // end of behavior for Resolving
+    
+    // No ancestor handles this event.
+}
+
+static void RESOLVING_e3_release(InputResolutionSm* sm)
+{
+    // Resolving behavior
+    // uml: E3_RELEASE / { inp_swallow(); }
+    {
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
+    } // end of behavior for Resolving
+    
+    // No ancestor handles this event.
+}
+
+static void RESOLVING_reconcile(InputResolutionSm* sm)
+{
+    // Resolving behavior
+    // uml: RECONCILE / { inp_release_all(); } TransitionTo(Neutral)
+    {
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
+        exit_up_to_state_handler(sm, InputResolutionSm_StateId_RESOLVING);
+        
+        // Step 2: Transition action: `inp_release_all();`.
+        inp_release_all();
+        
+        // Step 3: Enter/move towards transition target `Neutral`.
+        NEUTRAL_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for Resolving
+    
+    // No ancestor handles this event.
+}
+
+static void RESOLVING_turn(InputResolutionSm* sm)
+{
+    // Resolving behavior
+    // uml: TURN / { inp_swallow(); }
+    {
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
+    } // end of behavior for Resolving
+    
+    // No ancestor handles this event.
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
 // event handlers for state BTN0HELD
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -275,28 +644,18 @@ static void BTN0HELD_enter(InputResolutionSm* sm)
 
 static void BTN0HELD_exit(InputResolutionSm* sm)
 {
-    sm->state_id = InputResolutionSm_StateId_ROOT;
+    sm->state_id = InputResolutionSm_StateId_RESOLVING;
 }
 
-static void BTN0HELD_btn0_press(InputResolutionSm* sm)
+static void BTN0HELD_b0_release(InputResolutionSm* sm)
 {
-    // Btn0Held behavior
-    // uml: BTN0_PRESS / { inp_swallow(); }
-    {
-        // Step 1: execute action `inp_swallow();`
-        inp_swallow();
-    } // end of behavior for Btn0Held
+    bool consume_event = false;
     
-    // No ancestor handles this event.
-}
-
-static void BTN0HELD_btn0_release(InputResolutionSm* sm)
-{
     // Btn0Held behavior
-    // uml: BTN0_RELEASE / { inp_swallow(); } TransitionTo(Neutral)
+    // uml: B0_RELEASE / { inp_swallow(); } TransitionTo(Neutral)
     {
-        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
-        exit_up_to_state_handler(sm, InputResolutionSm_StateId_ROOT);
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
+        exit_up_to_state_handler(sm, InputResolutionSm_StateId_RESOLVING);
         
         // Step 2: Transition action: `inp_swallow();`.
         inp_swallow();
@@ -308,13 +667,17 @@ static void BTN0HELD_btn0_release(InputResolutionSm* sm)
         return;
     } // end of behavior for Btn0Held
     
-    // No ancestor handles this event.
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        RESOLVING_b0_release(sm);
+    }
 }
 
-static void BTN0HELD_enc0_press(InputResolutionSm* sm)
+static void BTN0HELD_b1_press(InputResolutionSm* sm)
 {
     // Btn0Held behavior
-    // uml: ENC0_PRESS / { inp_swallow(); }
+    // uml: B1_PRESS / { inp_swallow(); }
     {
         // Step 1: execute action `inp_swallow();`
         inp_swallow();
@@ -323,19 +686,10 @@ static void BTN0HELD_enc0_press(InputResolutionSm* sm)
     // No ancestor handles this event.
 }
 
-static void BTN0HELD_input(InputResolutionSm* sm)
+static void BTN0HELD_e_press(InputResolutionSm* sm)
 {
     // Btn0Held behavior
-    // uml: INPUT [inp_input_is_delivered_release()] / { inp_deliver(); }
-    if (inp_input_is_delivered_release())
-    {
-        // Step 1: execute action `inp_deliver();`
-        inp_deliver();
-    } // end of behavior for Btn0Held
-    
-    // Btn0Held behavior
-    // uml: INPUT [!inp_input_is_delivered_release()] / { inp_swallow(); }
-    if (!inp_input_is_delivered_release())
+    // uml: E_PRESS / { inp_swallow(); }
     {
         // Step 1: execute action `inp_swallow();`
         inp_swallow();
@@ -344,22 +698,25 @@ static void BTN0HELD_input(InputResolutionSm* sm)
     // No ancestor handles this event.
 }
 
-static void BTN0HELD_reconcile(InputResolutionSm* sm)
+static void BTN0HELD_e0_press(InputResolutionSm* sm)
 {
     // Btn0Held behavior
-    // uml: RECONCILE / { inp_release_all(); } TransitionTo(Neutral)
+    // uml: E0_PRESS / { inp_swallow(); }
     {
-        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
-        exit_up_to_state_handler(sm, InputResolutionSm_StateId_ROOT);
-        
-        // Step 2: Transition action: `inp_release_all();`.
-        inp_release_all();
-        
-        // Step 3: Enter/move towards transition target `Neutral`.
-        NEUTRAL_enter(sm);
-        
-        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
-        return;
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
+    } // end of behavior for Btn0Held
+    
+    // No ancestor handles this event.
+}
+
+static void BTN0HELD_e3_press(InputResolutionSm* sm)
+{
+    // Btn0Held behavior
+    // uml: E3_PRESS / { inp_swallow(); }
+    {
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
     } // end of behavior for Btn0Held
     
     // No ancestor handles this event.
@@ -388,31 +745,17 @@ static void CONSUMED_exit(InputResolutionSm* sm)
 static void PENDING_enter(InputResolutionSm* sm)
 {
     sm->state_id = InputResolutionSm_StateId_PENDING;
-    
-    // Pending behavior
-    // uml: enter / { inp_start_hold_timer(); }
-    {
-        // Step 1: execute action `inp_start_hold_timer();`
-        inp_start_hold_timer();
-    } // end of behavior for Pending
 }
 
 static void PENDING_exit(InputResolutionSm* sm)
 {
-    // Pending behavior
-    // uml: exit / { inp_cancel_hold_timer(); }
-    {
-        // Step 1: execute action `inp_cancel_hold_timer();`
-        inp_cancel_hold_timer();
-    } // end of behavior for Pending
-    
     sm->state_id = InputResolutionSm_StateId_BTN0HELD;
 }
 
-static void PENDING_hold_threshold(InputResolutionSm* sm)
+static void PENDING_b0_hold(InputResolutionSm* sm)
 {
     // Pending behavior
-    // uml: HOLD_THRESHOLD [!inp_session_active()] TransitionTo(StartPrompt)
+    // uml: B0_HOLD [!inp_session_active()] TransitionTo(StartPrompt)
     if (!inp_session_active())
     {
         // Step 1: Exit states until we reach `Btn0Held` state (Least Common Ancestor for transition).
@@ -429,7 +772,7 @@ static void PENDING_hold_threshold(InputResolutionSm* sm)
     } // end of behavior for Pending
     
     // Pending behavior
-    // uml: HOLD_THRESHOLD [inp_session_active()] TransitionTo(StopPrompt)
+    // uml: B0_HOLD [inp_session_active()] TransitionTo(StopPrompt)
     if (inp_session_active())
     {
         // Step 1: Exit states until we reach `Btn0Held` state (Least Common Ancestor for transition).
@@ -463,15 +806,15 @@ static void PROMPT_exit(InputResolutionSm* sm)
     sm->state_id = InputResolutionSm_StateId_BTN0HELD;
 }
 
-static void PROMPT_btn0_release(InputResolutionSm* sm)
+static void PROMPT_b0_release(InputResolutionSm* sm)
 {
     bool consume_event = false;
     
     // Prompt behavior
-    // uml: BTN0_RELEASE / { inp_swallow(); inp_publish(INP_PUB_PROMPT_CANCELLED); } TransitionTo(Neutral)
+    // uml: B0_RELEASE / { inp_swallow(); inp_publish(INP_PUB_PROMPT_CANCELLED); } TransitionTo(Neutral)
     {
-        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
-        exit_up_to_state_handler(sm, InputResolutionSm_StateId_ROOT);
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
+        exit_up_to_state_handler(sm, InputResolutionSm_StateId_RESOLVING);
         
         // Step 2: Transition action: `inp_swallow(); inp_publish(INP_PUB_PROMPT_CANCELLED);`.
         inp_swallow(); inp_publish(INP_PUB_PROMPT_CANCELLED);
@@ -486,7 +829,7 @@ static void PROMPT_btn0_release(InputResolutionSm* sm)
     // Check if event has been consumed before calling ancestor handler.
     if (!consume_event)
     {
-        BTN0HELD_btn0_release(sm);
+        BTN0HELD_b0_release(sm);
     }
 }
 
@@ -497,8 +840,8 @@ static void PROMPT_reconcile(InputResolutionSm* sm)
     // Prompt behavior
     // uml: RECONCILE / { inp_publish(INP_PUB_PROMPT_CANCELLED); inp_release_all(); } TransitionTo(Neutral)
     {
-        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
-        exit_up_to_state_handler(sm, InputResolutionSm_StateId_ROOT);
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
+        exit_up_to_state_handler(sm, InputResolutionSm_StateId_RESOLVING);
         
         // Step 2: Transition action: `inp_publish(INP_PUB_PROMPT_CANCELLED); inp_release_all();`.
         inp_publish(INP_PUB_PROMPT_CANCELLED); inp_release_all();
@@ -513,7 +856,7 @@ static void PROMPT_reconcile(InputResolutionSm* sm)
     // Check if event has been consumed before calling ancestor handler.
     if (!consume_event)
     {
-        BTN0HELD_reconcile(sm);
+        RESOLVING_reconcile(sm);
     }
 }
 
@@ -560,12 +903,12 @@ static void STARTPROMPT_exit(InputResolutionSm* sm)
     sm->state_id = InputResolutionSm_StateId_PROMPT;
 }
 
-static void STARTPROMPT_enc0_press(InputResolutionSm* sm)
+static void STARTPROMPT_e0_press(InputResolutionSm* sm)
 {
     bool consume_event = false;
     
     // StartPrompt behavior
-    // uml: ENC0_PRESS / { inp_swallow(); inp_publish(INP_PUB_PROMPT_CONFIRMED_START); inp_issue(INP_CMD_START_SESSION); } TransitionTo(Consumed)
+    // uml: E0_PRESS / { inp_swallow(); inp_publish(INP_PUB_PROMPT_CONFIRMED_START); inp_issue(INP_CMD_START_SESSION); } TransitionTo(Consumed)
     {
         // Step 1: Exit states until we reach `Btn0Held` state (Least Common Ancestor for transition).
         exit_up_to_state_handler(sm, InputResolutionSm_StateId_BTN0HELD);
@@ -583,7 +926,7 @@ static void STARTPROMPT_enc0_press(InputResolutionSm* sm)
     // Check if event has been consumed before calling ancestor handler.
     if (!consume_event)
     {
-        BTN0HELD_enc0_press(sm);
+        BTN0HELD_e0_press(sm);
     }
 }
 
@@ -609,12 +952,12 @@ static void STOPPROMPT_exit(InputResolutionSm* sm)
     sm->state_id = InputResolutionSm_StateId_PROMPT;
 }
 
-static void STOPPROMPT_enc0_press(InputResolutionSm* sm)
+static void STOPPROMPT_e0_press(InputResolutionSm* sm)
 {
     bool consume_event = false;
     
     // StopPrompt behavior
-    // uml: ENC0_PRESS / { inp_swallow(); inp_publish(INP_PUB_PROMPT_CONFIRMED_STOP); inp_issue(INP_CMD_STOP_SESSION); } TransitionTo(Consumed)
+    // uml: E0_PRESS / { inp_swallow(); inp_publish(INP_PUB_PROMPT_CONFIRMED_STOP); inp_issue(INP_CMD_STOP_SESSION); } TransitionTo(Consumed)
     {
         // Step 1: Exit states until we reach `Btn0Held` state (Least Common Ancestor for transition).
         exit_up_to_state_handler(sm, InputResolutionSm_StateId_BTN0HELD);
@@ -632,7 +975,7 @@ static void STOPPROMPT_enc0_press(InputResolutionSm* sm)
     // Check if event has been consumed before calling ancestor handler.
     if (!consume_event)
     {
-        BTN0HELD_enc0_press(sm);
+        BTN0HELD_e0_press(sm);
     }
 }
 
@@ -648,28 +991,46 @@ static void NEUTRAL_enter(InputResolutionSm* sm)
 
 static void NEUTRAL_exit(InputResolutionSm* sm)
 {
-    sm->state_id = InputResolutionSm_StateId_ROOT;
+    sm->state_id = InputResolutionSm_StateId_RESOLVING;
 }
 
-static void NEUTRAL_btn0_press(InputResolutionSm* sm)
+static void NEUTRAL_b0_press(InputResolutionSm* sm)
 {
     // Neutral behavior
-    // uml: BTN0_PRESS [!inp_session_hold_allowed()] / { inp_deliver(); }
-    if (!inp_session_hold_allowed())
+    // uml: B0_PRESS [!inp_shift_armed() && !inp_on_page()] / { inp_swallow(); }
+    if (!inp_shift_armed() && !inp_on_page())
     {
-        // Step 1: execute action `inp_deliver();`
-        inp_deliver();
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
     } // end of behavior for Neutral
     
     // Neutral behavior
-    // uml: BTN0_PRESS [inp_session_hold_allowed()] / { inp_swallow(); } TransitionTo(Pending)
-    if (inp_session_hold_allowed())
+    // uml: B0_PRESS [inp_shift_armed()] / { inp_cancel_pending(); inp_mark_shift_pending(); } TransitionTo(ShiftButton0)
+    if (inp_shift_armed())
     {
-        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
         NEUTRAL_exit(sm);
         
-        // Step 2: Transition action: `inp_swallow();`.
-        inp_swallow();
+        // Step 2: Transition action: `inp_cancel_pending(); inp_mark_shift_pending();`.
+        inp_cancel_pending(); inp_mark_shift_pending();
+        
+        // Step 3: Enter/move towards transition target `ShiftButton0`.
+        SHIFT_enter(sm);
+        SHIFTBUTTON0_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for Neutral
+    
+    // Neutral behavior
+    // uml: B0_PRESS [!inp_shift_armed() && inp_on_page()] / { inp_cancel_pending(); inp_begin_session_hold(); } TransitionTo(Pending)
+    if (!inp_shift_armed() && inp_on_page())
+    {
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
+        NEUTRAL_exit(sm);
+        
+        // Step 2: Transition action: `inp_cancel_pending(); inp_begin_session_hold();`.
+        inp_cancel_pending(); inp_begin_session_hold();
         
         // Step 3: Enter/move towards transition target `Pending`.
         BTN0HELD_enter(sm);
@@ -682,70 +1043,587 @@ static void NEUTRAL_btn0_press(InputResolutionSm* sm)
     // No ancestor handles this event.
 }
 
-static void NEUTRAL_btn0_release(InputResolutionSm* sm)
+static void NEUTRAL_b1_press(InputResolutionSm* sm)
 {
     // Neutral behavior
-    // uml: BTN0_RELEASE [inp_input_is_undelivered_release()] / { inp_swallow(); }
-    if (inp_input_is_undelivered_release())
+    // uml: B1_PRESS [!inp_shift_armed()] / { inp_emit_press(); }
+    if (!inp_shift_armed())
+    {
+        // Step 1: execute action `inp_emit_press();`
+        inp_emit_press();
+    } // end of behavior for Neutral
+    
+    // Neutral behavior
+    // uml: B1_PRESS [inp_shift_armed()] / { inp_cancel_pending(); inp_mark_shift_pending(); } TransitionTo(ShiftButton1)
+    if (inp_shift_armed())
+    {
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
+        NEUTRAL_exit(sm);
+        
+        // Step 2: Transition action: `inp_cancel_pending(); inp_mark_shift_pending();`.
+        inp_cancel_pending(); inp_mark_shift_pending();
+        
+        // Step 3: Enter/move towards transition target `ShiftButton1`.
+        SHIFT_enter(sm);
+        SHIFTBUTTON1_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for Neutral
+    
+    // No ancestor handles this event.
+}
+
+static void NEUTRAL_e_press(InputResolutionSm* sm)
+{
+    // Neutral behavior
+    // uml: E_PRESS [!inp_shift_armed()] / { inp_begin_press(); }
+    if (!inp_shift_armed())
+    {
+        // Step 1: execute action `inp_begin_press();`
+        inp_begin_press();
+    } // end of behavior for Neutral
+    
+    // Neutral behavior
+    // uml: E_PRESS [inp_shift_armed()] / { inp_cancel_pending(); inp_emit_shift(); } TransitionTo(ShiftReady)
+    if (inp_shift_armed())
+    {
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
+        NEUTRAL_exit(sm);
+        
+        // Step 2: Transition action: `inp_cancel_pending(); inp_emit_shift();`.
+        inp_cancel_pending(); inp_emit_shift();
+        
+        // Step 3: Enter/move towards transition target `ShiftReady`.
+        SHIFT_enter(sm);
+        SHIFTREADY_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for Neutral
+    
+    // No ancestor handles this event.
+}
+
+static void NEUTRAL_e_release(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // Neutral behavior
+    // uml: E_RELEASE [inp_release_is(INP_RELEASE_CLICK)] / { inp_emit_click(); }
+    if (inp_release_is(INP_RELEASE_CLICK))
+    {
+        // Consume event `e_release`.
+        consume_event = true;
+        // Step 1: execute action `inp_emit_click();`
+        inp_emit_click();
+    } // end of behavior for Neutral
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        RESOLVING_e_release(sm);
+    }
+}
+
+static void NEUTRAL_e0_press(InputResolutionSm* sm)
+{
+    // Neutral behavior
+    // uml: E0_PRESS [!inp_shift_armed()] / { inp_begin_press(); }
+    if (!inp_shift_armed())
+    {
+        // Step 1: execute action `inp_begin_press();`
+        inp_begin_press();
+    } // end of behavior for Neutral
+    
+    // Neutral behavior
+    // uml: E0_PRESS [inp_shift_armed()] / { inp_cancel_pending(); inp_emit_shift(); } TransitionTo(ShiftSpent)
+    if (inp_shift_armed())
+    {
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
+        NEUTRAL_exit(sm);
+        
+        // Step 2: Transition action: `inp_cancel_pending(); inp_emit_shift();`.
+        inp_cancel_pending(); inp_emit_shift();
+        
+        // Step 3: Enter/move towards transition target `ShiftSpent`.
+        SHIFT_enter(sm);
+        SHIFTSPENT_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for Neutral
+    
+    // No ancestor handles this event.
+}
+
+static void NEUTRAL_e3_press(InputResolutionSm* sm)
+{
+    // Neutral behavior
+    // uml: E3_PRESS / { inp_begin_press(); }
+    {
+        // Step 1: execute action `inp_begin_press();`
+        inp_begin_press();
+    } // end of behavior for Neutral
+    
+    // No ancestor handles this event.
+}
+
+static void NEUTRAL_e3_release(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // Neutral behavior
+    // uml: E3_RELEASE [inp_release_is(INP_RELEASE_CLICK)] / { inp_emit_click(); }
+    if (inp_release_is(INP_RELEASE_CLICK))
+    {
+        // Consume event `e3_release`.
+        consume_event = true;
+        // Step 1: execute action `inp_emit_click();`
+        inp_emit_click();
+    } // end of behavior for Neutral
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        RESOLVING_e3_release(sm);
+    }
+}
+
+static void NEUTRAL_hold(InputResolutionSm* sm)
+{
+    // Neutral behavior
+    // uml: HOLD [!inp_hold_is_shift()] / { inp_emit_hold(); inp_cancel_pending(); }
+    if (!inp_hold_is_shift())
+    {
+        // Step 1: execute action `inp_emit_hold(); inp_cancel_pending();`
+        inp_emit_hold(); inp_cancel_pending();
+    } // end of behavior for Neutral
+    
+    // Neutral behavior
+    // uml: HOLD [inp_hold_is_shift()] / { inp_cancel_pending(); } TransitionTo(ShiftReady)
+    if (inp_hold_is_shift())
+    {
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
+        NEUTRAL_exit(sm);
+        
+        // Step 2: Transition action: `inp_cancel_pending();`.
+        inp_cancel_pending();
+        
+        // Step 3: Enter/move towards transition target `ShiftReady`.
+        SHIFT_enter(sm);
+        SHIFTREADY_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for Neutral
+    
+    // No ancestor handles this event.
+}
+
+static void NEUTRAL_turn(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // Neutral behavior
+    // uml: TURN / { inp_cancel_turned_press(); inp_emit_turn(); }
+    {
+        // Consume event `turn`.
+        consume_event = true;
+        // Step 1: execute action `inp_cancel_turned_press(); inp_emit_turn();`
+        inp_cancel_turned_press(); inp_emit_turn();
+    } // end of behavior for Neutral
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        RESOLVING_turn(sm);
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// event handlers for state SHIFT
+////////////////////////////////////////////////////////////////////////////////
+
+static void SHIFT_enter(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_SHIFT;
+    
+    // Shift behavior
+    // uml: enter / { inp_publish(INP_PUB_SHIFT_ENTERED); }
+    {
+        // Step 1: execute action `inp_publish(INP_PUB_SHIFT_ENTERED);`
+        inp_publish(INP_PUB_SHIFT_ENTERED);
+    } // end of behavior for Shift
+}
+
+static void SHIFT_exit(InputResolutionSm* sm)
+{
+    // Shift behavior
+    // uml: exit / { inp_publish(INP_PUB_SHIFT_LEFT); }
+    {
+        // Step 1: execute action `inp_publish(INP_PUB_SHIFT_LEFT);`
+        inp_publish(INP_PUB_SHIFT_LEFT);
+    } // end of behavior for Shift
+    
+    sm->state_id = InputResolutionSm_StateId_RESOLVING;
+}
+
+static void SHIFT_b0_press(InputResolutionSm* sm)
+{
+    // Shift behavior
+    // uml: B0_PRESS / { inp_swallow(); }
     {
         // Step 1: execute action `inp_swallow();`
         inp_swallow();
-    } // end of behavior for Neutral
-    
-    // Neutral behavior
-    // uml: BTN0_RELEASE [!inp_input_is_undelivered_release()] / { inp_deliver(); }
-    if (!inp_input_is_undelivered_release())
-    {
-        // Step 1: execute action `inp_deliver();`
-        inp_deliver();
-    } // end of behavior for Neutral
+    } // end of behavior for Shift
     
     // No ancestor handles this event.
 }
 
-static void NEUTRAL_enc0_press(InputResolutionSm* sm)
+static void SHIFT_b1_press(InputResolutionSm* sm)
 {
-    // Neutral behavior
-    // uml: ENC0_PRESS / { inp_deliver(); }
-    {
-        // Step 1: execute action `inp_deliver();`
-        inp_deliver();
-    } // end of behavior for Neutral
-    
-    // No ancestor handles this event.
-}
-
-static void NEUTRAL_input(InputResolutionSm* sm)
-{
-    // Neutral behavior
-    // uml: INPUT [inp_input_is_undelivered_release()] / { inp_swallow(); }
-    if (inp_input_is_undelivered_release())
+    // Shift behavior
+    // uml: B1_PRESS / { inp_swallow(); }
     {
         // Step 1: execute action `inp_swallow();`
         inp_swallow();
-    } // end of behavior for Neutral
-    
-    // Neutral behavior
-    // uml: INPUT [!inp_input_is_undelivered_release()] / { inp_deliver(); }
-    if (!inp_input_is_undelivered_release())
-    {
-        // Step 1: execute action `inp_deliver();`
-        inp_deliver();
-    } // end of behavior for Neutral
+    } // end of behavior for Shift
     
     // No ancestor handles this event.
 }
 
-static void NEUTRAL_reconcile(InputResolutionSm* sm)
+static void SHIFT_e_press(InputResolutionSm* sm)
 {
-    // Neutral behavior
-    // uml: RECONCILE / { inp_release_all(); }
+    // Shift behavior
+    // uml: E_PRESS / { inp_swallow(); }
     {
-        // Step 1: execute action `inp_release_all();`
-        inp_release_all();
-    } // end of behavior for Neutral
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
+    } // end of behavior for Shift
     
     // No ancestor handles this event.
+}
+
+static void SHIFT_e0_press(InputResolutionSm* sm)
+{
+    // Shift behavior
+    // uml: E0_PRESS / { inp_swallow(); }
+    {
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
+    } // end of behavior for Shift
+    
+    // No ancestor handles this event.
+}
+
+static void SHIFT_e3_press(InputResolutionSm* sm)
+{
+    // Shift behavior
+    // uml: E3_PRESS / { inp_swallow(); }
+    {
+        // Step 1: execute action `inp_swallow();`
+        inp_swallow();
+    } // end of behavior for Shift
+    
+    // No ancestor handles this event.
+}
+
+static void SHIFT_e3_release(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // Shift behavior
+    // uml: E3_RELEASE / { inp_swallow(); } TransitionTo(Neutral)
+    {
+        // Step 1: Exit states until we reach `Resolving` state (Least Common Ancestor for transition).
+        exit_up_to_state_handler(sm, InputResolutionSm_StateId_RESOLVING);
+        
+        // Step 2: Transition action: `inp_swallow();`.
+        inp_swallow();
+        
+        // Step 3: Enter/move towards transition target `Neutral`.
+        NEUTRAL_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for Shift
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        RESOLVING_e3_release(sm);
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// event handlers for state SHIFTBUTTON0
+////////////////////////////////////////////////////////////////////////////////
+
+static void SHIFTBUTTON0_enter(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_SHIFTBUTTON0;
+}
+
+static void SHIFTBUTTON0_exit(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_SHIFT;
+}
+
+static void SHIFTBUTTON0_b0_release(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // ShiftButton0 behavior
+    // uml: B0_RELEASE / { inp_fire_shift_release(); } TransitionTo(ShiftSpent)
+    {
+        // Step 1: Exit states until we reach `Shift` state (Least Common Ancestor for transition).
+        SHIFTBUTTON0_exit(sm);
+        
+        // Step 2: Transition action: `inp_fire_shift_release();`.
+        inp_fire_shift_release();
+        
+        // Step 3: Enter/move towards transition target `ShiftSpent`.
+        SHIFTSPENT_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for ShiftButton0
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        RESOLVING_b0_release(sm);
+    }
+}
+
+static void SHIFTBUTTON0_b1_press(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // ShiftButton0 behavior
+    // uml: B1_PRESS / { inp_fire_chord(); } TransitionTo(ShiftSpent)
+    {
+        // Step 1: Exit states until we reach `Shift` state (Least Common Ancestor for transition).
+        SHIFTBUTTON0_exit(sm);
+        
+        // Step 2: Transition action: `inp_fire_chord();`.
+        inp_fire_chord();
+        
+        // Step 3: Enter/move towards transition target `ShiftSpent`.
+        SHIFTSPENT_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for ShiftButton0
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        SHIFT_b1_press(sm);
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// event handlers for state SHIFTBUTTON1
+////////////////////////////////////////////////////////////////////////////////
+
+static void SHIFTBUTTON1_enter(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_SHIFTBUTTON1;
+}
+
+static void SHIFTBUTTON1_exit(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_SHIFT;
+}
+
+static void SHIFTBUTTON1_b0_press(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // ShiftButton1 behavior
+    // uml: B0_PRESS / { inp_fire_chord(); } TransitionTo(ShiftSpent)
+    {
+        // Step 1: Exit states until we reach `Shift` state (Least Common Ancestor for transition).
+        SHIFTBUTTON1_exit(sm);
+        
+        // Step 2: Transition action: `inp_fire_chord();`.
+        inp_fire_chord();
+        
+        // Step 3: Enter/move towards transition target `ShiftSpent`.
+        SHIFTSPENT_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for ShiftButton1
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        SHIFT_b0_press(sm);
+    }
+}
+
+static void SHIFTBUTTON1_b1_release(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // ShiftButton1 behavior
+    // uml: B1_RELEASE / { inp_fire_shift_release(); } TransitionTo(ShiftReady)
+    {
+        // Step 1: Exit states until we reach `Shift` state (Least Common Ancestor for transition).
+        SHIFTBUTTON1_exit(sm);
+        
+        // Step 2: Transition action: `inp_fire_shift_release();`.
+        inp_fire_shift_release();
+        
+        // Step 3: Enter/move towards transition target `ShiftReady`.
+        SHIFTREADY_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for ShiftButton1
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        RESOLVING_b1_release(sm);
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// event handlers for state SHIFTREADY
+////////////////////////////////////////////////////////////////////////////////
+
+static void SHIFTREADY_enter(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_SHIFTREADY;
+}
+
+static void SHIFTREADY_exit(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_SHIFT;
+}
+
+static void SHIFTREADY_b0_press(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // ShiftReady behavior
+    // uml: B0_PRESS / { inp_mark_shift_pending(); } TransitionTo(ShiftButton0)
+    {
+        // Step 1: Exit states until we reach `Shift` state (Least Common Ancestor for transition).
+        SHIFTREADY_exit(sm);
+        
+        // Step 2: Transition action: `inp_mark_shift_pending();`.
+        inp_mark_shift_pending();
+        
+        // Step 3: Enter/move towards transition target `ShiftButton0`.
+        SHIFTBUTTON0_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for ShiftReady
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        SHIFT_b0_press(sm);
+    }
+}
+
+static void SHIFTREADY_b1_press(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // ShiftReady behavior
+    // uml: B1_PRESS / { inp_mark_shift_pending(); } TransitionTo(ShiftButton1)
+    {
+        // Step 1: Exit states until we reach `Shift` state (Least Common Ancestor for transition).
+        SHIFTREADY_exit(sm);
+        
+        // Step 2: Transition action: `inp_mark_shift_pending();`.
+        inp_mark_shift_pending();
+        
+        // Step 3: Enter/move towards transition target `ShiftButton1`.
+        SHIFTBUTTON1_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for ShiftReady
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        SHIFT_b1_press(sm);
+    }
+}
+
+static void SHIFTREADY_e_press(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // ShiftReady behavior
+    // uml: E_PRESS / { inp_emit_shift(); }
+    {
+        // Consume event `e_press`.
+        consume_event = true;
+        // Step 1: execute action `inp_emit_shift();`
+        inp_emit_shift();
+    } // end of behavior for ShiftReady
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        SHIFT_e_press(sm);
+    }
+}
+
+static void SHIFTREADY_e0_press(InputResolutionSm* sm)
+{
+    bool consume_event = false;
+    
+    // ShiftReady behavior
+    // uml: E0_PRESS / { inp_emit_shift(); } TransitionTo(ShiftSpent)
+    {
+        // Step 1: Exit states until we reach `Shift` state (Least Common Ancestor for transition).
+        SHIFTREADY_exit(sm);
+        
+        // Step 2: Transition action: `inp_emit_shift();`.
+        inp_emit_shift();
+        
+        // Step 3: Enter/move towards transition target `ShiftSpent`.
+        SHIFTSPENT_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for ShiftReady
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        SHIFT_e0_press(sm);
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// event handlers for state SHIFTSPENT
+////////////////////////////////////////////////////////////////////////////////
+
+static void SHIFTSPENT_enter(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_SHIFTSPENT;
+}
+
+static void SHIFTSPENT_exit(InputResolutionSm* sm)
+{
+    sm->state_id = InputResolutionSm_StateId_SHIFT;
 }
 
 // Thread safe. This function can be disabled with `outputStateIdToStringFunction` setting.
@@ -754,6 +1632,7 @@ char const * InputResolutionSm_state_id_to_string(InputResolutionSm_StateId id)
     switch (id)
     {
         case InputResolutionSm_StateId_ROOT: return "ROOT";
+        case InputResolutionSm_StateId_RESOLVING: return "RESOLVING";
         case InputResolutionSm_StateId_BTN0HELD: return "BTN0HELD";
         case InputResolutionSm_StateId_CONSUMED: return "CONSUMED";
         case InputResolutionSm_StateId_PENDING: return "PENDING";
@@ -761,6 +1640,11 @@ char const * InputResolutionSm_state_id_to_string(InputResolutionSm_StateId id)
         case InputResolutionSm_StateId_STARTPROMPT: return "STARTPROMPT";
         case InputResolutionSm_StateId_STOPPROMPT: return "STOPPROMPT";
         case InputResolutionSm_StateId_NEUTRAL: return "NEUTRAL";
+        case InputResolutionSm_StateId_SHIFT: return "SHIFT";
+        case InputResolutionSm_StateId_SHIFTBUTTON0: return "SHIFTBUTTON0";
+        case InputResolutionSm_StateId_SHIFTBUTTON1: return "SHIFTBUTTON1";
+        case InputResolutionSm_StateId_SHIFTREADY: return "SHIFTREADY";
+        case InputResolutionSm_StateId_SHIFTSPENT: return "SHIFTSPENT";
         default: return "?";
     }
 }
@@ -770,13 +1654,20 @@ char const * InputResolutionSm_event_id_to_string(InputResolutionSm_EventId id)
 {
     switch (id)
     {
-        case InputResolutionSm_EventId_BTN0_PRESS: return "BTN0_PRESS";
-        case InputResolutionSm_EventId_BTN0_RELEASE: return "BTN0_RELEASE";
-        case InputResolutionSm_EventId_ENC0_PRESS: return "ENC0_PRESS";
-        case InputResolutionSm_EventId_HOLD_THRESHOLD: return "HOLD_THRESHOLD";
-        case InputResolutionSm_EventId_INPUT: return "INPUT";
+        case InputResolutionSm_EventId_B0_HOLD: return "B0_HOLD";
+        case InputResolutionSm_EventId_B0_PRESS: return "B0_PRESS";
+        case InputResolutionSm_EventId_B0_RELEASE: return "B0_RELEASE";
+        case InputResolutionSm_EventId_B1_PRESS: return "B1_PRESS";
+        case InputResolutionSm_EventId_B1_RELEASE: return "B1_RELEASE";
+        case InputResolutionSm_EventId_E_PRESS: return "E_PRESS";
+        case InputResolutionSm_EventId_E_RELEASE: return "E_RELEASE";
+        case InputResolutionSm_EventId_E0_PRESS: return "E0_PRESS";
+        case InputResolutionSm_EventId_E3_PRESS: return "E3_PRESS";
+        case InputResolutionSm_EventId_E3_RELEASE: return "E3_RELEASE";
+        case InputResolutionSm_EventId_HOLD: return "HOLD";
         case InputResolutionSm_EventId_RECONCILE: return "RECONCILE";
         case InputResolutionSm_EventId_SESSION_CHANGED: return "SESSION_CHANGED";
+        case InputResolutionSm_EventId_TURN: return "TURN";
         default: return "?";
     }
 }
@@ -788,13 +1679,19 @@ InputResolutionSm_StateId InputResolutionSm_get_parent_id(InputResolutionSm_Stat
     switch (id)
     {
         case InputResolutionSm_StateId_ROOT: return InputResolutionSm_StateId_ROOT;
-        case InputResolutionSm_StateId_BTN0HELD: return InputResolutionSm_StateId_ROOT;
+        case InputResolutionSm_StateId_RESOLVING: return InputResolutionSm_StateId_ROOT;
+        case InputResolutionSm_StateId_BTN0HELD: return InputResolutionSm_StateId_RESOLVING;
         case InputResolutionSm_StateId_CONSUMED: return InputResolutionSm_StateId_BTN0HELD;
         case InputResolutionSm_StateId_PENDING: return InputResolutionSm_StateId_BTN0HELD;
         case InputResolutionSm_StateId_PROMPT: return InputResolutionSm_StateId_BTN0HELD;
         case InputResolutionSm_StateId_STARTPROMPT: return InputResolutionSm_StateId_PROMPT;
         case InputResolutionSm_StateId_STOPPROMPT: return InputResolutionSm_StateId_PROMPT;
-        case InputResolutionSm_StateId_NEUTRAL: return InputResolutionSm_StateId_ROOT;
+        case InputResolutionSm_StateId_NEUTRAL: return InputResolutionSm_StateId_RESOLVING;
+        case InputResolutionSm_StateId_SHIFT: return InputResolutionSm_StateId_RESOLVING;
+        case InputResolutionSm_StateId_SHIFTBUTTON0: return InputResolutionSm_StateId_SHIFT;
+        case InputResolutionSm_StateId_SHIFTBUTTON1: return InputResolutionSm_StateId_SHIFT;
+        case InputResolutionSm_StateId_SHIFTREADY: return InputResolutionSm_StateId_SHIFT;
+        case InputResolutionSm_StateId_SHIFTSPENT: return InputResolutionSm_StateId_SHIFT;
         default: return InputResolutionSm_StateId_ROOT;
     }
 }

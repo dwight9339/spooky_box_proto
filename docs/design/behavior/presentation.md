@@ -92,7 +92,22 @@ period stays configurable until bench trials set it.
 |---|---|---|---|
 | PRES-DEV-01 | SleepEntered | Reply to the command's source before USB stops | `OK SLEEP START; CDC will disconnect; updates continue on AUX UART7` |
 | PRES-DEV-02 | SleepRejected | Reply to the command's source | `ERR SLEEP unavailable while recording`, or `ERR SLEEP unavailable in IPC smoke build; use Debug` |
-| PRES-DEV-03 | UtilityOpened, UtilityClosed | Display | None |
+| PRES-DEV-03 | `CTX_PUB_UTILITY_OPENED`, `CTX_PUB_UTILITY_CLOSED` | Display | None |
+
+## Navigation and Shift domain events
+
+Published by [ContextSm.puml](ContextSm.puml) and
+[InputResolutionSm.puml](InputResolutionSm.puml) under
+[decision 0009](../../decisions/0009-first-slice-field-controls.md).
+
+| ID | Domain event | Required acknowledgement | CLI reply today |
+|---|---|---|---|
+| PRES-CTX-01 | `CTX_PUB_MODE_CHANGED` | Display, lights and audio: a top-level mode change is a consequential transition | None |
+| PRES-CTX-02 | `CTX_PUB_ENGINE_CHANGED` | Display | None |
+| PRES-CTX-03 | `CTX_PUB_PAGE_CHANGED` | Display and the page color of the encoder lights | None |
+| PRES-CTX-04 | `CTX_PUB_MENU_OPENED`, `CTX_PUB_MENU_HIGHLIGHT`, `CTX_PUB_MENU_CLOSED`, `CTX_PUB_MENU_WITHDRAWN` | Display: the engine or band menu, its highlight, and its closing | None |
+| PRES-CTX-05 | `CTX_PUB_ACTION_REJECTED` | Display only: the action and "unavailable while recording" briefly, then the current view. Lights and audio are unchanged ([decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 10). | None |
+| PRES-INP-01 | `INP_PUB_SHIFT_ENTERED`, `INP_PUB_SHIFT_LEFT` | Lights: while Shift is held, only the controls with an available Shift action are lit ([decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 8) | None |
 
 ## Open behavior
 
@@ -100,7 +115,7 @@ period stays configurable until bench trials set it.
 |---|---|---|
 | Session events on OLED, LEDs, matrix and audio | What does each surface show for each session event, and how are failures made visible? | `full_spooky_proto-54w.1` |
 | EMF, activity and warning expression | How do the matrix and LEDs express semantic EMF, radio activity and warnings? | `full_spooky_proto-54w.8` |
-| Utility entry and exit | What does the display show when a utility opens or closes? | `full_spooky_proto-54w.2` |
+| Utility entry and exit | What does the display show when a utility opens or closes? | `full_spooky_proto-54w.5` |
 | Band change during a session | How are band changes and radio faults acknowledged on display, lights and audio while recording? | `full_spooky_proto-54w.1`, [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
 | Swallowed presses | Does a button that is pressed while its gesture is swallowed or dismissed still light at 100%? | `full_spooky_proto-54w.18` |
 | Prompt audio | Is opening, confirming or cancelling the prompt acknowledged with sound? | `full_spooky_proto-54w.1` |
@@ -131,4 +146,6 @@ period stays configurable until bench trials set it.
 | PRES-PRM-01, PRES-PRM-02 | Target | User direction 2026-09-27, `full_spooky_proto-54w.18`. Not implemented. |
 | PRES-DEV-01 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | PRES-DEV-02 | Target | CLI reply implemented; no bench evidence |
-| PRES-DEV-03 | Target | Product intent; no mode state exists in firmware |
+| PRES-DEV-03 | Target | Product intent. Published by the Context machine and host tested; not wired to firmware or any surface. |
+| PRES-CTX-01 to PRES-CTX-05 | Target | [Decision 0009](../../decisions/0009-first-slice-field-controls.md) and [decision 0008](../../decisions/0008-recording-safe-command-policy.md). Published by the Context machine and host tested; not wired to firmware or any surface. |
+| PRES-INP-01 | Target | [Decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 8. Published by the InputResolution machine and host tested; not wired to firmware or any surface. |

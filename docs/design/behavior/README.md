@@ -19,9 +19,10 @@ region's Markdown file is deleted in the change that lands its diagram.
 
 | File | Region | Form |
 |---|---|---|
-| [InputResolutionSm.puml](InputResolutionSm.puml) ([rendered](InputResolutionSm.svg)) | InputResolution: the Button 0 session hold and prompt ([decision 0005](../../decisions/0005-button-0-session-prompt.md)) | StateSmith diagram |
+| [InputResolutionSm.puml](InputResolutionSm.puml) ([rendered](InputResolutionSm.svg)) | InputResolution: clicks, holds, the Shift layer and chords, and the Button 0 session hold and prompt; resolves inputs into gestures ([decisions 0005](../../decisions/0005-button-0-session-prompt.md) and [0009](../../decisions/0009-first-slice-field-controls.md)) | StateSmith diagram |
+| [ContextSm.puml](ContextSm.puml) ([rendered](ContextSm.svg)) | Context: which mode, engine page, menu or utility has the controls, and what a gesture means there ([decision 0009](../../decisions/0009-first-slice-field-controls.md)) | StateSmith diagram |
 | [SessionSm.puml](SessionSm.puml) ([rendered](SessionSm.svg)) | Session: the authoritative recording lifecycle; queued commands invoke recorder operations through its port | StateSmith diagram |
-| [top-level.md](top-level.md) | Device chart, parallel regions, the Context region, cross-region invariants | Tables |
+| [top-level.md](top-level.md) | Device chart, parallel regions, cross-region invariants | Tables |
 | [radio.md](radio.md) | Radio: tuning, band transitions and radio faults | Tables |
 | [presentation.md](presentation.md) | How domain events and published state reach the user | Hand-written contract |
 

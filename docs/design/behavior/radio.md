@@ -151,7 +151,7 @@ has never been measured.
 | Tuning | Tune, TuneStep, TuneTarget | Does a new target replace the pending one, wait for it, or get rejected? The answer sets the maximum scan rate. | `full_spooky_proto-54w.6` |
 | BandTransition | Any radio command | Is it deferred until the transition ends, replaced by the latest, or rejected? | `full_spooky_proto-54w.12` |
 | Tuning, BandTransition | Worst-case duration | How long do tunes and band transitions take in the worst case, and do they fit the queue budget, or must the service become non-blocking? | `full_spooky_proto-54w.6`, `full_spooky_proto-54w.12` |
-| Settled | TuneStep | Which controls and engines step with `wrap`, and which with `stop`? | `full_spooky_proto-54w.2`, `full_spooky_proto-54w.7` |
+| Settled | TuneStep | Which edge does Classic scanning use? The Manual knob uses its wrap setting, toggled with an Encoder 0 click ([decision 0009](../../decisions/0009-first-slice-field-controls.md) items 13 and 14). | `full_spooky_proto-54w.7` |
 | Settled | TuneStep or scan at a band edge | Should scanning continue into the adjacent band instead of stopping or wrapping? This is interband traversal, deferred until basic scanning is proven. | `full_spooky_proto-54w.17` |
 | Settled | SwitchBand to the current band | Power-cycle the receiver as today, or treat the command as a no-op? | `full_spooky_proto-54w.12` |
 | Settled | After RAD-11 | Should the published frequency be marked uncertain, since the receiver may have stopped partway? | `full_spooky_proto-54w.6` |
