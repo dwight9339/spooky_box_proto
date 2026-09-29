@@ -25,6 +25,11 @@ static void enqueue(EventQueue *queue, EvqClass event_class, uint16_t type,
     ++queue->posted;
     if (type == EVQ_TYPE_RECONCILE) {
         ++queue->reconciles_queued;
+        queue->reconcile_is_last_input = true;
+    } else if (event_class == EVQ_CLASS_INPUT) {
+        /* An input behind the reconcile is dispatched after it, so the reconcile
+         * no longer covers a later loss (full_spooky_proto-8lw.18). */
+        queue->reconcile_is_last_input = false;
     }
     if (queue->count > queue->high_water) {
         queue->high_water = queue->count;
@@ -73,9 +78,11 @@ bool EventQueue_Post(EventQueue *queue, EvqClass event_class, uint16_t type,
     }
     if (!admit) {
         ++queue->rejected[event_class];
-        /* A reconcile already queued is dispatched after this loss and releases
-         * every control, so it covers this input too (full_spooky_proto-8lw.17). */
-        if (event_class == EVQ_CLASS_INPUT && queue->reconciles_queued == 0u) {
+        /* A queued reconcile with no input admitted behind it is dispatched after
+         * this loss and releases every control, so it covers this input too
+         * (full_spooky_proto-8lw.17 and 8lw.18). */
+        const bool covered = queue->reconciles_queued > 0u && queue->reconcile_is_last_input;
+        if (event_class == EVQ_CLASS_INPUT && !covered) {
             queue->reconcile_pending = true;
         }
         return false;

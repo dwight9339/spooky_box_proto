@@ -69,6 +69,7 @@ typedef struct EventQueue {
     uint32_t next_sequence;
     bool reconcile_pending;
     uint32_t reconciles_queued; /* reconcile events queued and not yet dispatched */
+    bool reconcile_is_last_input; /* no input admitted behind the newest queued reconcile */
     uint32_t high_water;
     uint32_t posted;
     uint32_t dispatched;
@@ -87,10 +88,13 @@ void EventQueue_Init(EventQueue *queue);
  * need more than EVENT_QUEUE_RESERVE free slots; internal events need one. Returns
  * false if the event was rejected. A rejected input sets the reconcile flag: further
  * input is rejected until the queue has posted one reconcile event, which it does
- * as soon as a slot is free. Input rejected while a reconcile event is still queued
- * does not set the flag again: that reconcile is dispatched after the loss and
- * already releases every control, so a sustained burst posts one reconcile rather
- * than filling the internal reserve (full_spooky_proto-8lw.17). Other producers that lose input, such as the product
+ * as soon as a slot is free. Input rejected while the newest queued reconcile has no
+ * input admitted behind it does not set the flag again: that reconcile is dispatched
+ * after every admitted input and after the loss, and releases every control, so a
+ * sustained burst posts one reconcile rather than filling the internal reserve
+ * (full_spooky_proto-8lw.17). Once an input is admitted behind it, a later loss
+ * needs a new reconcile (full_spooky_proto-8lw.18). Other producers that lose input,
+ * such as the product
  * IPC on restart or staleness, post EVQ_TYPE_RECONCILE as an internal event. */
 bool EventQueue_Post(EventQueue *queue, EvqClass event_class, uint16_t type,
                      uint32_t arg0, uint32_t arg1, uint32_t now_ms);

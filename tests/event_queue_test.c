@@ -236,6 +236,43 @@ static void input_lost_after_the_reconcile_is_dispatched_gets_a_new_one(void)
     CHECK(stats(&q).reconciles == 2);
 }
 
+static void a_loss_after_input_admitted_behind_a_reconcile_gets_a_new_one(void)
+{
+    /* full_spooky_proto-8lw.18: a reconcile left queued at the end of a service
+     * call, then a press admitted behind it, then its release lost. The press is
+     * dispatched after the first reconcile, so a second one must follow it. */
+    EventQueue q;
+    EventQueue_Init(&q);
+    Recorder r = {.queue = &q};
+    for (unsigned i = 0; i < EVENT_QUEUE_CAPACITY; ++i) {
+        CHECK(EventQueue_Post(&q, EVQ_CLASS_INTERNAL, 7, i, 0, 0));
+    }
+    CHECK(!EventQueue_Post(&q, EVQ_CLASS_INPUT, 1, 0, 0, 0));
+    (void)EventQueue_Service(&q, 1, record, &r); /* the reconcile is posted at the end */
+    CHECK(stats(&q).count == 1 && stats(&q).reconciles == 1);
+    CHECK(EventQueue_Post(&q, EVQ_CLASS_INPUT, 2, 0, 0, 2)); /* the press */
+    unsigned detents = 0;
+    while (EventQueue_Post(&q, EVQ_CLASS_INPUT, 3, detents, 0, 2)) {
+        ++detents;
+    }
+    CHECK(stats(&q).reconcile_pending); /* the rejected detent is not covered */
+    CHECK(!EventQueue_Post(&q, EVQ_CLASS_INPUT, 4, 0, 0, 2)); /* the release, lost */
+    r.count = 0;
+    (void)EventQueue_Service(&q, 3, record, &r);
+    CHECK(stats(&q).reconciles == 2);
+    unsigned press_at = 0;
+    unsigned last_reconcile_at = 0;
+    for (unsigned i = 0; i < r.count && i < LOG_CAPACITY; ++i) {
+        if (r.events[i].type == 2) {
+            press_at = i;
+        }
+        if (r.events[i].type == EVQ_TYPE_RECONCILE) {
+            last_reconcile_at = i;
+        }
+    }
+    CHECK(last_reconcile_at > press_at);
+}
+
 static void a_reconcile_is_posted_on_the_next_post_of_any_class(void)
 {
     EventQueue q;
@@ -382,6 +419,7 @@ int main(void)
     RUN(input_stays_rejected_until_the_reconcile_is_posted);
     RUN(a_sustained_burst_posts_one_reconcile_and_keeps_the_reserve);
     RUN(input_lost_after_the_reconcile_is_dispatched_gets_a_new_one);
+    RUN(a_loss_after_input_admitted_behind_a_reconcile_gets_a_new_one);
     RUN(a_reconcile_is_posted_on_the_next_post_of_any_class);
     RUN(dispatch_handles_only_events_queued_when_it_started);
     RUN(dispatch_is_run_to_completion);
