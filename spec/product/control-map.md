@@ -50,16 +50,11 @@ One row per contextual binding. Filter by mode, workspace, layer, control, or st
 | C-004 | Global utility | Menus and submenus | Any | Normal | Encoder 3 button | Hold | Leave utility workspace | Return to previous operating mode screen | Defined | User control notes |  |
 | C-005 | Field | Field engine page | Parameter page | Normal | Encoder 3 button | Short press | Advance parameter page | Next page; wrap after final page | Defined | Modes and interaction document | Page color changes with the active page. |
 | C-006 | Field | Field engine page | Any | Normal | Encoder 3 button | Hold | Enter Shift layer while held | Shift commands become active | Defined | Modes and interaction document |  |
-| C-007 | Field | Field engine page | Any | Shift | Encoder 1 button | Press | Open Settings | Settings utility workspace | Proposed | Modes and interaction document | Earlier document mapping; user may prefer the global utility root instead. |
-| C-008 | Field | Field engine page | Any | Shift | Button 0 | Press | Switch operating mode | Instrument main engine page | Defined | Modes and interaction document |  |
-| C-009 | Field | Field engine page | Any | Shift | Button 1 | Press | Save synchronized rolling buffers | Standalone Field capture saved | Defined | Modes and interaction document |  |
-| C-010 | Field | Field engine page | Any | Shift | Buttons 0 and 1 | Chord | Save buffers, switch modes, and load capture | Instrument mode with capture as active sample | Defined | Modes and interaction document | Chord resolver must delay component actions until the combination is known. |
-| C-011 | Field | Field engine page | Non-manual engine | Normal | Encoder 0 button | Hold | Quick-jump to Manual | Manual engine at current tune target | Defined | User control notes |  |
-| C-012 | Field | Field engine page | Manual engine, entered by quick-jump | Normal | Encoder 0 button | Hold | Return from Manual | Restore previous Field engine and state | Defined | User control notes |  |
-| C-013 | Field | Field engine page | Any | Normal | Encoder 2 button | Hold | Open scan-engine selector | Scan-engine popover remains open while held | Defined | User control notes |  |
-| C-014 | Field | Scan-engine selector | Popover open | Popover | Encoder 0 | Turn | Scroll scan-engine choices | Highlighted engine changes | Defined | User control notes |  |
-| C-015 | Field | Scan-engine selector | Popover open | Popover | Encoder 2 button | Release | Commit highlighted engine and close popover | Selected engine opens; current engine remains if unchanged | Defined | User control notes |  |
-| C-016 | Field | Field engine page | Monitoring | Normal | Button 1 | Hold | Mute radio in monitored mix | Mic remains audible; both raw tracks continue recording | Defined | Modes and interaction document | PTT events are timestamped for playback. |
+| C-008 | Field | Field engine page | Any | Shift | Button 0 | Press | Switch operating mode | Instrument main engine page | Defined | Modes and interaction document | Rejected while a session is active (decision 0008 item 6): the display shows the reason and the session continues. |
+| C-009 | Field | Field engine page | Any | Shift | Button 1 | Press | Save synchronized rolling buffers | Standalone Field capture saved | Defined | Modes and interaction document | Allowed during a session (decision 0008 item 7); the save resolves on release. |
+| C-010 | Field | Field engine page | Any | Shift | Buttons 0 and 1 | Chord | Save buffers, switch modes, and load capture | Instrument mode with capture as active sample | Defined | Modes and interaction document | Chord resolver must delay component actions until the combination is known (D-006). During a session the chord performs the capture save only; the mode switch is suppressed (decision 0008 item 7). |
+| C-014 | Field | Engine menu | Menu open | Normal | Encoder 0 | Turn | Scroll scan-engine choices | Highlighted engine changes | Defined | User control notes |  |
+| C-016 | Field | Field engine page | Monitoring | Normal | Button 1 | Momentary press | Mute radio in monitored mix while held | Mic remains audible; both raw tracks continue recording | Defined | Modes and interaction document | PTT is resolved on release (decision 0009 item 24). PTT events are timestamped for playback. |
 | C-017 | Field | Field engine page | Monitoring | Normal | Button 1 | Release | Restore radio monitoring | Normal monitored mix resumes | Defined | Modes and interaction document |  |
 | C-018 | Instrument | Main engine page | Any | Normal | Encoder 1 button | Hold | Open instrument-engine selector | Instrument-engine popover remains open while held | Defined | User control notes |  |
 | C-019 | Instrument | Instrument-engine selector | Popover open | Popover | Encoder 0 | Turn | Scroll instrument-engine choices | Highlighted engine changes | Defined | User control notes |  |
@@ -136,6 +131,21 @@ One row per contextual binding. Filter by mode, workspace, layer, control, or st
 | C-091 | Instrument | Main engine page or performance view | Any | Normal | Button 0 | Hold | Open session prompt | Same as C-090 | Defined | User direction 2026-09-27 | Same as C-090. |
 | C-092 | Field and Instrument | Session prompt | Prompt open | Prompt | Encoder 0 button | Press | Confirm the prompt | Session starts or stops | Defined | User direction 2026-09-27 | Feedback follows the session outcome, not the confirmation. |
 | C-093 | Field and Instrument | Session prompt | Prompt open | Prompt | Button 0 | Release | Cancel the prompt | No change to the session | Defined | User direction 2026-09-27 | Every other gesture is dismissed while the prompt is open. |
+| C-094 | Field | Manual engine page | Any | Shift | Encoder 1 button | Press | Manual quick-jump | Jump to the saved territory | Defined | Decision 0009 item 28 | Second press returns; one-entry return slot. |
+| C-095 | Field | Manual engine page | Jumped | Shift | Encoder 1 button | Press | Return from quick-jump | Restore the previous territory | Defined | Decision 0009 item 28 |  |
+| C-096 | Field | Field engine page | Menu closed | Normal | Encoder 2 button | Long press | Open engine menu | Engine menu stays open | Defined | Decision 0009 item 16 | Timeout closes the menu. |
+| C-097 | Field | Engine menu | Menu open | Normal | Encoder 0 button | Press | Select highlighted engine | Engine switches; menu closes | Defined | Decision 0009 item 16 |  |
+| C-098 | Field | Engine menu | Menu open | Normal | Encoder 1 button | Press | Close menu without switching | Previous engine page | Defined | Decision 0009 item 16 |  |
+| C-099 | Field | Field engine page | Menu closed | Normal | Encoder 1 button | Long press | Open band menu | Band menu stays open | Defined | Decision 0009 item 16 | Classic and Manual pages. |
+| C-100 | Field | Band menu | Menu open | Normal | Encoder 0 | Turn | Choose band | Highlighted band changes | Defined | Decision 0009 items 16-17 |  |
+| C-101 | Field | Band menu | Menu open | Normal | Encoder 0 button | Press | Confirm band | Band changes; consequential transition (decision 0008 item 13) | Defined | Decision 0009 item 17 |  |
+| C-102 | Field | Band menu | Menu open | Normal | Encoder 1 button | Press | Dismiss band menu | Previous page | Defined | Decision 0009 item 17 |  |
+| C-103 | Field | Classic engine page | Any | Normal | Encoder 0 button | Click | Run or pause the scan | Scan state toggles | Defined | Decision 0009 item 22 |  |
+| C-104 | Field | Classic engine page | Any | Normal | Encoder 0 | Turn | Set jump rate | Jump rate changes | Defined | Decision 0009 item 22 |  |
+| C-105 | Field | Classic engine page | Any | Normal | Encoder 1 button | Click | Toggle scan direction | Direction reverses | Defined | Decision 0009 item 22 |  |
+| C-106 | Field | Classic engine page | Any | Normal | Encoder 1 | Turn | Set jump distance | Jump distance changes | Defined | Decision 0009 item 22 |  |
+| C-107 | Field | Manual engine page | Any | Normal | Encoder 0 | Turn | Tune | Frequency changes | Defined | Decision 0009 item 25 | Only tuning control for now. |
+| C-108 | Field | Manual engine page | Any | Normal | Encoder 0 button | Click | Toggle wrap at band edges | Wrap toggles | Defined | Decision 0009 item 26 |  |
 
 ## Workspace index
 
@@ -143,14 +153,15 @@ Navigation structure for operating modes, popovers, editors, and global utilitie
 
 | Mode | Workspace | Parent | Entry | Exit | Purpose | Status |
 |---|---|---|---|---|---|---|
-| Global utility | Global utility root | Operating mode | Instrument Shift + Encoder 0; Field mapping still under review | Encoder 3 hold | Access Settings, Playback, Diagnostics, Maintenance, and system information | Defined |
-| Global utility | Settings | Global utility root | Select Settings or Field Shift + Encoder 1 | Encoder 1 back; Encoder 3 hold exits utilities | Persistent configuration | Defined |
+| Global utility | Global utility root | Operating mode | Shift + Encoder 0 from an operating-mode engine page (decision 0009) | Encoder 3 hold | Access Settings, Playback, Diagnostics, Maintenance, and system information | Defined |
+| Global utility | Settings | Global utility root | Select Settings from the global utility root | Encoder 1 back; Encoder 3 hold exits utilities | Persistent configuration | Defined |
 | Global utility | Playback | Global utility root | Select Playback | Encoder 1 back; Encoder 3 hold exits utilities | Browse and replay Field captures and Instrument sessions | Defined |
 | Global utility | Diagnostics | Global utility root | Select Diagnostics | Encoder 1 back; Encoder 3 hold exits utilities | System health, buses, sensors, storage, and core status | Defined |
 | Global utility | Maintenance | Global utility root | Select Maintenance | Encoder 1 back; Encoder 3 hold exits utilities | Calibration, storage maintenance, updates, and service actions | Defined |
 | Global utility | Text editor | Invoking editor | Macro name or another editable text field | Save or cancel to caller | Product-standardized text entry | Proposed |
 | Field | Field engine page | Field Mode | Startup, mode switch, or engine selection | Mode switch or utility entry | Classic, Seek, Orbit, Manual, and future scan-engine performance | Defined |
-| Field | Scan-engine selector | Field engine page | Hold Encoder 2 button | Release Encoder 2 button | Momentary engine-selection popover | Defined |
+| Field | Engine menu | Field engine page | Long press Encoder 2 button | Encoder 1 close, engine selection, or timeout | Stay-open engine selection menu | Defined |
+| Field | Band menu | Field engine page | Long press Encoder 1 button | Encoder 1 dismiss, band confirm, or timeout | Stay-open band selection menu | Defined |
 | Instrument | Main engine page | Instrument Mode | Mode switch, preset load, or engine selection | Mode switch, utility entry, or performance view | Active sound engine and parameter pages | Defined |
 | Instrument | Instrument-engine selector | Main engine page | Hold Encoder 1 button | Release Encoder 1 button | Momentary instrument-engine selection | Defined |
 | Instrument | Performance-view selector | Main engine page or performance view | Hold Encoder 2 from main page; short Encoder 3 from several views | Select view or return to engine | Choose FX, Modulation, Macros, Sequencer, Presets, and future views | Open |
@@ -202,12 +213,12 @@ Questions that affect consistency, safety, or the ability to learn the physical 
 
 | Decision ID | Area | Question | Why it matters | Suggested next test | Priority |
 |---|---|---|---|---|---|
-| D-001 | Shift layer | Should Field Shift open Settings directly or the global utility root? | Current Field and Instrument Shift mappings differ. | Test both on hardware; count actions needed for Playback and Diagnostics. | High |
-| D-002 | Encoder 3 hold | What is the context-priority rule for Shift, exit, and back actions? | The same hold enters Shift on engine pages but exits utilities and returns from editors. | Write a one-line precedence rule and test every workspace transition. | High |
+| D-001 | Shift layer | Should Field Shift open Settings directly or the global utility root? | Current Field and Instrument Shift mappings differ. | Resolved by decision 0009 (`full_spooky_proto-54w.23`): Shift plus Encoder 0 opens the global utility root; C-007 retired. | High |
+| D-002 | Encoder 3 hold | What is the context-priority rule for Shift, exit, and back actions? | The same hold enters Shift on engine pages but exits utilities and returns from editors. | Resolved by decision 0009 items 3 and 23 to 25 (`full_spooky_proto-54w.23`). | High |
 | D-003 | Selectors | Is the performance-view destination a momentary popover or a persistent top-level menu? | Several pages say Encoder 3 short returns to a top-level performance menu. | Prototype both with FX and Sequencer navigation. | High |
 | D-004 | Instrument pages | What belongs on main-engine parameter pages versus full Macro, Modulation, and Sequencer editors? | Duplicated access can feel powerful or confusing depending on scope. | Limit engine pages to live performance controls; reserve structural editing for full views. | High |
-| D-005 | Popovers | Does release always commit the highlighted engine or view, and how does the user cancel? | A slip during a hold could switch engines unintentionally. | Test release-to-commit against returning to the original item when no movement occurred. | High |
-| D-006 | Chord timing | What hold and chord-resolution timing feels reliable? | Shift plus buttons 0 and 1 must not fire Button 0 early. | Measure comfortable timings on the physical controls and suppress release-side short presses. | High |
+| D-005 | Popovers | Does release always commit the highlighted engine or view, and how does the user cancel? | A slip during a hold could switch engines unintentionally. | Resolved for Field by decision 0009 (`full_spooky_proto-54w.23`): menus open on a long press and stay open; selection and dismissal are explicit. Instrument remains open. | High |
+| D-006 | Chord timing | What hold and chord-resolution timing feels reliable? | Shift plus buttons 0 and 1 must not fire Button 0 early. | Resolved in principle by decision 0009 (`full_spooky_proto-54w.23`): release-resolved actions with push-turn cancellation; thresholds stay configurable until bench trials. | High |
 | D-007 | Presets | Where is the Preset browser entered from? | Save and load are required, but no access gesture has been selected. | Compare a performance-view entry with a dedicated parameter page. | High |
 | D-008 | Presets | Does an engine preset include the FX chain? | Including FX gives complete sounds; excluding it supports reusable global chains. | Start with engine state plus macros/modulation/sequencer; test separate FX presets. | Medium |
 | D-009 | Presets | How are sample files referenced, copied, moved, or missing? | A preset can become unusable if its source audio changes location. | Define stable asset IDs and a missing-source repair flow. | High |
@@ -224,3 +235,8 @@ Questions that affect consistency, safety, or the ability to learn the physical 
 |---|---|---|
 | C-031 | Instrument main engine page, Button 0 press: change the injected-sample mix policy (Open) | User direction 2026-09-27, `full_spooky_proto-54w.18` |
 | D-013 | How Button 0 chooses layered, ducked or exclusive microphone injection | User direction 2026-09-27, `full_spooky_proto-54w.18` |
+| C-007 | Field Field engine page, Shift + Encoder 1 press: open Settings (Proposed) | Decision 0009, `full_spooky_proto-54w.23` |
+| C-011 | Field Field engine page, Encoder 0 hold: quick-jump to Manual (Defined) | Decision 0009, `full_spooky_proto-54w.23` |
+| C-012 | Field Field engine page, Encoder 0 hold: return from Manual (Defined) | Decision 0009, `full_spooky_proto-54w.23` |
+| C-013 | Field Field engine page, Encoder 2 hold: open scan-engine selector (Defined) | Decision 0009, `full_spooky_proto-54w.23` |
+| C-015 | Field Scan-engine selector, Encoder 2 release: commit highlighted engine (Defined) | Decision 0009, `full_spooky_proto-54w.23` |

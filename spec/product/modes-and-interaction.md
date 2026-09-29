@@ -60,21 +60,13 @@ The most common actions should be available from the primary performance surface
 
 ### Stable Meanings With Mode Specific Expression
 
-Some meanings should remain stable throughout the product even when their visual treatment changes:
-
-- EMF level represents magnetic-field disturbance or intentional magnetic control.
-- Radio activity represents detected energy or change in the received audio.
-- Scan position represents the current location within a band or scan territory.
-- Recording state represents whether the device is idle, armed, recording, or reviewing.
-- The active engine determines the rules of motion or sound generation.
-
-Each mode may render these meanings differently, but should not silently redefine them.
+Some meanings remain stable across every view: EMF level, push-to-talk, recording status, and the sense that rolling capture preserves what happened before a save. Their visual expression may change per mode; their meaning does not. The product philosophy document and the constitution's principles carry the obligations.
 
 ### Temporary Navigation Over Persistent Tabs
 
 Normal operation should show the active engine or performance view without a permanent tab strip. A navigation action may reveal a temporary selector, mode ribbon, or other overlay. The overlay should disappear after the user selects a destination or after a short period of inactivity.
 
-The exact engine- and view-selection gesture is not yet fixed. It may use a press-and-turn gesture, a reserved button combination, or one of the Shift-layer chords described below. Whatever gesture is chosen should be consistent within each operating mode and should never conflict with an action that can destroy or overwrite recorded material.
+Engine and band menus open on a long press and then stay open until the user selects, dismisses, or a timeout closes them (decision 0009, Field). Each operating mode keeps its gesture consistent, and no selection gesture may conflict with an action that can destroy or overwrite recorded material. The Instrument selection gesture remains open (open decision 2, Instrument).
 
 ### Parameter Pages And Encoder Color
 
@@ -88,12 +80,7 @@ Page assignments should group related parameters and preserve encoder meaning wh
 
 Holding the encoder 3 button enters a temporary **Shift layer** for as long as it remains held. Shifted button presses invoke global commands rather than the buttons' normal Field or Instrument functions. This is preferable to describing the interaction as another mode because it does not replace or reset the active engine.
 
-The proposed initial Shift-layer chords are:
-
-- **Shift plus encoder 1 button:** open Settings.
-- **Shift plus button 0:** switch from Field to Instrument Mode.
-- **Shift plus button 1:** save the current rolling buffers to disk.
-- **Shift plus buttons 0 and 1:** save the rolling buffers, enter Instrument Mode, and load the saved capture as the active sample.
+While Shift is held, the physical commands it exposes are defined in the control map; only controls with an available Shift action are lit (recording-safe command policy, decision 0008).
 
 The input handler must distinguish a chord from its component buttons before executing an action. A short chord-resolution window or execution-on-release policy should prevent Shift plus button 0 from switching modes before the user has time to add button 1. Releasing encoder 3 after using a shifted command must not also advance the parameter page.
 
@@ -248,7 +235,7 @@ Manual should feel tactile and weighted even though the radio uses discrete digi
 - stronger resistance or visual drag near active signals
 - controlled drift or instability in presentation
 
-Manual should also have a reserved quick-jump gesture. Invoking it from Classic, Seek, or Orbit enters Manual at the current tune target. Invoking the same gesture again returns to the previous engine and restores its prior state. The exact button or combination remains open until the physical control map is reviewed as a whole.
+Manual should also have a reserved quick-jump gesture. Invoking it from Classic, Seek, or Orbit enters Manual at the current tune target. Invoking the same gesture again returns to the previous engine and restores its prior state. Manual quick-jump is entered with Shift plus an Encoder 1 press and reversed with a second press; the binding is Defined in the control map (decision 0009).
 
 Making Manual a separate engine is a provisional product decision. It should be revisited after hands-on testing compares the quick-jump model with pausing and directly steering each scan engine.
 
@@ -348,28 +335,13 @@ Recording is a global capability, but its meaning may vary by context.
 
 Starting and stopping a session is a deliberate gesture in both Field and Instrument Mode: a hold that opens a prompt, which the user then confirms or cancels. A slip must not be able to start or stop a session, and while the gesture is in progress no other control changes the performance. The control map defines the controls.
 
-Field and Instrument sessions should be stored in separate directory trees and use distinct naming schemes. Each session should live in its own folder with a manifest that identifies the session type, start time, duration, firmware and format versions, stream files, and any incomplete or recovered state. Exact names remain to be finalized, but the intended shape is:
-
-```text
-/FIELD/<timestamp>_<field-session-id>/
-  manifest
-  radio audio
-  microphone audio
-  EMF stream
-  activity and event stream
-
-/INSTRUMENT/<timestamp>_<instrument-session-id>/
-  manifest
-  performance mix
-  microphone or injected-sample source
-  EMF stream
-  MIDI or sequencer events
-  activity and event stream
-```
+Field and Instrument sessions should be stored in separate directory trees and use distinct naming schemes. Each session should live in its own folder with a manifest that identifies the session type, start time, duration, firmware and format versions, stream files, and any incomplete or recovered state. The versioned session, asset and recovery formats belong to the sessions and playback work.
 
 ### Field Sessions
 
 A Field session should record synchronized radio and microphone audio as separate tracks, along with EMF readings, tuning history, scan-engine state, PTT state, radio-activity metrics, and other significant metadata.
+
+A session opened on the device runs until the user stops it or the card becomes full (open-ended; decision 0008). The card-full ending is a visible session fault that finalizes the valid audio; the single-file WAV size limit ends the session cleanly; both keep the raw tracks synchronized. A session is idle, recording, finalizing, or stopped, and a faulted session ends in an explicit fault state. Timed sessions remain available for bench use.
 
 Button 1 acts as the default Field **PTT** performance control. While held, it silences radio audio in live monitoring but continues recording both the unmuted radio track and the microphone track. PTT press and release events are timestamped in the session. This preserves the raw evidence while allowing the user to speak or foreground the environment without radio audio in the monitored mix.
 
@@ -416,7 +388,7 @@ Later versions may expose sequencer or MIDI events, send MIDI to an external hos
 
 Settings should be a global utility space rather than a third operating mode. Field and Instrument describe what the device is doing creatively; Settings changes persistent configuration and system behavior.
 
-Shift plus encoder 1 opens Settings directly. The first Settings screen may serve as the main utility hub, with access to device settings, audio and display preferences, storage status, session playback, calibration, diagnostics, and system information. If this hub becomes too broad, Playback can receive its own direct Shift-layer shortcut later without changing the top-level mode model.
+Shift plus Encoder 0 opens the global utility root from a Field engine page; the direct Settings entry is retired (decision 0009). The first Settings screen may serve as the main utility hub, with access to device settings, audio and display preferences, storage status, session playback, calibration, diagnostics, and system information. If this hub becomes too broad, Playback can receive its own direct Shift-layer shortcut later without changing the top-level mode model.
 
 Settings and Playback should suspend or safely constrain controls that would conflict with their active task, while preserving the previous Field or Instrument context for return. Background recording or buffer capture must not be stopped merely because a utility screen is open unless the requested utility operation genuinely requires it and the user confirms the interruption.
 
@@ -431,59 +403,12 @@ Each engine should have a distinct visual identity, but the underlying semantic 
 
 Visual work must remain subordinate to audio and recording reliability. The UI may reduce frame rate, simplify animation, or defer nonessential updates under load without changing authoritative device behavior.
 
-## State Ownership and Software Boundary
-
-These requirements hold whichever processor core, chip or driver implements them:
-
-- One authoritative owner holds the operating mode, engine and view state, utility-space state, recording state, rolling capture, storage transactions, audio behavior, gesture resolution, and the mapping from gestures to product actions.
-- Physical inputs are reported without behavioral meaning. The authority decides whether an encoder movement tunes, changes grain size or navigates a menu, using the context in which each press began.
-- Presentation surfaces render published semantic state and one-shot events. They never keep a competing copy of mode state, so the displays cannot silently disagree about the active operating mode, engine, view, parameter page, Shift state or utility space.
-- A lost input event, a restarted presentation component or a queue overflow must not leave a held control such as Shift or PTT latched.
-
-Which core owns each responsibility and peripheral is an engineering decision. The current assignment is in the [architecture](../../docs/design/architecture.md#application-model) and [decision 0001](../../docs/decisions/0001-initial-ui-and-bus-ownership.md).
-
-## Initial Implementation Scope
-
-The first implementation should be intentionally narrower than the full vision. The lists below describe what each area must include before it is coherent from the user's point of view. They do not set the build order: the [development roadmap](roadmap.md) decides which milestone delivers each item and in what sequence. For example, the first Field slice ships without rolling capture, which arrives with recoverable sessions, so the Field scope below is complete only after both milestones.
-
-### First Field Scope
-
-- boot directly into Field and Classic
-- implement parameter pages, page colors, and the encoder 3 Shift layer
-- establish the temporary engine-selection interaction
-- implement Classic's primary performance view and controls
-- implement Manual as a quick-jump engine with return behavior
-- maintain synchronized rolling radio, microphone, EMF, activity, and event buffers
-- save the rolling buffer through Shift plus button 1 without interrupting capture
-- preserve engine state across navigation
-- present recording, band, frequency, EMF, and radio activity consistently
-- leave Seek and Orbit selectable only when their minimum behavior and visuals are coherent
-
-### First Instrument Scope
-
-- establish the top-level Field and Instrument transition
-- implement one Granular engine with a limited source and parameter set
-- support Shift plus buttons 0 and 1 as a low-friction save, switch, and load path from Field material
-- implement a minimal Effects view
-- define the data model for Modulation, Macros, and Sequencer before building their full editors
-- preserve the active engine while moving among performance views
-
-### First Recording And Playback Scope
-
-- use separate Field and Instrument session folders and manifests
-- record Field radio and microphone tracks separately and in sync
-- timestamp PTT, tune, scan, activity, and EMF events
-- provide PTT-aware, full-mix, radio-solo, and microphone-solo Field playback
-- provide independent non-destructive radio and microphone gain
-- reconstruct the LED matrix from recorded semantic streams
-- provide basic Instrument performance-mix playback before advanced MIDI or remix features
-
 ## Open Decisions
 
 The following questions should remain visible as prototypes are tested:
 
 1. Should Shift plus button 0 also return from Instrument to Field, and what state should each mode restore?
-2. What gesture reveals the temporary engine or view selector?
+2. Resolved for Field (decision 0009): engine and band menus open on a long press and stay open. The Instrument gesture remains open.
 3. Does Manual remain a separate Field engine after hands-on comparison with pausing and steering other engines?
 4. What state should resume when returning from Manual: elapsed simulation state, frozen state, or a safe re-entry state?
 5. Which radio and audio features contribute to Seek's activity score, and how should that score decay?
@@ -493,10 +418,10 @@ The following questions should remain visible as prototypes are tested:
 9. Which effects define the initial Instrument identity?
 10. How many modulation routes, macros, and sequencer lanes can the interface support without becoming menu-driven?
 11. Which settings persist across power cycles, and which should reset to safe defaults?
-12. How should the device behave if a top-level mode change is requested during recording, capture, or another time-critical operation?
+12. Resolved for sessions (decision 0008): a top-level mode change requested during a session is rejected with a visible reason. The session keeps recording; nothing is deferred.
 13. Should Playback remain inside the Settings hub, receive a direct Shift shortcut, or both?
 14. What file formats should store EMF, semantic events, and sequencer or MIDI data?
-15. What Shift-layer chord timing feels reliable without making the controls feel delayed?
+15. Resolved for Field (decision 0009): actions resolve on release with push-turn cancellation; hold thresholds and chord timings stay configurable until bench trials (D-006).
 16. Should tunes and band transitions play generated transition noise in the monitored mix, and which of its qualities, such as level, color and duration, should the user be able to tune? Transition noise would never be written to a raw track.
 
 ## Design Guardrails
