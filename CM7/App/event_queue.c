@@ -23,6 +23,9 @@ static void enqueue(EventQueue *queue, EvqClass event_class, uint16_t type,
     };
     ++queue->count;
     ++queue->posted;
+    if (type == EVQ_TYPE_RECONCILE) {
+        ++queue->reconciles_queued;
+    }
     if (queue->count > queue->high_water) {
         queue->high_water = queue->count;
     }
@@ -70,7 +73,9 @@ bool EventQueue_Post(EventQueue *queue, EvqClass event_class, uint16_t type,
     }
     if (!admit) {
         ++queue->rejected[event_class];
-        if (event_class == EVQ_CLASS_INPUT) {
+        /* A reconcile already queued is dispatched after this loss and releases
+         * every control, so it covers this input too (full_spooky_proto-8lw.17). */
+        if (event_class == EVQ_CLASS_INPUT && queue->reconciles_queued == 0u) {
             queue->reconcile_pending = true;
         }
         return false;
@@ -92,6 +97,9 @@ uint32_t EventQueue_Service(EventQueue *queue, uint32_t now_ms, EvqDispatch disp
         const EvqEvent event = queue->entries[queue->head];
         queue->head = (queue->head + 1u) % EVENT_QUEUE_CAPACITY;
         --queue->count;
+        if (event.type == EVQ_TYPE_RECONCILE && queue->reconciles_queued > 0u) {
+            --queue->reconciles_queued;
+        }
         const uint32_t wait = now_ms - event.posted_ms; /* modulo 2^32 */
         if (wait > queue->max_wait_ms) {
             queue->max_wait_ms = wait;

@@ -68,7 +68,8 @@ capacity and the slots reserved for internal events. `COUNT` is the current numb
 queued events and `PEAK` its high-water mark. `POSTED` and `DISPATCHED` count admitted
 and handled events. `REJ_INPUT`, `REJ_CMD` and `REJ_INTERNAL` count rejected input
 events, CLI commands and internal events. `RECONCILES` counts reconcile events posted
-after rejected input. `MAX_WAIT_MS` is the longest time an event waited between post
+after rejected input; input rejected while a reconcile is still queued is covered by
+that reconcile, so a sustained burst counts once. `MAX_WAIT_MS` is the longest time an event waited between post
 and dispatch. All are boot-lifetime totals. `REJ_INTERNAL` must stay zero; any
 increase is recorded as an `EVENT_QUEUE_LOSS` fault.
 

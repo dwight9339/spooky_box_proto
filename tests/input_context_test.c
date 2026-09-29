@@ -205,11 +205,9 @@ static void a_lost_release_after_overflow_cannot_latch_ptt_or_shift(void)
     run_for(100u);
     EvqStats stats;
     EventQueue_GetStats(&queue, &stats);
-    /* Decision 0007 item 6: a reconcile follows the rejected input. The queue posts
-     * one as soon as a reserved slot is free and then clears its flag, so a sustained
-     * burst can post several; each is idempotent. */
-    CHECK(stats.reconciles >= 1u);
-    printf("note: burst of 42 inputs posted %u reconcile event(s)\n", (unsigned)stats.reconciles);
+    /* Decision 0007 item 6: one reconcile follows the lost input, however long the
+     * burst (full_spooky_proto-8lw.17). */
+    CHECK(stats.reconciles == 1u);
     CHECK(context().ptt == 0u);
     CHECK(!InputResolution_ShiftActive());
     CHECK(ptt_commands == 2u);

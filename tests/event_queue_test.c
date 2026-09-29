@@ -186,6 +186,56 @@ static void input_stays_rejected_until_the_reconcile_is_posted(void)
     CHECK(EventQueue_Service(&q, 6, record, &r) == 1 && r.events[0].type == EVQ_TYPE_RECONCILE);
 }
 
+static void a_sustained_burst_posts_one_reconcile_and_keeps_the_reserve(void)
+{
+    /* full_spooky_proto-8lw.17: without a service call, each rejected input used to
+     * add another reconcile until the internal reserve was full. */
+    EventQueue q;
+    EventQueue_Init(&q);
+    const unsigned open = EVENT_QUEUE_CAPACITY - EVENT_QUEUE_RESERVE;
+    unsigned admitted = 0;
+    for (unsigned i = 0; i < open + 40u; ++i) {
+        admitted += EventQueue_Post(&q, EVQ_CLASS_INPUT, 1, i, 0, 0) ? 1u : 0u;
+    }
+    EvqStats s = stats(&q);
+    CHECK(admitted == open);
+    CHECK(s.reconciles == 1 && !s.reconcile_pending);
+    CHECK(s.rejected[EVQ_CLASS_INPUT] == 40u);
+    /* The rest of the reserve is still free for internal events. */
+    for (unsigned i = 0; i < EVENT_QUEUE_RESERVE - 1u; ++i) {
+        CHECK(EventQueue_Post(&q, EVQ_CLASS_INTERNAL, 9, i, 0, 0));
+    }
+    s = stats(&q);
+    CHECK(s.rejected[EVQ_CLASS_INTERNAL] == 0);
+    /* The reconcile is dispatched after every lost input, then input flows again. */
+    Recorder r = {.queue = &q};
+    CHECK(EventQueue_Service(&q, 1, record, &r) == EVENT_QUEUE_CAPACITY);
+    CHECK(r.events[open].type == EVQ_TYPE_RECONCILE);
+    CHECK(EventQueue_Post(&q, EVQ_CLASS_INPUT, 1, 500, 0, 2));
+    CHECK(stats(&q).reconciles == 1);
+}
+
+static void input_lost_after_the_reconcile_is_dispatched_gets_a_new_one(void)
+{
+    /* A reconcile covers only losses before its dispatch. */
+    EventQueue q;
+    EventQueue_Init(&q);
+    const unsigned open = EVENT_QUEUE_CAPACITY - EVENT_QUEUE_RESERVE;
+    for (unsigned i = 0; i <= open; ++i) {
+        (void)EventQueue_Post(&q, EVQ_CLASS_INPUT, 1, i, 0, 0);
+    }
+    (void)EventQueue_Post(&q, EVQ_CLASS_INTERNAL, 9, 0, 0, 0); /* posts the reconcile */
+    Recorder r = {.queue = &q};
+    (void)EventQueue_Service(&q, 1, record, &r);
+    CHECK(stats(&q).reconciles == 1 && stats(&q).count == 0);
+    for (unsigned i = 0; i <= open; ++i) {
+        (void)EventQueue_Post(&q, EVQ_CLASS_INPUT, 1, i, 0, 2);
+    }
+    CHECK(stats(&q).reconcile_pending);
+    (void)EventQueue_Service(&q, 3, record, &r);
+    CHECK(stats(&q).reconciles == 2);
+}
+
 static void a_reconcile_is_posted_on_the_next_post_of_any_class(void)
 {
     EventQueue q;
@@ -330,6 +380,8 @@ int main(void)
     RUN(overrun_rejects_the_newest_and_keeps_queued_events);
     RUN(rejected_input_is_followed_by_one_reconcile_before_more_input);
     RUN(input_stays_rejected_until_the_reconcile_is_posted);
+    RUN(a_sustained_burst_posts_one_reconcile_and_keeps_the_reserve);
+    RUN(input_lost_after_the_reconcile_is_dispatched_gets_a_new_one);
     RUN(a_reconcile_is_posted_on_the_next_post_of_any_class);
     RUN(dispatch_handles_only_events_queued_when_it_started);
     RUN(dispatch_is_run_to_completion);
