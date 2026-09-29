@@ -146,6 +146,7 @@ One row per contextual binding. Filter by mode, workspace, layer, control, or st
 | C-106 | Field | Classic engine page | Any | Normal | Encoder 1 | Turn | Set jump distance | Jump distance changes | Defined | Decision 0009 item 8 |  |
 | C-107 | Field | Manual engine page | Any | Normal | Encoder 0 | Turn | Tune | Frequency changes | Defined | Decision 0009 item 13 | Only tuning control for now. |
 | C-108 | Field | Manual engine page | Any | Normal | Encoder 0 button | Click | Toggle wrap at band edges | Wrap toggles | Defined | Decision 0009 item 14 |  |
+| C-109 | Field | Field engine page | Any | Shift | Encoder 0 button | Press | Open global utility root | Global utility menu | Defined | Decision 0009 item 31 | Fires on press and ends the Shift layer (decision 0009 items 27 and 34). Allowed during a session: opening the root changes nothing; each entry inside it keeps its own class (decision 0008 item 6). |
 
 ## Workspace index
 
