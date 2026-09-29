@@ -48,6 +48,21 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
 )
 
+set(SPOOKY_RECORDING_CARD_RESERVE_SECONDS "60" CACHE STRING
+    "Seconds of three-channel audio retained before reporting card full")
+set(SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES "0" CACHE STRING
+    "Bytes retained for one rolling-capture save; hpq.2 sets the window")
+set(SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES "0" CACHE STRING
+    "Additional allocation bytes needed to finalize a recording")
+set(SPOOKY_RECORDING_WAV_MAX_FRAMES "715827876" CACHE STRING
+    "Maximum WAV frames; override only for bounded storage-limit bench tests")
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    SPOOKY_RECORDING_CARD_RESERVE_SECONDS=${SPOOKY_RECORDING_CARD_RESERVE_SECONDS}
+    SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES=${SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES}
+    SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES=${SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES}
+    SPOOKY_RECORDING_WAV_MAX_FRAMES=${SPOOKY_RECORDING_WAV_MAX_FRAMES}
+)
+
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
 
@@ -74,6 +89,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/app_dispatch.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/command_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/session_control.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/recording_limits.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_lease.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/sm/session_port.c

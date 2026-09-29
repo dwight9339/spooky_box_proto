@@ -38,6 +38,8 @@ spooky_test(logger_diag_test logger_diag_test.c stubs/fake_hal.c
 spooky_test(event_queue_test event_queue_test.c ../CM7/App/event_queue.c)
 spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.c)
 spooky_test(storage_lease_test storage_lease_test.c ../CM7/App/storage_lease.c)
+spooky_test(recording_limits_test recording_limits_test.c
+    ../CM7/App/recording_limits.c)
 spooky_test(session_test session_test.c ../CM7/App/sm/session_port.c)
 spooky_generated_sm(session_test SessionSm.c)
 spooky_test(session_authority_test session_authority_test.c

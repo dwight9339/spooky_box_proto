@@ -149,6 +149,15 @@ static void starting_opens_the_file_starts_capture_and_records(void)
     CHECK(fake.state_changes == 1 && fake.last_state == SES_STATE_RECORDING);
 }
 
+static void an_open_ended_start_forwards_zero(void)
+{
+    reset();
+    Session_OnStart(0u);
+    CHECK(Session_GetState() == SES_STATE_RECORDING && Session_IsActive());
+    CHECK(fake.calls[CALL_OPEN_FILE] == 1 && fake.open_seconds == 0u);
+    CHECK(last_published_is(SES_PUB_RECORDING_STARTED));
+}
+
 static void the_start_guard_is_evaluated_once_per_start(void)
 {
     reset();
@@ -317,6 +326,35 @@ static void a_capture_fault_aborts_from_every_active_state(void)
     }
 }
 
+static void storage_limits_publish_explicit_outcomes(void)
+{
+    reset();
+    start_recording();
+    Session_OnCardFull();
+    CHECK(Session_GetState() == SES_STATE_IDLE);
+    CHECK(fake.calls[CALL_STOP_CAPTURE] == 1 && fake.calls[CALL_FINALIZE] == 1);
+    CHECK(last_published_is(SES_PUB_RECORDING_CARD_FULL));
+
+    reset();
+    start_recording();
+    Session_OnFileLimit();
+    CHECK(Session_GetState() == SES_STATE_IDLE);
+    CHECK(fake.calls[CALL_STOP_CAPTURE] == 1 && fake.calls[CALL_FINALIZE] == 1);
+    CHECK(last_published_is(SES_PUB_RECORDING_FILE_LIMIT));
+
+    reset();
+    start_recording();
+    fake.finalize_ok = false;
+    Session_OnCardFull();
+    CHECK(last_published_is(SES_PUB_RECORDING_ABORTED));
+
+    reset();
+    start_recording();
+    fake.finalize_ok = false;
+    Session_OnFileLimit();
+    CHECK(last_published_is(SES_PUB_RECORDING_ABORTED));
+}
+
 static void idle_ignores_blocks_and_faults(void)
 {
     reset();
@@ -412,6 +450,7 @@ static void outcomes_are_never_shown_as_success_after_a_failure(void)
 int main(void)
 {
     RUN(starting_opens_the_file_starts_capture_and_records);
+    RUN(an_open_ended_start_forwards_zero);
     RUN(the_start_guard_is_evaluated_once_per_start);
     RUN(a_start_that_cannot_start_is_rejected_without_touching_the_card);
     RUN(a_file_that_cannot_be_opened_rejects_the_start);
@@ -426,6 +465,7 @@ int main(void)
     RUN(the_next_block_after_a_stop_completes_the_session);
     RUN(a_failed_finalize_after_a_stop_is_an_abort);
     RUN(a_capture_fault_aborts_from_every_active_state);
+    RUN(storage_limits_publish_explicit_outcomes);
     RUN(idle_ignores_blocks_and_faults);
     RUN(a_new_session_can_start_after_each_ending);
     RUN(outcomes_are_never_shown_as_success_after_a_failure);

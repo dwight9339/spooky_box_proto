@@ -29,7 +29,7 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | PRES-R1 | Surfaces render published state and domain events only. They keep no competing copy of Context, Session or InputResolution state. |
 | PRES-R2 | A surface shows a state only after the machine publishes it. Recording is shown after `SES_PUB_RECORDING_STARTED`, never because StartSession was sent. |
 | PRES-R3 | Consequential domain events are acknowledged on display, lights and audio, consistently with one another. They include recording start and stop, band change, calibration, capture and faults. |
-| PRES-R4 | `SES_PUB_RECORDING_ABORTED` is shown as a visible fault, never as a successful session. |
+| PRES-R4 | `SES_PUB_RECORDING_ABORTED` and `SES_PUB_RECORDING_CARD_FULL` are shown as visible faults, never as successful sessions. |
 | PRES-R5 | Under load a surface may lower its frame rate or simplify, but it never delays capture and never changes what a signal means. |
 | PRES-R6 | Each engine may express a signal differently; the meaning of the signal stays the same in every engine. |
 
@@ -43,6 +43,8 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | PRES-SES-04 | `SES_PUB_RECORDING_COMPLETED` | Display, lights and audio | `OK RECORD PASS file=... frames=... bytes=...` |
 | PRES-SES-05 | `SES_PUB_RECORDING_ABORTED` | Display, lights and audio, as a fault that names the file and whether it was finalized | `ERR RECORD ABORT file=... reason=... finalized=...` |
 | PRES-SES-06 | `SES_PUB_STOP_IGNORED` | Reply to the command's source | `OK RECORD already idle` |
+| PRES-SES-07 | `SES_PUB_RECORDING_CARD_FULL` | Display, lights and audio, as a card-full fault; retain the valid finalized file | `ERR RECORD ABORT file=... reason=card full finalized=1` |
+| PRES-SES-08 | `SES_PUB_RECORDING_FILE_LIMIT` | Display, lights and audio, as a clean single-file ending | `OK RECORD PASS file=... reason=WAV size limit` |
 
 ## Published session state
 
@@ -132,6 +134,8 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | PRES-SES-04 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | PRES-SES-05 | Target | CLI reply implemented; no bench evidence |
 | PRES-SES-06 | Target | CLI reply implemented; no bench evidence |
+| PRES-SES-07 | Target | Session outcome and CLI reply implemented; no nearly-full-card evidence |
+| PRES-SES-08 | Target | Session outcome and CLI reply implemented; no file-limit evidence |
 | PRES-RAD-01 | Proven for the boot log | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | PRES-RAD-02 | Target | Not implemented |
 | PRES-RAD-03 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |

@@ -6,6 +6,14 @@ set(SPOOKY_EXTERNAL_PREFIX_ROOT "${CMAKE_BINARY_DIR}/_external")
 set(SPOOKY_FIRMWARE_SUFFIX ".elf")
 option(SPOOKY_IPC_SMOKE "Build the unvalidated dual-core IPC bench experiment" OFF)
 set(SPOOKY_IPC_M4_VERSION "1" CACHE STRING "M4 diagnostic ABI; 2 tests mismatch")
+set(SPOOKY_RECORDING_CARD_RESERVE_SECONDS "60" CACHE STRING
+    "Seconds of three-channel audio retained before reporting card full")
+set(SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES "0" CACHE STRING
+    "Bytes retained for one rolling-capture save; hpq.2 sets the window")
+set(SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES "0" CACHE STRING
+    "Additional allocation bytes needed to finalize a recording")
+set(SPOOKY_RECORDING_WAV_MAX_FRAMES "715827876" CACHE STRING
+    "Maximum WAV frames; override only for bounded storage-limit bench tests")
 
 function(spooky_add_core core_name target_name)
     set(core_source_dir "${PROJECT_SOURCE_DIR}/${core_name}")
@@ -23,6 +31,10 @@ function(spooky_add_core core_name target_name)
             "-DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}"
             "-DSPOOKY_IPC_SMOKE:BOOL=${SPOOKY_IPC_SMOKE}"
             "-DSPOOKY_IPC_M4_VERSION:STRING=${SPOOKY_IPC_M4_VERSION}"
+            "-DSPOOKY_RECORDING_CARD_RESERVE_SECONDS:STRING=${SPOOKY_RECORDING_CARD_RESERVE_SECONDS}"
+            "-DSPOOKY_ROLLING_CAPTURE_RESERVE_BYTES:STRING=${SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES}"
+            "-DSPOOKY_RECORDING_FINALIZE_RESERVE_BYTES:STRING=${SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES}"
+            "-DSPOOKY_RECORDING_WAV_MAX_FRAMES:STRING=${SPOOKY_RECORDING_WAV_MAX_FRAMES}"
         BUILD_ALWAYS                true
     )
 endfunction()

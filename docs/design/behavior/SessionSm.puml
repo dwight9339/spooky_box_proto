@@ -22,8 +22,8 @@ Idle : enter / ses_state_changed();
 Recording : enter / ses_state_changed();
 Finalizing : enter / ses_state_changed();
 
-' Start: the guard can_start covers card present, card free, radio running, PDM
-' ready and a duration of 1 to 3600 seconds.
+' Start: the guard can_start covers card present, the recording reserve, radio
+' running, PDM ready and a duration of zero (open-ended) or 1 to 3600 seconds.
 Idle : START [!ses_can_start()] / ses_publish(SES_PUB_RECORDING_REJECTED);
 Idle --> OpenResult : START [ses_can_start()] / ses_open_file();
 OpenResult --> Idle : [!ses_file_opened()] / ses_publish(SES_PUB_RECORDING_REJECTED);
@@ -38,12 +38,17 @@ Active : START / ses_publish(SES_PUB_RECORDING_REJECTED);
 Recording --> Finalizing : STOP / ses_request_stop(); ses_publish(SES_PUB_RECORDING_STOPPING);
 Finalizing : STOP / ses_publish(SES_PUB_RECORDING_STOPPING);
 
-' A block below the target changes nothing. Radio and microphone are written only as
-' matched block pairs, so the tracks stay in sync.
+' A block below the timed target and storage limits changes nothing. Radio and
+' microphone are written only as matched block pairs, so the tracks stay in sync.
 Recording --> FinalizeResult : BLOCK_WRITTEN [ses_target_reached()] / ses_stop_capture(); ses_finalize_file();
 Finalizing --> FinalizeResult : BLOCK_WRITTEN / ses_stop_capture(); ses_finalize_file();
 FinalizeResult --> Idle : [ses_finalize_ok()] / ses_publish(SES_PUB_RECORDING_COMPLETED);
 FinalizeResult --> Idle : else / ses_publish(SES_PUB_RECORDING_ABORTED);
+
+' The port tags storage endings at a matched boundary. File limit drives this same
+' target/finalize path and maps a successful completion to RECORDING_FILE_LIMIT.
+' Card full drives CAPTURE_FAULT below and maps a successful partial finalization to
+' RECORDING_CARD_FULL, which remains a fault rather than a clean completion.
 
 ' Card removed, radio or PDM DMA error, queue overrun, or a failed block write. The
 ' partial file is finalized where possible, and the abort reports whether it was.

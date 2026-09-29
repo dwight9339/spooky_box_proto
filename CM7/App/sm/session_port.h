@@ -30,18 +30,23 @@ typedef enum SesPublished {
     SES_PUB_RECORDING_STOPPING,
     SES_PUB_RECORDING_COMPLETED,
     SES_PUB_RECORDING_ABORTED,
+    SES_PUB_RECORDING_CARD_FULL,
+    SES_PUB_RECORDING_FILE_LIMIT,
     SES_PUB_STOP_IGNORED
 } SesPublished;
 
 /* --- 1. Service interface ------------------------------------------------------ */
 
 void Session_Init(void);
-/* StartSession(duration): duration in seconds as requested; the can_start guard
- * decides whether it is valid. */
+/* StartSession(duration): zero is open-ended; 1..3600 is a timed bench session.
+ * The can_start guard decides whether the request is otherwise valid. */
 void Session_OnStart(uint32_t seconds);
 void Session_OnStop(void);
 /* One matched radio and microphone block was written. */
 void Session_OnBlockWritten(void);
+/* Storage limits are reported only at a matched-block boundary. */
+void Session_OnCardFull(void);
+void Session_OnFileLimit(void);
 /* Card removed, DMA error, queue overrun or failed block write. */
 void Session_OnCaptureFault(void);
 SesState Session_GetState(void);
@@ -74,7 +79,8 @@ bool ses_integration_open_file(uint32_t seconds);
 bool ses_integration_start_capture(void);
 /* Stop at the next matched block. */
 void ses_integration_request_stop(void);
-/* The written audio reached the requested duration or the WAV size limit. */
+/* A stop was requested, the timed target was reached, or a storage limit says to
+ * finalize at this matched-block boundary. */
 bool ses_integration_target_reached(void);
 void ses_integration_stop_capture(void);
 /* Patch the WAV header and close the file. */

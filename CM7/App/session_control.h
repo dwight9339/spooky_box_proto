@@ -15,6 +15,8 @@
 bool SessionControl_RequestStart(uint32_t seconds, bool radio_ready);
 bool SessionControl_RequestStop(void);
 void SessionControl_ReportBlockWritten(void);
+void SessionControl_ReportCardFull(void);
+void SessionControl_ReportFileLimit(void);
 void SessionControl_ReportCaptureFault(void);
 
 void SessionControl_Init(void);

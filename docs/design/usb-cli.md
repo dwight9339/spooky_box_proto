@@ -227,8 +227,9 @@ two-column mapping as a diagnostic option for other SSD1309 variants.
 
 ## Recording
 
-`RECORD START [seconds]` records radio and microphone audio into one WAV file. The
-duration defaults to 60 seconds and may be 1..3600 seconds. Files are named
+`RECORD START [seconds]` records radio and microphone audio into one WAV file.
+Without `seconds` it is open-ended and runs until `RECORD STOP` or a storage
+limit. Supplying 1..3600 seconds keeps the bounded form used by bench tests. Files are named
 `REC000.WAV` through `REC999.WAV`, selecting the first unused name, and are retained
 on the card. The interleaved channel order is:
 
@@ -241,15 +242,32 @@ about 17.3 MB/minute. Firmware combines both input streams into 4096-frame block
 writes 24 KiB every 85.33 ms. Each input has an eight-block queue, providing about
 683 ms of write-stall tolerance. The initial block alignment of microphone and radio
 may differ by up to one 512-frame radio DMA half (about 10.7 ms). The first
-60 seconds are contiguously preallocated.
+60 seconds are contiguously preallocated (or the whole requested duration when it
+is shorter).
+
+At open, the recorder queries free space once and then subtracts each successful
+matched-block write from that cached budget. It does not run `f_getfree` on the
+recording path. Before another block would leave less than the configured reserve,
+it finalizes the current valid file and reports `card full` as a fault. The reserve
+defaults to one minute of three-channel audio (17,280,000 bytes), plus the configured
+rolling-capture window and any additional finalization allocation. The rolling
+contribution is zero until `full_spooky_proto-hpq.2` chooses and implements that
+window; finalization currently rewrites the allocated header and truncates, so its
+additional data-allocation contribution is zero. These three build settings are
+`SPOOKY_RECORDING_CARD_RESERVE_SECONDS`,
+`SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES`, and
+`SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES`.
+
+Until session folders are implemented, a recording also finalizes cleanly before
+another block would exceed the RIFF/WAV 32-bit size limit (about 4 hours 8 minutes).
 
 The requested duration is rounded up to the next 4096-frame block, so a 60-second
 request produces about 60.075 seconds of audio:
 
 ```text
-OK RECORD START file=REC000.WAV duration=60s format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]
+OK RECORD START file=REC000.WAV duration=open format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]
 ...
-OK RECORD PASS file=REC000.WAV ...
+OK RECORD PASS file=REC000.WAV ... reason=stopped
 RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,...
 ```
 
@@ -258,7 +276,8 @@ RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,...
 SD maintenance and stress commands, WAV transfer, and radio band/tuning changes are
 rejected while recording is active. `SD STATUS` remains nonintrusive: while the
 recorder owns the volume it reports card presence, owner, active file and written
-frames from cached recorder state rather than mounting or querying the filesystem.
+frames and cached free/reserve MiB from recorder state rather than mounting or
+querying the filesystem.
 
 ## WAV transfer (protocol v1)
 

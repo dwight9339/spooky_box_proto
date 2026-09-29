@@ -141,7 +141,9 @@ diagnostic mailbox as the full UI transport.
 4. Band transitions and session start/stop have explicit state and failure
    outcomes. The UI cannot infer success solely from a command being sent.
 5. A removed/full/failing SD card must yield a visible fault and, where
-   possible, a finalized partial recording.
+   possible, a finalized partial recording. The recorder samples filesystem free
+   space once at open and accounts matched-block bytes locally against its
+   configured reserve; it does not query FatFs on every block.
 6. The M7 storage service is the sole owner of the FatFs volume lifecycle and
    SDMMC clock/deinitialization policy. Recorder, SD stress/status, and WAV
    transfer code retain their file-specific I/O, but only while holding one

@@ -139,6 +139,15 @@ static void an_external_start_drives_the_recorder_through_the_machine(void)
     CHECK(mismatch_records == 0);
 }
 
+static void an_open_ended_start_reaches_the_recorder_as_zero(void)
+{
+    reset();
+    CHECK(SessionControl_RequestStart(0u, true));
+    pass();
+    CHECK(Session_GetState() == SES_STATE_RECORDING && recorder_active);
+    CHECK(last_seconds == 0u && last_radio_ready);
+}
+
 static void each_start_failure_has_one_explicit_outcome(void)
 {
     reset();
@@ -199,6 +208,23 @@ static void reaching_the_target_and_capture_faults_are_authoritative(void)
     CHECK(published[published_count - 1] == SES_PUB_RECORDING_ABORTED);
 }
 
+static void storage_limit_outcomes_cross_the_authoritative_queue(void)
+{
+    reset();
+    start_recording();
+    SessionControl_ReportCardFull();
+    pass();
+    CHECK(Session_GetState() == SES_STATE_IDLE && finalize_calls == 1);
+    CHECK(published[published_count - 1] == SES_PUB_RECORDING_CARD_FULL);
+
+    reset();
+    start_recording();
+    SessionControl_ReportFileLimit();
+    pass();
+    CHECK(Session_GetState() == SES_STATE_IDLE && finalize_calls == 1);
+    CHECK(published[published_count - 1] == SES_PUB_RECORDING_FILE_LIMIT);
+}
+
 static void commands_are_external_and_recorder_reports_are_internal(void)
 {
     EvqStats before;
@@ -237,9 +263,11 @@ static void an_unreported_recorder_change_is_still_a_fault(void)
 int main(void)
 {
     RUN(an_external_start_drives_the_recorder_through_the_machine);
+    RUN(an_open_ended_start_reaches_the_recorder_as_zero);
     RUN(each_start_failure_has_one_explicit_outcome);
     RUN(stop_waits_for_the_next_matched_block_then_finalizes);
     RUN(reaching_the_target_and_capture_faults_are_authoritative);
+    RUN(storage_limit_outcomes_cross_the_authoritative_queue);
     RUN(commands_are_external_and_recorder_reports_are_internal);
     RUN(an_unreported_recorder_change_is_still_a_fault);
     if (failures != 0) {

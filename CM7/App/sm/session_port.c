@@ -13,6 +13,14 @@ static bool capture_started;
 static bool target_reached;
 static bool finalize_ok;
 
+typedef enum SesEnding {
+    SES_ENDING_NORMAL = 0,
+    SES_ENDING_CARD_FULL,
+    SES_ENDING_FILE_LIMIT
+} SesEnding;
+
+static SesEnding ending;
+
 void Session_Init(void)
 {
     start_seconds = 0u;
@@ -21,6 +29,7 @@ void Session_Init(void)
     capture_started = false;
     target_reached = false;
     finalize_ok = false;
+    ending = SES_ENDING_NORMAL;
     SessionSm_ctor(&machine);
     SessionSm_start(&machine);
 }
@@ -31,6 +40,7 @@ void Session_OnStart(uint32_t seconds)
     can_start = ses_integration_can_start(seconds);
     file_opened = false;
     capture_started = false;
+    ending = SES_ENDING_NORMAL;
     SessionSm_dispatch_event(&machine, SessionSm_EventId_START);
 }
 
@@ -42,6 +52,19 @@ void Session_OnStop(void)
 void Session_OnBlockWritten(void)
 {
     target_reached = ses_integration_target_reached();
+    SessionSm_dispatch_event(&machine, SessionSm_EventId_BLOCK_WRITTEN);
+}
+
+void Session_OnCardFull(void)
+{
+    ending = SES_ENDING_CARD_FULL;
+    SessionSm_dispatch_event(&machine, SessionSm_EventId_CAPTURE_FAULT);
+}
+
+void Session_OnFileLimit(void)
+{
+    ending = SES_ENDING_FILE_LIMIT;
+    target_reached = true;
     SessionSm_dispatch_event(&machine, SessionSm_EventId_BLOCK_WRITTEN);
 }
 
@@ -102,7 +125,20 @@ void ses_finalize_file(void)
 
 void ses_publish(SesPublished event)
 {
+    if ((event == SES_PUB_RECORDING_ABORTED) &&
+        (ending == SES_ENDING_CARD_FULL) && finalize_ok) {
+        event = SES_PUB_RECORDING_CARD_FULL;
+    } else if ((event == SES_PUB_RECORDING_COMPLETED) &&
+               (ending == SES_ENDING_FILE_LIMIT)) {
+        event = SES_PUB_RECORDING_FILE_LIMIT;
+    }
     ses_integration_publish(event);
+    if (event == SES_PUB_RECORDING_COMPLETED ||
+        event == SES_PUB_RECORDING_ABORTED ||
+        event == SES_PUB_RECORDING_CARD_FULL ||
+        event == SES_PUB_RECORDING_FILE_LIMIT) {
+        ending = SES_ENDING_NORMAL;
+    }
 }
 
 void ses_state_changed(void)

@@ -17,7 +17,7 @@ from spookybench.config import load_profile
 from spookybench.firmware import elf_ranges, validate_pair
 from spookybench.openocd import configuration, interpret, operation_script, LiveCapture
 from spookybench.artifacts import Run
-from spookybench import serial_io
+from spookybench import ipc_load, serial_io
 from spookybench.process_io import run_process
 from spookybench.result import BenchError
 from spookybench.runner import execute
@@ -244,6 +244,13 @@ class ControlTests(unittest.TestCase):
                          ["before", "recording-1", "recording-2", "after"])
         self.assertEqual(result["metrics"]["target_health"], "healthy")
         self.assertFalse(result["metrics"]["human_required"])
+
+    def test_ipc_load_accepts_recording_completion_reason(self):
+        record = ipc_load._record(
+            b"OK RECORD PASS file=REC033.WAV frames=2883584 bytes=17301504 "
+            b"audio=60.074s elapsed=60113ms reason=duration complete\r\n", True)
+        self.assertEqual(record["kind"], "OK RECORD PASS")
+        self.assertEqual(record["fields"]["reason"], "duration complete")
 
     def test_ipc_load_failure_verdicts_and_cleanup(self):
         cases = (("record-abort", "recording_aborted", "not_needed"),

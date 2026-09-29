@@ -1,5 +1,6 @@
 #include "radio_recorder.h"
 #include "diagnostics.h"
+#include "recording_limits.h"
 #include "session_control.h"
 
 #include "ff.h"
@@ -11,13 +12,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#define RECORDER_SAMPLE_RATE_HZ          48000U
-#define RECORDER_CHANNELS                    3U
-#define RECORDER_BYTES_PER_SAMPLE            2U
-#define RECORDER_BLOCK_ALIGN \
-  (RECORDER_CHANNELS * RECORDER_BYTES_PER_SAMPLE)
-#define RECORDER_WAV_HEADER_BYTES            44U
-#define RECORDER_BLOCK_FRAMES              4096U
+#define RECORDER_SAMPLE_RATE_HZ RECORDING_LIMIT_SAMPLE_RATE_HZ
+#define RECORDER_CHANNELS RECORDING_LIMIT_CHANNELS
+#define RECORDER_BLOCK_ALIGN RECORDING_LIMIT_BLOCK_ALIGN
+#define RECORDER_WAV_HEADER_BYTES RECORDING_LIMIT_WAV_HEADER_BYTES
+#define RECORDER_BLOCK_FRAMES RECORDING_LIMIT_BLOCK_FRAMES
 #define RECORDER_RADIO_BLOCK_SAMPLES \
   (RECORDER_BLOCK_FRAMES * 2U)
 #define RECORDER_PDM_BLOCK_SAMPLES \
@@ -27,15 +26,25 @@
 #define RECORDER_OUTPUT_BYTES \
   (RECORDER_OUTPUT_SAMPLES * sizeof(int16_t))
 #define RECORDER_QUEUE_DEPTH                  8U
-#define RECORDER_DEFAULT_SECONDS             60U
 #define RECORDER_MAX_SECONDS               3600U
 #define RECORDER_PREALLOC_SECONDS            60U
 #define RECORDER_PROGRESS_PERIOD_MS        5000U
 #define RECORDER_USB_QUEUE_DEPTH              4U
 #define RECORDER_PDM_DC_POLE_Q15           32640
 #define RECORDER_PDM_DC_SCALE              32768
-#define RECORDER_WAV_MAX_FRAMES \
-  ((UINT32_MAX - 36U) / RECORDER_BLOCK_ALIGN)
+
+/* Decision 0008: retain one minute of three-channel audio. hpq.2 will set a
+ * non-zero rolling-capture contribution when it chooses the window. Finalizing
+ * rewrites the already allocated header and truncates, so it needs no data bytes. */
+#ifndef SPOOKY_RECORDING_CARD_RESERVE_SECONDS
+#define SPOOKY_RECORDING_CARD_RESERVE_SECONDS 60U
+#endif
+#ifndef SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES
+#define SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES 0U
+#endif
+#ifndef SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES
+#define SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES 0U
+#endif
 
 typedef enum
 {
@@ -75,7 +84,6 @@ static volatile uint8_t pdm_queue_tail;
 static volatile uint8_t pdm_queue_count;
 static volatile uint8_t pdm_queue_high_water;
 
-static uint32_t target_frames;
 static uint32_t frames_written;
 static uint32_t recording_start_ms;
 static uint32_t progress_last_ms;
@@ -86,6 +94,7 @@ static uint32_t pdm_peak;
 static int32_t pdm_dc_previous_input;
 static int32_t pdm_dc_previous_output;
 static uint32_t pending_seconds;
+static RecordingLimits recording_limits;
 static const char *finish_reason;
 static bool finish_aborted;
 static bool session_event_pending;
@@ -200,6 +209,7 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
 {
   FRESULT result;
   FILINFO info;
+  uint64_t free_bytes;
   uint32_t prealloc_seconds = requested_seconds;
   uint32_t prealloc_bytes;
   unsigned int index;
@@ -216,6 +226,21 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
     RecorderSend("ERR RECORD mount failed result=%s(%u) hal=0x%08lX\r\n",
                  StorageService_ResultName(result), (unsigned int)result,
                  (unsigned long)StorageService_HalError());
+    return false;
+  }
+  if (!StorageService_GetFreeBytes(STORAGE_OWNER_RECORDER, &free_bytes))
+  {
+    RecorderSend("ERR RECORD free-space query failed\r\n");
+    RecorderUnmount();
+    return false;
+  }
+  if (!RecordingLimits_Init(&recording_limits, requested_seconds, free_bytes,
+      SPOOKY_RECORDING_CARD_RESERVE_SECONDS,
+      SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES,
+      SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES))
+  {
+    RecorderSend("ERR RECORD card full; recording reserve unavailable\r\n");
+    RecorderUnmount();
     return false;
   }
   for (index = 0U; index < 1000U; ++index)
@@ -253,7 +278,8 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
   }
   recorder_file_open = true;
 
-  if (prealloc_seconds > RECORDER_PREALLOC_SECONDS)
+  if ((prealloc_seconds == 0U) ||
+      (prealloc_seconds > RECORDER_PREALLOC_SECONDS))
   {
     prealloc_seconds = RECORDER_PREALLOC_SECONDS;
   }
@@ -552,13 +578,13 @@ static bool RecorderFinish(bool aborted, const char *reason)
   else
   {
     RecorderSend("OK RECORD PASS file=%s frames=%lu bytes=%lu "
-                 "audio=%lu.%03lus elapsed=%lums\r\n",
+                 "audio=%lu.%03lus elapsed=%lums reason=%s\r\n",
                  recorder_filename, (unsigned long)frames_written,
                  (unsigned long)data_bytes,
                  (unsigned long)(frames_written / RECORDER_SAMPLE_RATE_HZ),
                  (unsigned long)(((frames_written % RECORDER_SAMPLE_RATE_HZ) *
                                   1000U) / RECORDER_SAMPLE_RATE_HZ),
-                 (unsigned long)elapsed_ms);
+                 (unsigned long)elapsed_ms, reason);
   }
   RecorderReportDiagnostics();
   return finalized;
@@ -571,9 +597,9 @@ bool RadioRecorder_CanStart(uint32_t seconds, bool radio_ready)
     RecorderSend("ERR RECORD already active\r\n");
     return false;
   }
-  if ((seconds == 0U) || (seconds > RECORDER_MAX_SECONDS))
+  if (seconds > RECORDER_MAX_SECONDS)
   {
-    RecorderSend("ERR RECORD duration must be 1..3600 seconds\r\n");
+    RecorderSend("ERR RECORD duration must be 1..3600 seconds when supplied\r\n");
     return false;
   }
   if (StorageService_Owner() == STORAGE_OWNER_SD_STRESS)
@@ -629,7 +655,6 @@ bool RadioRecorder_StartCapture(void)
   }
 
   frames_written = 0U;
-  target_frames = pending_seconds * RECORDER_SAMPLE_RATE_HZ;
   max_write_ms = 0U;
   radio_left_peak = 0U;
   radio_right_peak = 0U;
@@ -660,9 +685,18 @@ bool RadioRecorder_StartCapture(void)
   recording_start_ms = HAL_GetTick();
   progress_last_ms = recording_start_ms;
   Diagnostics_Record(DIAG_RECORD_START, pending_seconds, RECORDER_SAMPLE_RATE_HZ);
-  RecorderSend("OK RECORD START file=%s duration=%lus "
-               "format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]\r\n",
-               recorder_filename, (unsigned long)pending_seconds);
+  if (pending_seconds == 0U)
+  {
+    RecorderSend("OK RECORD START file=%s duration=open "
+                 "format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]\r\n",
+                 recorder_filename);
+  }
+  else
+  {
+    RecorderSend("OK RECORD START file=%s duration=%lus "
+                 "format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]\r\n",
+                 recorder_filename, (unsigned long)pending_seconds);
+  }
   return true;
 }
 
@@ -673,18 +707,18 @@ void RadioRecorder_RequestStop(void)
 
 bool RadioRecorder_TargetReached(void)
 {
-  const bool size_limit =
-    (frames_written + RECORDER_BLOCK_FRAMES) > RECORDER_WAV_MAX_FRAMES;
-  const bool reached = stop_requested || (frames_written >= target_frames) || size_limit;
-  if (size_limit)
+  if (stop_requested)
   {
-    finish_reason = "WAV size limit";
+    finish_reason = "stopped";
+    return true;
   }
-  if (!reached)
+  if (RecordingLimits_DurationReached(&recording_limits, frames_written))
   {
-    session_event_pending = false;
+    finish_reason = "duration complete";
+    return true;
   }
-  return reached;
+  session_event_pending = false;
+  return false;
 }
 
 bool RadioRecorder_FinalizeFile(void)
@@ -717,11 +751,16 @@ void RadioRecorder_PublishSessionEvent(SesPublished event)
 
 void RadioRecorder_SendStorageStatus(void)
 {
-  RecorderSend("OK SD STATUS CARD=%s OWNER=%s FILE=%s FRAMES=%lu\r\n",
+  const uint64_t free_bytes = RecordingLimits_FreeBytes(&recording_limits,
+                                                        frames_written);
+  RecorderSend("OK SD STATUS CARD=%s OWNER=%s FILE=%s FRAMES=%lu "
+               "FREE_MIB=%lu RESERVE_MIB=%lu\r\n",
                StorageService_CardPresent() ? "PRESENT" : "ABSENT",
                StorageOwner_Name(StorageService_Owner()),
                (recorder_filename[0] != '\0') ? recorder_filename : "none",
-               (unsigned long)frames_written);
+               (unsigned long)frames_written,
+               (unsigned long)(free_bytes / (1024U * 1024U)),
+               (unsigned long)(recording_limits.reserve_bytes / (1024U * 1024U)));
 }
 
 static bool RecorderParseSeconds(const char *text, uint32_t *seconds)
@@ -751,18 +790,18 @@ void RadioRecorder_Init(DFSDM_Filter_HandleTypeDef *filter)
   recorder_file_open = false;
   pdm_dma_running = false;
   capture_enabled = false;
-  pending_seconds = RECORDER_DEFAULT_SECONDS;
+  pending_seconds = 0U;
+  (void)memset(&recording_limits, 0, sizeof(recording_limits));
   finish_reason = "complete";
   finish_aborted = false;
   session_event_pending = false;
   recorder_filename[0] = '\0';
-  printf("[record] three-channel recorder ready; default=%us\r\n",
-         RECORDER_DEFAULT_SECONDS);
+  printf("[record] three-channel recorder ready; default=open\r\n");
 }
 
 bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
 {
-  uint32_t seconds = RECORDER_DEFAULT_SECONDS;
+  uint32_t seconds = 0U;
 
   if ((command == NULL) ||
       (strncmp(command, "RECORD", 6U) != 0) ||
@@ -815,7 +854,8 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
         return true;
       }
     }
-    if ((seconds == 0U) || (seconds > RECORDER_MAX_SECONDS))
+    if ((command[12] != '\0') &&
+        ((seconds == 0U) || (seconds > RECORDER_MAX_SECONDS)))
     {
       RecorderSend("ERR RECORD duration must be 1..3600 seconds\r\n");
       return true;
@@ -865,20 +905,12 @@ void RadioRecorder_Service(void)
     SessionControl_ReportCaptureFault();
     return;
   }
-  /* The Session machine finalizes before a block would exceed the WAV limit. */
-  if ((frames_written + RECORDER_BLOCK_FRAMES) > RECORDER_WAV_MAX_FRAMES)
-  {
-    finish_aborted = false;
-    finish_reason = "WAV size limit";
-    session_event_pending = true;
-    SessionControl_ReportBlockWritten();
-    return;
-  }
-
   radio = (radio_queue_count != 0U) ? radio_queue[radio_queue_head] : NULL;
   pdm = (pdm_queue_count != 0U) ? pdm_queue[pdm_queue_head] : NULL;
   if ((radio != NULL) && (pdm != NULL))
   {
+    RecordingLimitReason limit;
+
     if (!RecorderWriteBlock(radio, pdm))
     {
       finish_aborted = true;
@@ -888,6 +920,26 @@ void RadioRecorder_Service(void)
       return;
     }
     RecorderReleaseQueues();
+    limit = RecordingLimits_BeforeBlock(&recording_limits, frames_written);
+    if ((limit == RECORDING_LIMIT_CARD_FULL) && !stop_requested &&
+        !RecordingLimits_DurationReached(&recording_limits, frames_written))
+    {
+      /* A full card is a fault even when the valid partial file can be finalized. */
+      finish_aborted = true;
+      finish_reason = "card full";
+      session_event_pending = true;
+      SessionControl_ReportCardFull();
+      return;
+    }
+    if ((limit == RECORDING_LIMIT_FILE_SIZE) && !stop_requested &&
+        !RecordingLimits_DurationReached(&recording_limits, frames_written))
+    {
+      finish_aborted = false;
+      finish_reason = "WAV size limit";
+      session_event_pending = true;
+      SessionControl_ReportFileLimit();
+      return;
+    }
     finish_aborted = false;
     finish_reason = "complete";
     session_event_pending = true;

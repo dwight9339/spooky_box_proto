@@ -27,6 +27,16 @@ void SessionControl_ReportBlockWritten(void)
   (void)AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_SESSION_BLOCK_WRITTEN, 0U, 0U);
 }
 
+void SessionControl_ReportCardFull(void)
+{
+  (void)AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_SESSION_CARD_FULL, 0U, 0U);
+}
+
+void SessionControl_ReportFileLimit(void)
+{
+  (void)AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_SESSION_FILE_LIMIT, 0U, 0U);
+}
+
 void SessionControl_ReportCaptureFault(void)
 {
   (void)AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_SESSION_CAPTURE_FAULT, 0U, 0U);
@@ -53,6 +63,12 @@ void SessionControl_Dispatch(const EvqEvent *event)
       break;
     case APP_EVENT_SESSION_BLOCK_WRITTEN:
       Session_OnBlockWritten();
+      break;
+    case APP_EVENT_SESSION_CARD_FULL:
+      Session_OnCardFull();
+      break;
+    case APP_EVENT_SESSION_FILE_LIMIT:
+      Session_OnFileLimit();
       break;
     case APP_EVENT_SESSION_CAPTURE_FAULT:
       Session_OnCaptureFault();

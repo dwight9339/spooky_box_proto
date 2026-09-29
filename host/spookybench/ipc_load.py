@@ -12,7 +12,8 @@ PROGRESS = re.compile(r"^RECORD progress=([0-9]+)\.([0-9])s "
                       r"queues=([0-9]+)/([0-9]+),([0-9]+)/([0-9]+) "
                       r"max-write=([0-9]+)ms$")
 PASS = re.compile(r"^OK RECORD PASS file=(REC[0-9]{3}\.WAV) frames=([0-9]+) "
-                  r"bytes=([0-9]+) audio=([0-9]+)\.([0-9]{3})s elapsed=([0-9]+)ms$")
+                  r"bytes=([0-9]+) audio=([0-9]+)\.([0-9]{3})s elapsed=([0-9]+)ms"
+                  r"(?: reason=(.+))?$")
 DIAG = re.compile(r"^RECORD DIAG queues radio=([0-9]+)/([0-9]+) "
                   r"pdm=([0-9]+)/([0-9]+) max-write=([0-9]+)ms "
                   r"peaks=([0-9]+),([0-9]+),([0-9]+)$")
@@ -59,7 +60,7 @@ def _record(raw, complete):
     if match:
         value.update(kind="OK RECORD PASS", fields={"file": match[1], "frames": int(match[2]),
             "bytes": int(match[3]), "audio_ms": int(match[4]) * 1000 + int(match[5]),
-            "elapsed_ms": int(match[6])})
+            "elapsed_ms": int(match[6]), "reason": match[7]})
         return value
     match = DIAG.fullmatch(text)
     if match:

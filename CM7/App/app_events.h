@@ -10,9 +10,11 @@
 /* Event types on the M7 queue. Arguments are defined by the module that posts. */
 typedef enum AppEventType {
   APP_EVENT_RECONCILE = EVQ_TYPE_RECONCILE, /* every held control is released */
-  APP_EVENT_SESSION_START,                  /* arg0 seconds; arg1 radio ready */
+  APP_EVENT_SESSION_START, /* arg0 seconds (0=open); arg1 radio ready */
   APP_EVENT_SESSION_STOP,
   APP_EVENT_SESSION_BLOCK_WRITTEN,
+  APP_EVENT_SESSION_CARD_FULL,
+  APP_EVENT_SESSION_FILE_LIMIT,
   APP_EVENT_SESSION_CAPTURE_FAULT
 } AppEventType;
 
