@@ -22,6 +22,10 @@ static volatile bool sleep_report_due;
 static volatile bool sleep_reset_requested;
 static bool sleep_mode_active;
 static bool sleep_first_wake;
+/* Every WFI return; more wakes than reports means an unintended interrupt. */
+static uint32_t sleep_wakes;
+static uint32_t sleep_reports;
+static bool sleep_last_drain_ok;
 
 static bool SleepRtcWaitForFlag(uint32_t flag)
 {
@@ -134,6 +138,8 @@ static void PrototypeSleepRun(void (*stop_radio_audio)(void))
   sleep_report_due = false;
   sleep_reset_requested = false;
   sleep_first_wake = true;
+  sleep_wakes = 0U;
+  sleep_reports = 0U;
   Diagnostics_Record(DIAG_SLEEP, 1U, 0U);
 
   printf("\r\n[sleep] preparing low-power charging monitor\r\n");
@@ -167,12 +173,13 @@ static void PrototypeSleepRun(void (*stop_radio_audio)(void))
   HAL_GPIO_WritePin(REG_3V3_EN_GPIO_Port, REG_3V3_EN_Pin, GPIO_PIN_RESET);
   __HAL_RCC_I2C2_CLK_DISABLE();
   printf("[sleep] 3V3_VSYS disabled; CM7 entering SLEEP mode\r\n");
-  (void)TargetLogger_Quiesce(400U);
+  sleep_last_drain_ok = TargetLogger_Quiesce(400U);
   HAL_SuspendTick();
 
   for (;;)
   {
     HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+    ++sleep_wakes;
 
     if (sleep_reset_requested)
     {
@@ -183,6 +190,17 @@ static void PrototypeSleepRun(void (*stop_radio_audio)(void))
       sleep_report_due = false;
       HAL_ResumeTick();
       Diagnostics_Record(DIAG_SLEEP, 2U, 0U);
+      ++sleep_reports;
+      {
+        TargetLoggerStats log;
+        TargetLogger_GetStats(&log);
+        printf("[sleep] wake report=%lu wakes=%lu last-drain=%s "
+               "log-errors=%lu log-dropped=%lu\r\n",
+               (unsigned long)sleep_reports, (unsigned long)sleep_wakes,
+               sleep_last_drain_ok ? "ok" : "aborted",
+               (unsigned long)log.transport_errors,
+               (unsigned long)log.transport_dropped_bytes);
+      }
       if (sleep_first_wake)
       {
         sleep_first_wake = false;
@@ -200,7 +218,7 @@ static void PrototypeSleepRun(void (*stop_radio_audio)(void))
       (void)FuelGaugeTest_ReportNow();
       __HAL_RCC_I2C2_CLK_DISABLE();
       HAL_GPIO_WritePin(REG_3V3_EN_GPIO_Port, REG_3V3_EN_Pin, GPIO_PIN_RESET);
-      (void)TargetLogger_Quiesce(400U);
+      sleep_last_drain_ok = TargetLogger_Quiesce(400U);
       HAL_SuspendTick();
     }
   }

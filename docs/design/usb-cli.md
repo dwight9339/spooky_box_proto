@@ -372,9 +372,16 @@ system reset. UART output begins with:
 [sleep] USB CDC stopped; AUX UART7 remains active
 [sleep] RTC wake self-test in 10 seconds, then reports every 5 minutes
 [sleep] 3V3_VSYS disabled; CM7 entering SLEEP mode
+[sleep] wake report=1 wakes=1 last-drain=ok log-errors=0 log-dropped=0
 [sleep] RTC wake self-test passed; five-minute cadence armed
 [fuel] update: ...
 ```
+
+Each RTC report begins with a `wake` line. `wakes` counts every return from WFI since
+sleep entry, so it should equal `report` unless another interrupt woke the core;
+`last-drain` says whether the UART7 logger emptied before the previous sleep entry
+(`aborted` means its remaining bytes were discarded and are counted in
+`log-dropped`).
 
 ## Fuel-gauge reporting
 
