@@ -907,10 +907,13 @@ bool UiBoardTest_HandleCommand(const char *command)
     bool raw_switches[UI_SWITCH_COUNT];
     uint8_t encoder_ab[UI_ENCODER_COUNT];
     uint32_t now_ms = HAL_GetTick();
+    uint32_t primask;
 
     UiSampleSwitches(raw_switches);
+    primask = UiEnterCritical();
     UiSampleEncoders(encoder_ab);
     (void)UiInputService_Init(raw_switches, encoder_ab, now_ms);
+    UiExitCritical(primask);
     ui_watch_enabled = true;
     UiQueueMessage(
       "OK UI WATCH START counts-reset=1 debounce=%lu-ms sample=1-kHz\r\n",
