@@ -35,8 +35,17 @@ static const CommandPolicyRule rules[COMMAND_ACTION_COUNT] = {
     ALLOW, REJECT, REJECT, "ERR UI unavailable while recording\r\n"},
   [COMMAND_ACTION_EMF_ZERO] = {
     ALLOW, REJECT, REJECT, "ERR EMF unavailable while recording\r\n"},
-  /* Decision 0003 guard remains until 54w.6 and 54w.12 qualify it. */
-  [COMMAND_ACTION_RADIO_CONTROL] = {
+  /* Decision 0003 guard: in-band tuning stays rejected while recording until
+   * 54w.6 qualifies it on the bench. The opt-in qualification build allows it so
+   * the bench can measure it (constitution, opt-in experiments). */
+#if defined(SPOOKY_RADIO_TUNE_QUALIFICATION)
+  [COMMAND_ACTION_RADIO_TUNE] = {ALLOW, ALLOW, ALLOW, NULL},
+#else
+  [COMMAND_ACTION_RADIO_TUNE] = {
+    ALLOW, REJECT, REJECT, "ERR RADIO tuning disabled while recording\r\n"},
+#endif
+  /* Band changes stay rejected until 54w.12 qualifies them. */
+  [COMMAND_ACTION_RADIO_BAND] = {
     ALLOW, REJECT, REJECT, "ERR RADIO tuning disabled while recording\r\n"}
 };
 
@@ -127,10 +136,18 @@ CommandAction CommandPolicy_ActionFromCli(const char *command)
   {
     return COMMAND_ACTION_EMF_ZERO;
   }
-  if (HasWordPrefix(command, "BAND") || HasWordPrefix(command, "TUNE") ||
-      (strcmp(command, "UP") == 0) || (strcmp(command, "DOWN") == 0))
+  if (strcmp(command, "BAND") == 0)
   {
-    return COMMAND_ACTION_RADIO_CONTROL;
+    return COMMAND_ACTION_STATUS_READ; /* reports the band and its range */
+  }
+  if (HasWordPrefix(command, "BAND"))
+  {
+    return COMMAND_ACTION_RADIO_BAND;
+  }
+  if (HasWordPrefix(command, "TUNE") || (strcmp(command, "UP") == 0) ||
+      (strcmp(command, "DOWN") == 0))
+  {
+    return COMMAND_ACTION_RADIO_TUNE;
   }
   return COMMAND_ACTION_NONE;
 }

@@ -10,6 +10,7 @@
 #include "app_dispatch.h"
 #include "app_events.h"
 #include "diagnostics.h"
+#include "radio_adapter.h"
 #include "radio_recorder.h"
 #include "session_control.h"
 #include "sm/session_port.h"
@@ -75,6 +76,11 @@ void RadioRecorder_PublishSessionEvent(SesPublished event)
         published[published_count++] = event;
     }
 }
+
+/* The Radio machine is routed by the same dispatcher; radio_test covers it. */
+static unsigned radio_events;
+void RadioAdapter_Init(void) {}
+void RadioAdapter_Dispatch(const EvqEvent *event) { (void)event; ++radio_events; }
 
 void Diagnostics_Record(DiagEventType type, uint32_t arg0, uint32_t arg1)
 {

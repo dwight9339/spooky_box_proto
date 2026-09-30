@@ -37,7 +37,8 @@ typedef enum CommandAction {
   COMMAND_ACTION_STATUS_READ,
   COMMAND_ACTION_UI_TEST_PATTERN,
   COMMAND_ACTION_EMF_ZERO,
-  COMMAND_ACTION_RADIO_CONTROL,
+  COMMAND_ACTION_RADIO_TUNE, /* TUNE, UP, DOWN: in-band; keeps the former number */
+  COMMAND_ACTION_RADIO_BAND, /* BAND <band>: receiver function change */
   COMMAND_ACTION_COUNT
 } CommandAction;
 
