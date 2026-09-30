@@ -50,6 +50,15 @@ handled events post internal events, tick and sequence wrap, and counters. The
 logger/diagnostic tests also check the `DIAG QUEUE` line and the `EVENT_QUEUE_LOSS`
 fault.
 
+The audio-timeline tests cover the portable arithmetic of decision 0012: 32-bit
+counter extension across wrap, DMA snapshots taken while a half-buffer completion is
+pending but not yet counted, a monotonic walk across many buffers, stream restart
+epochs and stale positions, backwards counts, start alignment of the radio and
+microphone tracks against a modelled common signal, and event-stamp uncertainty
+clipped at an origin. The firmware does not yet link this module, so these tests say
+nothing about DMA timing, the DFSDM start latency or recording alignment on the
+board.
+
 The IPC tests compile the same portable protocol code as both cores. They
 exercise invalid headers, version/size mismatches, first handshake, missing
 acknowledgements, corrupted echoes, stale repeated packets, recovery, sequence

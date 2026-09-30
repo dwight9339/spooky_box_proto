@@ -36,6 +36,7 @@ spooky_test(logger_diag_test logger_diag_test.c stubs/fake_hal.c
     ../CM7/App/foreground_budget.c
     ../CM7/App/event_queue.c ../CM7/App/app_events.c)
 spooky_test(event_queue_test event_queue_test.c ../CM7/App/event_queue.c)
+spooky_test(audio_timeline_test audio_timeline_test.c ../Common/Src/audio_timeline.c)
 spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.c)
 spooky_test(storage_lease_test storage_lease_test.c ../CM7/App/storage_lease.c)
 spooky_test(recording_limits_test recording_limits_test.c
