@@ -188,7 +188,9 @@ their source bytes are explicitly reported as not supplied.
 
 New CM7 ELFs carry an `SBID1:<build_id>` marker. Preflight requires that marker to
 match the supplied manifest, and boot smoke then requires `DIAG IDENTITY` to report
-the same build ID and supported capabilities. The result keeps supplied manifest
+the same build ID and supported capabilities. The reserved default value
+`unidentified` is rejected for evidence manifests; the documented evidence-build
+path supplies a unique token at CMake configure time. The result keeps supplied manifest
 provenance separate from observed target identity. Legacy schema-v1 images without
 the marker remain valid and are reported as identity unavailable rather than queried.
 The probe is likewise reported as unavailable because its protocol does not expose a

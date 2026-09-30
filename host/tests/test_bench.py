@@ -123,6 +123,21 @@ class BenchTests(unittest.TestCase):
         self.assertEqual(result["result"], "fail", result)
         self.assertEqual(result["reason"], "protocol_error")
 
+    def test_identity_preserves_numeric_build_id(self):
+        result = self.run_direct("diag identity", "identity-numeric")
+        self.assertEqual(result["result"], "pass", result)
+        identity = result["metrics"]["firmware_identity"]["target"]
+        self.assertEqual(identity["build_id"], "20260929")
+        self.assertIsInstance(identity["build_id"], str)
+
+    def test_identity_errors_do_not_wait_for_timeout(self):
+        result = self.run_direct("diag identity", "identity-uninitialized")
+        self.assertEqual((result["result"], result["reason"]),
+                         ("fail", "protocol_error"), result)
+        result = self.run_direct("diag identity", "identity-unsupported")
+        self.assertEqual((result["result"], result["reason"]),
+                         ("unsupported", "identity_unsupported"), result)
+
     def test_incomplete_schema_disconnect_deadlines(self):
         for scenario, reason in (("incomplete", "request_timeout"), ("invalid-schema", "protocol_error"),
                                  ("disconnect", "io_error"), ("no-response", "request_timeout")):

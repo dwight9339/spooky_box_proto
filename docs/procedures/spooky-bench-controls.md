@@ -45,7 +45,9 @@ substitute current Git HEAD for the provenance of older ELF files.
 
 Choose one build token and pass it to CMake before building. Use the same token in
 the manifest; quoting the complete `-D` argument is required for reliable PowerShell
-argument handling:
+argument handling. A default build reports `unidentified` and remains useful for
+local development, but the manifest generator rejects it because it cannot detect a
+stale image. Evidence builds therefore require an explicit unique token:
 
 ```powershell
 cmake --preset IpcSmoke "-DSPOOKY_BUILD_ID=UNIQUE_BUILD_ID"

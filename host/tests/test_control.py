@@ -14,7 +14,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from spookybench.config import load_profile
-from spookybench.firmware import elf_ranges, embedded_build_id, validate_pair
+from spookybench.firmware import elf_ranges, embedded_build_id, stage_pair, validate_pair
 from spookybench.openocd import configuration, interpret, operation_script, LiveCapture
 from spookybench.artifacts import Run
 from spookybench import ipc_load, serial_io
@@ -112,6 +112,31 @@ class ControlTests(unittest.TestCase):
             self.save_manifest()
             with self.assertRaises(BenchError):
                 validate_pair(self.manifest_path)
+
+    def test_manifest_rejects_unidentified_build(self):
+        self.manifest["build_id"] = "unidentified"
+        self.save_manifest()
+        with self.assertRaisesRegex(BenchError, "SPOOKY_BUILD_ID"):
+            validate_pair(self.manifest_path)
+
+    def test_stage_pair_uses_validated_snapshot_bytes(self):
+        snapshot = self.root / "source.patch"
+        snapshot.write_bytes(b"validated bytes")
+        self.manifest.update(dirty=True,
+            source_snapshot_sha256=hashlib.sha256(snapshot.read_bytes()).hexdigest(),
+            source_snapshot_path=snapshot.name)
+        self.save_manifest()
+        manifest, images = validate_pair(self.manifest_path)
+        snapshot.write_bytes(b"changed after validation")
+        run = Run(self.profile, self.path.read_bytes(), {})
+        run.execution = "simulated"
+        with patch("spookybench.firmware._validate_pair",
+                   return_value=(manifest, images, b"validated bytes")):
+            result = stage_pair(self.manifest_path, run)
+        self.assertEqual((run.path / "source-snapshot").read_bytes(),
+                         b"validated bytes")
+        self.assertEqual(result["source_snapshot"]["sha256"],
+                         manifest["source_snapshot_sha256"])
 
     def test_elf_bad_loads_vectors_and_architecture(self):
         for offset, value in ((18, 62), (64, 0x08100000), (68, 99999),

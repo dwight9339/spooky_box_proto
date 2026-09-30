@@ -239,6 +239,14 @@ class Serial:
                 f"BOOT={identity_epoch} RESET=1 CAPS=15\r\n").encode(),
             "DIAG LAST": b"OK DIAG LAST NONE\r\n",
             "DIAG DUMP": b"OK DIAG DUMP V=1 CORE=7 FIRST=1 COUNT=1\r\nDIAG EVENT SEQ=1 MS=0 EVENT=BOOT A=1 B=7\r\nOK DIAG END COUNT=1 GAPS=0\r\n"}
+        if command == "DIAG IDENTITY":
+            if self.scenario == "identity-numeric":
+                answers[command] = (f"OK IDENTITY V=1 CORE=7 BUILD=20260929 "
+                                    f"BOOT={identity_epoch} RESET=1 CAPS=15\r\n").encode()
+            elif self.scenario == "identity-uninitialized":
+                answers[command] = b"ERR IDENTITY not initialized\r\n"
+            elif self.scenario == "identity-unsupported":
+                answers[command] = b"ERR unknown command; type HELP\r\n"
         if command == "IPC STATUS":
             count = self.state.get("ipc_requests", 0) + 1
             self.state["ipc_requests"] = count

@@ -57,15 +57,24 @@ def _identity_request(serial, emit, clock, timeout):
                             key, value = token.split("=", 1)
                             if key in fields:
                                 record["error"] = "duplicate field " + key
-                            fields[key] = (int(value) if value.isascii() and
-                                           value.isdecimal() else value)
+                            fields[key] = (int(value) if key != "BUILD" and
+                                           value.isascii() and value.isdecimal()
+                                           else value)
                         record.update(kind="OK IDENTITY", fields=fields)
+                    elif text.startswith("ERR unknown command"):
+                        record.update(kind="ERR IDENTITY", text=text)
+                    elif text.startswith("ERR "):
+                        record.update(kind="ERR IDENTITY", text=text)
                 record["raw_base64"] = base64.b64encode(raw).decode("ascii")
                 record["host_receive_ns"] = time.time_ns()
                 emit(record)
                 if record.get("error"):
                     raise ValueError(record["error"])
-                if record["kind"].startswith("ERR "):
+                if text.startswith("ERR unknown command"):
+                    raise BenchError("identity_unsupported",
+                                     "Target firmware does not support DIAG IDENTITY",
+                                     "unsupported")
+                if record["kind"].startswith("ERR ") or text.startswith("ERR "):
                     raise RuntimeError(record["text"].strip())
                 if record["kind"] == "OK IDENTITY":
                     return record

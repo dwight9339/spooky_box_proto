@@ -64,7 +64,7 @@ def elf_ranges(raw, core):
     return sorted(ranges, key=lambda r: r["start"])
 
 
-def validate_pair(path):
+def _validate_pair(path):
     try:
         manifest, _ = read_json(path)
         required = {"schema_version", "build_id", "preset", "source_revision", "dirty", "source_snapshot_sha256", "images"}
@@ -81,6 +81,9 @@ def validate_pair(path):
         manifest.update(compiler=compiler, build_flags=flags)
         if not isinstance(manifest["build_id"], str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", manifest["build_id"]):
             raise ValueError("Invalid build_id")
+        if manifest["build_id"] == "unidentified":
+            raise ValueError("The default 'unidentified' build cannot produce bench evidence; "
+                             "rebuild with -DSPOOKY_BUILD_ID=<unique-token>")
         if not isinstance(manifest["source_revision"], str) or not re.fullmatch(r"[0-9a-f]{40}", manifest["source_revision"]):
             raise ValueError("source_revision must be a full Git SHA")
         snapshot = manifest["source_snapshot_sha256"]
@@ -116,19 +119,20 @@ def validate_pair(path):
                 if target_id is not None and target_id != manifest["build_id"]:
                     raise BenchError("firmware_identity", "CM7 embedded build identity does not match manifest")
             images[core] = (raw, elf_ranges(raw, core))
-        return manifest, images
+        return manifest, images, snapshot_raw if snapshot_path is not None else None
     except BenchError:
         raise
     except (OSError, ValueError, TypeError, KeyError, struct.error) as exc:
         raise BenchError("invalid_manifest", str(exc)) from exc
 
 
+def validate_pair(path):
+    manifest, images, _ = _validate_pair(path)
+    return manifest, images
+
+
 def stage_pair(path, run):
-    manifest, images = validate_pair(path)
-    snapshot_raw = None
-    snapshot_path = manifest.get("source_snapshot_path")
-    if snapshot_path is not None:
-        snapshot_raw = (Path(path).resolve().parent / snapshot_path).read_bytes()
+    manifest, images, snapshot_raw = _validate_pair(path)
     run.reserve(sum(len(raw) for raw, _ in images.values()) +
                 (len(snapshot_raw) if snapshot_raw is not None else 0))
     (run.path / "firmware").mkdir()
