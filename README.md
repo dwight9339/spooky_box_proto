@@ -112,7 +112,8 @@ the docs explain design intent and preserve validation evidence. Start with
 near-term actionable tasks and `bd graph --all --open` for the current task graph.
 
 Product tasks carry a milestone label (`m1`-`m5`) from the
-[roadmap](spec/product/roadmap.md); supporting tooling carries `track-tooling`.
+[roadmap](spec/product/roadmap.md); supporting tooling carries `track-tooling`;
+time-boxed demo work carries `track-demo`.
 The roadmap is grouped into baseline qualification (`full_spooky_proto-jjy`),
 service boundaries (`full_spooky_proto-8lw`), the first Field experience
 (`full_spooky_proto-54w`), capture/playback (`full_spooky_proto-hpq`), Instrument

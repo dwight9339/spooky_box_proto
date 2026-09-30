@@ -1,6 +1,6 @@
 # 0011. Halloween 2026 demo build
 
-- **Status:** Proposed
+- **Status:** Accepted 2026-09-30
 - **Date:** 2026-09-30
 - **Supersedes:** none
 - **Beads:** demo epic and tasks to be created on acceptance (label `track-demo`);
