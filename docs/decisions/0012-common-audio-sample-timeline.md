@@ -1,6 +1,6 @@
 # 0012. Common audio sample timeline
 
-- **Status:** Proposed
+- **Status:** Accepted 2026-09-30
 - **Date:** 2026-09-30
 - **Supersedes:** none
 - **Beads:** `full_spooky_proto-hpq.1` (this decision and implementation);
