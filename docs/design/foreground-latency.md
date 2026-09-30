@@ -3,7 +3,9 @@
 The M7 foreground loop gives capture and storage first priority while a recording
 is active. Timing is measured with the millisecond HAL tick at every service
 boundary and from one loop start to the next. A sample is included only when DMA
-capture is active at both boundaries. This excludes file-open/start and the final
+capture is active at both boundaries; for the aggregate loop, both boundaries are
+loop starts, so the pass that opens and preallocates the file and then starts
+capture is not a recording pass. This excludes file-open/start and the final
 header/sync/close after DMA stops; startup, diagnostics and maintenance intentionally
 have different latency characteristics.
 

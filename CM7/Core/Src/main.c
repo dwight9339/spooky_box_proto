@@ -797,6 +797,8 @@ Error_Handler();
     uint32_t loop_started_ms = HAL_GetTick();
     bool loop_capturing = RadioRecorder_IsCapturing();
 
+    /* Capture state is sampled at each loop-start boundary, so the pass that
+     * opens and preallocates the file before capture starts is excluded. */
     if (foreground_started)
     {
       Diagnostics_ObserveForeground(FOREGROUND_SERVICE_LOOP,
@@ -804,6 +806,7 @@ Error_Handler();
         previous_loop_capturing && loop_capturing);
     }
     previous_loop_started_ms = loop_started_ms;
+    previous_loop_capturing = loop_capturing;
     foreground_started = true;
 
     /* USER CODE END WHILE */
@@ -828,7 +831,6 @@ Error_Handler();
     RUN_FOREGROUND(FOREGROUND_SERVICE_MAGNETOMETER,
       MagnetometerTest_Service(!RadioRecorder_IsCapturing()));
     RUN_FOREGROUND(FOREGROUND_SERVICE_DISPATCH, AppDispatch_Service());
-    previous_loop_capturing = RadioRecorder_IsCapturing();
     HAL_Delay(5U);
   }
   /* USER CODE END 3 */
