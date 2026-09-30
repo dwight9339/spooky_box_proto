@@ -48,7 +48,9 @@ planning or implementing a change.
 - **Beads owns work.** Tasks, status and dependencies live only in Beads. Product
   tasks carry a milestone label (`m1`–`m5`) from the roadmap; supporting tooling
   carries `track-tooling` and follows the roadmap's tooling rules (named consumer,
-  one in progress at a time).
+  one in progress at a time). Demo work carries `track-demo` and follows the roadmap's
+  demo-track rules: an accepted decision record authorizes it, demo-only code stays on
+  the demo branch behind the `Demo` preset, and a demo task never closes a product task.
 - **Spec Kit owns only the constitution and feature specs:** `/speckit-constitution`,
   `/speckit-specify`, `/speckit-clarify`. Never create `plan.md` or `tasks.md` and
   never export tasks to another tracker. After a spec is ratified, propose the Beads

@@ -42,8 +42,36 @@ not on flashing, resetting, collecting logs or reading counters.
    the existing boot-smoke, recording-load, WAV-inspection and SD runners. Trace,
    Pi/Linux hosting and similar capabilities wait for a named consumer.
 
+**Demo track (time-boxed).** A public demonstration may show product behavior before
+its milestone exits. A demo track exists only while an accepted decision record
+authorizes it, and it follows these rules:
+
+1. **Authorization.** The decision record names the demo and its date, the script,
+   the product tasks pulled forward, every demo-only behavior and its justification
+   against the constitution, and an end date. The track ends on that date whether or
+   not the demo shipped.
+2. **Separation.** Pulled-forward product work lands on the default branch under the
+   normal gates. Demo-only code lives on a dedicated demo branch, builds only in an
+   opt-in `Demo` preset, and is never merged into the default branch.
+3. **Product work stays product work.** A demo task never closes a product task. When
+   it ships a narrower version, it appends a note to the product task naming what
+   remains.
+4. **Principles hold.** The demo image keeps capture priority, honest meaning, single
+   ownership and bounded real-time behavior. A safety guard is lifted in the demo image
+   only after a bench run on that image shows the guarded workload safe, recorded in
+   `docs/evidence/`. Demo evidence qualifies the demo image only; it is not milestone
+   evidence.
+5. **Open decisions stay open.** Where the demo needs behavior the product has not
+   decided, the decision record marks the choice provisional and demo-only. It does
+   not settle the product decision.
+6. **Bounded reordering.** Demo work may run ahead of the milestone sequence only
+   within its authorized scope. It does not change milestone scope or exit criteria.
+   Tasks outside that scope keep their order.
+
 In Beads, tooling work is in epic `full_spooky_proto-5yv` and carries the label
 `track-tooling`; product tasks carry a milestone label (`m1` … `m5`).
+Each authorized demo has its own epic labelled `track-demo`, and its tasks link to the
+product tasks they depend on or narrow.
 
 ## Milestones
 

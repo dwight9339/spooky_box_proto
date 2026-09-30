@@ -20,6 +20,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0008](0008-recording-safe-command-policy.md) | Recording-safe command policy | Accepted |
 | [0009](0009-first-slice-field-controls.md) | First-slice Field controls and gesture resolution | Accepted |
 | [0010](0010-sd-backed-rolling-capture.md) | Sixty-second SD-backed rolling capture | Accepted |
+| [0011](0011-halloween-2026-demo-build.md) | Halloween 2026 demo build | Accepted |
 
 ## Template
 
