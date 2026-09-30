@@ -40,7 +40,11 @@ def execute(options, run_notice=lambda path: None):
     execution = "simulated" if options["simulate"] else "hardware"
     command = options["command"]
     run = None
-    metrics = {"target_health": "not_checked", "final_target_state": "unknown"}
+    metrics = {"target_health": "not_checked", "final_target_state": "unknown",
+        "firmware_identity": {
+            "target": {"state": "not_checked"},
+            "probe": {"state": "unavailable",
+                      "reason": "probe_protocol_does_not_report_firmware_identity"}}}
     artifacts = {}
 
     def finish(result="pass", reason=None, detail=None):
@@ -126,6 +130,9 @@ def execute(options, run_notice=lambda path: None):
                         try:
                             metrics["response"] = serial_io.diagnostics(serial, command.upper(), lines.emit,
                                                                        clock, clock.now() + remaining)
+                            if command == "diag identity":
+                                metrics["firmware_identity"]["target"] = \
+                                    serial_io.target_identity(metrics["response"])
                         finally:
                             lines.close()
                 finally:

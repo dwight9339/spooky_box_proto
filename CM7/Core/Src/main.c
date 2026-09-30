@@ -28,6 +28,7 @@
 #include "app_dispatch.h"
 #include "audio_path_service.h"
 #include "board_diagnostics.h"
+#include "build_identity.h"
 #include "codec_volume_service.h"
 #include "command_policy.h"
 #include "target_logger.h"
@@ -306,6 +307,11 @@ static void UsbCliCommand(const char *line)
   if (WavTransfer_IsActive())
   {
     (void)WavTransfer_HandleCommand(command);
+    return;
+  }
+
+  if (BuildIdentity_HandleCommand(command))
+  {
     return;
   }
 
@@ -630,6 +636,7 @@ int main(void)
 
   /* Configure the peripherals common clocks */
   PeriphCommonClock_Config();
+  BuildIdentity_Init();
 /* USER CODE BEGIN Boot_Mode_Sequence_2 */
 #if defined(SPOOKY_IPC_SMOKE)
   IpcSmoke_Init(); /* M4 is still held in its boot STOP wait. */
@@ -725,6 +732,8 @@ Error_Handler();
     uint32_t loop_started_ms = HAL_GetTick();
     bool loop_capturing = RadioRecorder_IsCapturing();
 
+    /* Capture state is sampled at each loop-start boundary, so the pass that
+     * opens and preallocates the file before capture starts is excluded. */
     if (foreground_started)
     {
       Diagnostics_ObserveForeground(FOREGROUND_SERVICE_LOOP,
@@ -732,6 +741,7 @@ Error_Handler();
         previous_loop_capturing && loop_capturing);
     }
     previous_loop_started_ms = loop_started_ms;
+    previous_loop_capturing = loop_capturing;
     foreground_started = true;
 
     /* USER CODE END WHILE */
@@ -756,7 +766,6 @@ Error_Handler();
     RUN_FOREGROUND(FOREGROUND_SERVICE_MAGNETOMETER,
       MagnetometerTest_Service(!RadioRecorder_IsCapturing()));
     RUN_FOREGROUND(FOREGROUND_SERVICE_DISPATCH, AppDispatch_Service());
-    previous_loop_capturing = RadioRecorder_IsCapturing();
     HAL_Delay(5U);
   }
   /* USER CODE END 3 */

@@ -35,10 +35,11 @@ static uint32_t last_ipc_link = UINT32_MAX;
 static const char *const help_lines[] = {
   "OK RADIO BAND [FM|AM|SW|LW] | TUNE <kHz> | UP | DOWN | STATUS\r\n",
   "OK VOLUME READ | BATTERY READ | CHARGE STATUS | SLEEP START\r\n",
+  "OK DIAG IDENTITY (build, boot epoch, reset flags, capabilities)\r\n",
   "OK IPC STATUS | LOG STATUS | DIAG STATUS|QUEUE|LATENCY|LAST|DUMP|STOP\r\n",
   "OK MAG READ|STATUS|STREAM START [ms]|STOP\r\n",
   "OK EMF READ|STATUS|ZERO|STREAM START [ms]|STOP\r\n",
-  "OK RECORD STATUS|START [seconds]|STOP\r\n",
+  "OK RECORD STATUS|LATENCY|START [seconds]|STOP\r\n",
   "OK WAV FETCH REC###.WAV|ABORT (binary protocol v1)\r\n",
   "OK SD STATUS|REINIT|STRESS [size-MiB] [passes]|STRESS STOP|CLEAN\r\n",
   "OK UI STATUS|WATCH START|WATCH STOP|LEDS|MATRIX PROBE|MATRIX ANIMATE|"

@@ -143,6 +143,8 @@ def control(options, profile, run, metrics, artifacts, operation=None, keep_capt
             raise BenchError("ipc_disabled", f"{required_preset} firmware is required for this test", "fail")
         artifacts["firmware"] = str(run.path / "firmware")
         artifacts["manifest"] = str(run.path / "build-info.json")
+        if metrics["firmware"]["source_snapshot"]["state"] == "archived":
+            artifacts["source_snapshot"] = str(run.path / "source-snapshot")
     metrics["tools"]["openocd"] = ({"state": "simulated", "version": "simulated"}
         if simulated else verify_tool(config, run))
     script = configuration(config, command == "probe") + operation_script(command)

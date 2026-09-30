@@ -36,6 +36,7 @@ spooky_test(logger_diag_test logger_diag_test.c stubs/fake_hal.c
     ../CM7/App/foreground_budget.c
     ../CM7/App/event_queue.c ../CM7/App/app_events.c)
 spooky_test(event_queue_test event_queue_test.c ../CM7/App/event_queue.c)
+spooky_test(audio_timeline_test audio_timeline_test.c ../Common/Src/audio_timeline.c)
 spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.c)
 # The same policy test for the opt-in in-band tuning qualification build (54w.6).
 spooky_test(command_policy_qualification_test command_policy_test.c ../CM7/App/command_policy.c)
@@ -59,6 +60,8 @@ spooky_generated_sm(context_test ContextSm.c)
 spooky_test(input_context_test input_context_test.c ../CM7/App/event_queue.c
     ../CM7/App/sm/input_resolution_port.c ../CM7/App/sm/context_port.c)
 spooky_generated_sm(input_context_test InputResolutionSm.c ContextSm.c)
+spooky_test(ui_services_test ui_services_test.c
+    ../CM7/App/ui_input_service.c ../CM7/App/ui_render_service.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)

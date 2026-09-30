@@ -43,6 +43,7 @@ EMF ZERO
 EMF STREAM START 100
 EMF STREAM STOP
 RECORD STATUS
+RECORD LATENCY
 RECORD START 60
 RECORD STOP
 SD STATUS
@@ -64,10 +65,31 @@ UI DISPLAY TEST 2
 UI DISPLAY OFF
 UI OFF
 SLEEP START
+DIAG IDENTITY
 DIAG LATENCY
 ```
 
 HELP is streamed in short lines.
+
+## Target build identity
+
+`DIAG IDENTITY` is a bounded read-only query owned by M7. Its single response is:
+
+```text
+OK IDENTITY V=1 CORE=7 BUILD=<token> BOOT=<u32> RESET=<u32> CAPS=<u32>
+```
+
+`BUILD` is the 1..128 character ASCII token supplied as `SPOOKY_BUILD_ID` when the
+paired firmware was configured. `BOOT` is a nonzero counter retained in RTC backup
+registers and advanced once per M7 startup; a changed value during one bench
+operation proves that the target restarted. It is not a globally unique boot ID and
+may restart after loss or reset of the backup domain. `RESET` is the startup snapshot
+of `RCC_RSR`, taken before firmware clears the reset flags.
+
+`CAPS` bit 0 declares identity reporting, bit 1 the retained boot epoch, bit 2 the
+diagnostic service, bit 3 WAV protocol v1, and bit 4 the opt-in IPC smoke service.
+Consumers must reject unsupported schema/core values and must not infer target or
+probe firmware identity from USB descriptors or package versions.
 
 ## Command admission while recording
 
@@ -272,6 +294,10 @@ RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,...
 ```
 
 `RECORD STATUS` reports progress, current queue depths, and the longest SD write.
+`RECORD LATENCY` reports, for the current or last recording, the number of block
+writes, the longest `f_write`, the longest block conversion before it, and a
+histogram of `f_write` durations in 10 ms bins (0-9 ms through 60-69 ms, then
+70 ms and above). Counters reset at `RECORD START`.
 `RECORD STOP` requests a clean stop after the next matched radio/mic block.
 SD maintenance and stress commands, WAV transfer, and radio band/tuning changes are
 rejected while recording is active. `SD STATUS` remains nonintrusive: while the
@@ -346,9 +372,16 @@ system reset. UART output begins with:
 [sleep] USB CDC stopped; AUX UART7 remains active
 [sleep] RTC wake self-test in 10 seconds, then reports every 5 minutes
 [sleep] 3V3_VSYS disabled; CM7 entering SLEEP mode
+[sleep] wake report=1 wakes=1 last-drain=ok log-errors=0 log-dropped=0
 [sleep] RTC wake self-test passed; five-minute cadence armed
 [fuel] update: ...
 ```
+
+Each RTC report begins with a `wake` line. `wakes` counts every return from WFI since
+sleep entry, so it should equal `report` unless another interrupt woke the core;
+`last-drain` says whether the UART7 logger emptied before the previous sleep entry
+(`aborted` means its remaining bytes were discarded and are counted in
+`log-dropped`).
 
 ## Fuel-gauge reporting
 

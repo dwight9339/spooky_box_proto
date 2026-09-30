@@ -62,11 +62,19 @@ set(SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES "0" CACHE STRING
     "Additional allocation bytes needed to finalize a recording")
 set(SPOOKY_RECORDING_WAV_MAX_FRAMES "715827876" CACHE STRING
     "Maximum WAV frames; override only for bounded storage-limit bench tests")
+set(SPOOKY_BUILD_ID "unidentified" CACHE STRING
+    "ASCII build identity reported by DIAG IDENTITY")
+string(LENGTH "${SPOOKY_BUILD_ID}" SPOOKY_BUILD_ID_LENGTH)
+if(SPOOKY_BUILD_ID_LENGTH GREATER 128 OR
+   NOT SPOOKY_BUILD_ID MATCHES "^[A-Za-z0-9_.-]+$")
+    message(FATAL_ERROR "SPOOKY_BUILD_ID must be 1..128 ASCII token characters")
+endif()
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     SPOOKY_RECORDING_CARD_RESERVE_SECONDS=${SPOOKY_RECORDING_CARD_RESERVE_SECONDS}
     SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES=${SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES}
     SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES=${SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES}
     SPOOKY_RECORDING_WAV_MAX_FRAMES=${SPOOKY_RECORDING_WAV_MAX_FRAMES}
+    SPOOKY_BUILD_ID=\"${SPOOKY_BUILD_ID}\"
 )
 
 # Enable CMake support for ASM and C languages
@@ -109,6 +117,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/radio_adapter.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/prototype_power.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/ipc_smoke_cli.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/build_identity.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/ui_input_service.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/ui_render_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/fuel_gauge_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/magnetometer_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/radio_recorder.c

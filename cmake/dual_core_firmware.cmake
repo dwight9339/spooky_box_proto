@@ -16,10 +16,22 @@ set(SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES "0" CACHE STRING
     "Additional allocation bytes needed to finalize a recording")
 set(SPOOKY_RECORDING_WAV_MAX_FRAMES "715827876" CACHE STRING
     "Maximum WAV frames; override only for bounded storage-limit bench tests")
+set(SPOOKY_BUILD_ID "unidentified" CACHE STRING
+    "ASCII build identity reported by the M7 target")
+string(LENGTH "${SPOOKY_BUILD_ID}" SPOOKY_BUILD_ID_LENGTH)
+if(SPOOKY_BUILD_ID_LENGTH GREATER 128 OR
+   NOT SPOOKY_BUILD_ID MATCHES "^[A-Za-z0-9_.-]+$")
+    message(FATAL_ERROR "SPOOKY_BUILD_ID must be 1..128 ASCII token characters")
+endif()
 
 function(spooky_add_core core_name target_name)
     set(core_source_dir "${PROJECT_SOURCE_DIR}/${core_name}")
     set(core_binary_dir "${SPOOKY_FIRMWARE_BINARY_ROOT}/${core_name}")
+    set(core_identity_arg)
+    if(core_name STREQUAL "CM7")
+        list(APPEND core_identity_arg
+            "-DSPOOKY_BUILD_ID:STRING=${SPOOKY_BUILD_ID}")
+    endif()
 
     ExternalProject_Add(${target_name}
         SOURCE_DIR                  "${core_source_dir}"
@@ -38,6 +50,7 @@ function(spooky_add_core core_name target_name)
             "-DSPOOKY_ROLLING_CAPTURE_RESERVE_BYTES:STRING=${SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES}"
             "-DSPOOKY_RECORDING_FINALIZE_RESERVE_BYTES:STRING=${SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES}"
             "-DSPOOKY_RECORDING_WAV_MAX_FRAMES:STRING=${SPOOKY_RECORDING_WAV_MAX_FRAMES}"
+            ${core_identity_arg}
         BUILD_ALWAYS                true
     )
 endfunction()
