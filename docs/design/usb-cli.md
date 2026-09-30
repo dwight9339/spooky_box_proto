@@ -43,6 +43,7 @@ EMF ZERO
 EMF STREAM START 100
 EMF STREAM STOP
 RECORD STATUS
+RECORD LATENCY
 RECORD START 60
 RECORD STOP
 SD STATUS
@@ -293,6 +294,10 @@ RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,...
 ```
 
 `RECORD STATUS` reports progress, current queue depths, and the longest SD write.
+`RECORD LATENCY` reports, for the current or last recording, the number of block
+writes, the longest `f_write`, the longest block conversion before it, and a
+histogram of `f_write` durations in 10 ms bins (0-9 ms through 60-69 ms, then
+70 ms and above). Counters reset at `RECORD START`.
 `RECORD STOP` requests a clean stop after the next matched radio/mic block.
 SD maintenance and stress commands, WAV transfer, and radio band/tuning changes are
 rejected while recording is active. `SD STATUS` remains nonintrusive: while the

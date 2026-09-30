@@ -30,6 +30,8 @@
 #define RECORDER_PREALLOC_SECONDS            60U
 #define RECORDER_PROGRESS_PERIOD_MS        5000U
 #define RECORDER_USB_QUEUE_DEPTH              4U
+#define RECORDER_WRITE_HIST_BIN_MS           10U
+#define RECORDER_WRITE_HIST_BINS              8U
 #define RECORDER_PDM_DC_POLE_Q15           32640
 #define RECORDER_PDM_DC_SCALE              32768
 
@@ -88,6 +90,11 @@ static uint32_t frames_written;
 static uint32_t recording_start_ms;
 static uint32_t progress_last_ms;
 static uint32_t max_write_ms;
+static uint32_t max_convert_ms;
+static bool output_pending; /* output_block holds a converted, unwritten block. */
+static uint32_t write_count;
+/* f_write durations in 10 ms bins; the last bin holds 70 ms and above. */
+static uint32_t write_hist[RECORDER_WRITE_HIST_BINS];
 static uint32_t radio_left_peak;
 static uint32_t radio_right_peak;
 static uint32_t pdm_peak;
@@ -470,12 +477,12 @@ static void RecorderReleaseQueues(void)
   }
 }
 
-static bool RecorderWriteBlock(const int16_t *radio, const int32_t *pdm)
+/* Conversion and the FatFs write run in separate foreground passes, so a slow
+ * card write does not also carry the conversion time against the budget. */
+static void RecorderConvertBlock(const int16_t *radio, const int32_t *pdm)
 {
-  UINT written = 0U;
-  FRESULT result;
-  uint32_t write_start;
-  uint32_t write_ms;
+  uint32_t convert_start = HAL_GetTick();
+  uint32_t convert_ms;
 
   for (uint32_t frame = 0U; frame < RECORDER_BLOCK_FRAMES; ++frame)
   {
@@ -505,7 +512,21 @@ static bool RecorderWriteBlock(const int16_t *radio, const int32_t *pdm)
     output_block[(3U * frame) + 2U] = (int16_t)mic;
   }
 
-  write_start = HAL_GetTick();
+  convert_ms = HAL_GetTick() - convert_start;
+  if (convert_ms > max_convert_ms)
+  {
+    max_convert_ms = convert_ms;
+  }
+}
+
+static bool RecorderWriteBlock(void)
+{
+  UINT written = 0U;
+  FRESULT result;
+  uint32_t write_start = HAL_GetTick();
+  uint32_t write_ms;
+  uint32_t bin;
+
   result = f_write(&recorder_file, output_block,
                    RECORDER_OUTPUT_BYTES, &written);
   write_ms = HAL_GetTick() - write_start;
@@ -515,6 +536,13 @@ static bool RecorderWriteBlock(const int16_t *radio, const int32_t *pdm)
   {
     max_write_ms = write_ms;
   }
+  bin = write_ms / RECORDER_WRITE_HIST_BIN_MS;
+  if (bin >= RECORDER_WRITE_HIST_BINS)
+  {
+    bin = RECORDER_WRITE_HIST_BINS - 1U;
+  }
+  ++write_hist[bin];
+  ++write_count;
   if ((result != FR_OK) || (written != RECORDER_OUTPUT_BYTES))
   {
     Diagnostics_Record(DIAG_SD_ERROR, (uint32_t)result, written);
@@ -656,6 +684,10 @@ bool RadioRecorder_StartCapture(void)
 
   frames_written = 0U;
   max_write_ms = 0U;
+  max_convert_ms = 0U;
+  output_pending = false;
+  write_count = 0U;
+  (void)memset(write_hist, 0, sizeof(write_hist));
   radio_left_peak = 0U;
   radio_right_peak = 0U;
   pdm_peak = 0U;
@@ -835,6 +867,19 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
     }
     return true;
   }
+  if (strcmp(command, "RECORD LATENCY") == 0)
+  {
+    RecorderSend("OK RECORD LATENCY writes=%lu write-max=%lums "
+                 "convert-max=%lums "
+                 "write-hist-10ms=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu\r\n",
+                 (unsigned long)write_count, (unsigned long)max_write_ms,
+                 (unsigned long)max_convert_ms,
+                 (unsigned long)write_hist[0], (unsigned long)write_hist[1],
+                 (unsigned long)write_hist[2], (unsigned long)write_hist[3],
+                 (unsigned long)write_hist[4], (unsigned long)write_hist[5],
+                 (unsigned long)write_hist[6], (unsigned long)write_hist[7]);
+    return true;
+  }
   if (strcmp(command, "RECORD STOP") == 0)
   {
     if (!SessionControl_RequestStop())
@@ -867,7 +912,7 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
     return true;
   }
 
-  RecorderSend("ERR usage: RECORD STATUS|START [seconds]|STOP\r\n");
+  RecorderSend("ERR usage: RECORD STATUS|LATENCY|START [seconds]|STOP\r\n");
   return true;
 }
 
@@ -907,11 +952,18 @@ void RadioRecorder_Service(void)
   }
   radio = (radio_queue_count != 0U) ? radio_queue[radio_queue_head] : NULL;
   pdm = (pdm_queue_count != 0U) ? pdm_queue[pdm_queue_head] : NULL;
-  if ((radio != NULL) && (pdm != NULL))
+  if (!output_pending && (radio != NULL) && (pdm != NULL))
+  {
+    RecorderConvertBlock(radio, pdm);
+    RecorderReleaseQueues();
+    output_pending = true;
+  }
+  else if (output_pending)
   {
     RecordingLimitReason limit;
 
-    if (!RecorderWriteBlock(radio, pdm))
+    output_pending = false;
+    if (!RecorderWriteBlock())
     {
       finish_aborted = true;
       finish_reason = "three-channel file write failed";
@@ -919,8 +971,7 @@ void RadioRecorder_Service(void)
       SessionControl_ReportCaptureFault();
       return;
     }
-    RecorderReleaseQueues();
-    limit = RecordingLimits_BeforeBlock(&recording_limits, frames_written);
+    limit =RecordingLimits_BeforeBlock(&recording_limits, frames_written);
     if ((limit == RECORDING_LIMIT_CARD_FULL) && !stop_requested &&
         !RecordingLimits_DurationReached(&recording_limits, frames_written))
     {

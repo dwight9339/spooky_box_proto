@@ -14,16 +14,20 @@ have different latency characteristics.
 The recorder produces one 4096-frame block every 85.33 ms at 48 kHz. The firmware
 rounds that arrival interval up to 86 ms for reporting and sets a 75 ms aggregate
 loop budget, leaving at least 10 ms before the next block at the measurement
-resolution. The recorder service, including one interleaved FatFs write, has a
-70 ms budget. That sub-budget covers the observed 66 ms conversion/write maximum
-(52 ms inside FatFs) while leaving the loop's mandatory 5 ms yield inside the
-75 ms aggregate bound. Every other foreground service has a 10 ms budget and must
-be incremental or recording-aware.
+resolution. The recorder service has a 70 ms budget and does one of two things in
+a pass: it converts one queued block into the three-channel output buffer, or it
+writes that buffer with one FatFs call. Separating them keeps the conversion time
+(up to 15 ms measured in the unoptimized Debug-based images) out of the pass that
+carries a slow card write, so the budget covers a write of up to about 69 ms while
+leaving the loop's mandatory 5 ms yield inside the 75 ms aggregate bound. Each block takes
+two passes; at typical pass times that drains the queue well within one 85 ms
+block interval. Every other foreground service has a 10 ms budget and must be
+incremental or recording-aware.
 
 | Service class | Budget |
 | --- | ---: |
 | Complete foreground pass, including the 5 ms yield | 75 ms |
-| Recorder conversion plus one FatFs write | 70 ms |
+| Recorder: one block conversion or one FatFs write | 70 ms |
 | Each IPC, audio, fuel, USB, WAV, logger, diagnostics, UI, SD-test, power, magnetometer and event-dispatch service | 10 ms |
 
 The two eight-entry audio queues reject the newest block on overflow. With the
