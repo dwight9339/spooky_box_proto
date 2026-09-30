@@ -2,7 +2,7 @@
 #define SPOOKY_RADIO_ADAPTER_H
 
 /*
- * Radio-machine adapter (RadioSm, full_spooky_proto-54w.6). Radio commands and radio
+ * Radio-machine adapter (RadioSm, full_spooky_proto-54w.28). Radio commands and radio
  * service events enter through the M7 event queue (decision 0007); the machine
  * alone drives the radio control service. The adapter polls the tune in flight
  * once per foreground pass and answers CLI commands when the machine publishes

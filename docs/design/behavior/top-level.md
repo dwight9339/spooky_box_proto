@@ -52,7 +52,7 @@ stateDiagram-v2
 
 `H*` marks deep history: closing a utility restores the operating page that opened it.
 Every region is summarized here; their machines are in [ContextSm.puml](ContextSm.puml),
-[SessionSm.puml](SessionSm.puml), [radio.md](radio.md) and
+[SessionSm.puml](SessionSm.puml), [RadioSm.puml](RadioSm.puml) and
 [InputResolutionSm.puml](InputResolutionSm.puml). InputResolution resolves inputs into
 gestures, and Context decides what a gesture means where the controls are
 ([decision 0009](../../decisions/0009-first-slice-field-controls.md)).
@@ -66,7 +66,7 @@ commands and inputs are interpreted.
 |---|---|---|---|
 | Context | Which operating mode, engine page, menu or utility has the controls | It decides what a resolved gesture means | [ContextSm.puml](ContextSm.puml), first Field slice: Classic, Manual, the engine and band menus, and the utility root |
 | Session | Whether a recording lifecycle is active | Active sessions reject SD maintenance and WAV transfer, and change how stop and faults are handled | [SessionSm.puml](SessionSm.puml) |
-| Radio | Whether a band or tuning transition is in progress | Commands arriving mid-transition need defined handling | [radio.md](radio.md) |
+| Radio | Whether a band or tuning transition is in progress | Commands arriving mid-transition need defined handling | [RadioSm.puml](RadioSm.puml) |
 | InputResolution | How held controls, Shift and chords are being interpreted | The same press means different things while Shift is held or a chord is pending | [InputResolutionSm.puml](InputResolutionSm.puml): clicks, holds, the Shift layer, the Button 0 and 1 chord group and the Button 0 session hold |
 
 Shift is part of InputResolution, not a peer of Session or Context: it changes how

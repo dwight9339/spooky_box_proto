@@ -31,12 +31,17 @@ bool RadioAdapter_RequestTune(uint32_t frequency_khz)
 
 bool RadioAdapter_RequestStep(bool up)
 {
-  /* CLI UP and DOWN stop at the band edge (radio model, TuneStep edge `stop`). */
+  /* CLI UP and DOWN stop at the band edge (RadioSm STEP with wrap 0). */
   return PostCommand(RAD_CMD_STEP, up, false, 0U);
 }
 
 bool RadioAdapter_RequestBand(uint32_t band)
 {
+  /* Callers parse the band first; an invalid one would fault the radio. */
+  if (band >= (uint32_t)RADIO_BAND_COUNT)
+  {
+    return false;
+  }
   return PostCommand(RAD_CMD_BAND, false, false, band);
 }
 
@@ -87,14 +92,13 @@ void RadioAdapter_Dispatch(const EvqEvent *event)
   }
 }
 
-/* Set once the completion of the tune in flight has been posted, so the machine
- * gets exactly one completion per tune. */
+/* The completion of the tune in flight, once the service reports it, and whether
+ * it has been posted. A completion the queue refuses is posted again on the next
+ * pass rather than polled again, so the machine gets exactly one completion per
+ * tune and a tune that finished is never reported as failed. */
+static bool completion_known;
+static uint16_t completion_type;
 static bool completion_posted;
-
-static void PostCompletion(uint16_t type)
-{
-  completion_posted = AppEvents_Post(EVQ_CLASS_INTERNAL, type, 0U, 0U);
-}
 
 void RadioAdapter_Service(void)
 {
@@ -102,25 +106,30 @@ void RadioAdapter_Service(void)
   {
     return;
   }
-  switch (RadioControl_PollTune(NULL))
+  if (!completion_known)
   {
-    case RADIO_TUNE_POLL_DONE:
-      PostCompletion(APP_EVENT_RADIO_TUNE_DONE);
-      break;
-    case RADIO_TUNE_POLL_FAILED:
-      PostCompletion(APP_EVENT_RADIO_TUNE_FAILED);
-      break;
-    case RADIO_TUNE_POLL_IDLE:
-      /* The machine waits for a tune the service no longer has, for example
-       * because its completion could not be posted: fail it rather than wait
-       * forever. */
-      if (!completion_posted)
-      {
-        PostCompletion(APP_EVENT_RADIO_TUNE_FAILED);
-      }
-      break;
-    default:
-      break;
+    switch (RadioControl_PollTune(NULL))
+    {
+      case RADIO_TUNE_POLL_DONE:
+        completion_type = APP_EVENT_RADIO_TUNE_DONE;
+        break;
+      case RADIO_TUNE_POLL_FAILED:
+        completion_type = APP_EVENT_RADIO_TUNE_FAILED;
+        break;
+      case RADIO_TUNE_POLL_IDLE:
+        /* The machine waits for a tune the service no longer has: fail it
+         * rather than wait forever. */
+        completion_type = APP_EVENT_RADIO_TUNE_FAILED;
+        break;
+      case RADIO_TUNE_POLL_PENDING:
+      default:
+        return;
+    }
+    completion_known = true;
+  }
+  if (!completion_posted)
+  {
+    completion_posted = AppEvents_Post(EVQ_CLASS_INTERNAL, completion_type, 0U, 0U);
   }
 }
 
@@ -170,6 +179,7 @@ uint32_t rad_integration_step_target(bool up, bool wrap)
 
 bool rad_integration_begin_tune(uint32_t frequency_khz)
 {
+  completion_known = false;
   completion_posted = false;
   return RadioControl_BeginTune(frequency_khz);
 }

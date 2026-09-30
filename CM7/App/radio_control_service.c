@@ -1,6 +1,6 @@
 /* Extracted from the proven M7 radio bring-up. The start and band-switch paths
  * keep the proven Si4735 command sequence, property values, delays and timeouts.
- * In-band tuning is also available without blocking (full_spooky_proto-54w.6):
+ * In-band tuning is also available without blocking (full_spooky_proto-54w.28):
  * RadioControl_BeginTune issues TUNE_FREQ and returns, and RadioControl_PollTune
  * performs at most one status transaction per call until the tune completes. Its
  * device-ready waits are bounded by RADIO_FAST_CTS_TIMEOUT_MS, so a stuck

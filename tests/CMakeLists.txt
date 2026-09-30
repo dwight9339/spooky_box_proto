@@ -55,6 +55,9 @@ spooky_test(input_resolution_test input_resolution_test.c ../CM7/App/sm/input_re
 spooky_generated_sm(input_resolution_test InputResolutionSm.c)
 spooky_test(radio_test radio_test.c ../CM7/App/sm/radio_port.c)
 spooky_generated_sm(radio_test RadioSm.c)
+# The radio control service's non-blocking tune against a fake Si4735 (54w.28).
+spooky_test(radio_control_test radio_control_test.c ../CM7/App/radio_control_service.c)
+target_include_directories(radio_control_test BEFORE PRIVATE stubs/radio)
 spooky_test(context_test context_test.c ../CM7/App/sm/context_port.c)
 spooky_generated_sm(context_test ContextSm.c)
 spooky_test(input_context_test input_context_test.c ../CM7/App/event_queue.c

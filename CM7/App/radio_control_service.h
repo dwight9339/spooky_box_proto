@@ -63,7 +63,7 @@ typedef enum
  * not touch audio DMA or the codec; callers sequence muting around transitions. */
 bool RadioControl_ProbeControlPath(I2C_HandleTypeDef *i2c);
 bool RadioControl_Start(I2C_HandleTypeDef *i2c);
-/* Non-blocking in-band tuning (full_spooky_proto-54w.6). BeginTune issues the tune
+/* Non-blocking in-band tuning (full_spooky_proto-54w.28). BeginTune issues the tune
  * in the current band and returns; PollTune performs at most one bounded status
  * transaction per call and reports completion. One tune is in flight at a time; a
  * band switch or reset abandons it. The published tune status changes only when

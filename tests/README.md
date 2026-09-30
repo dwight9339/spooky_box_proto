@@ -34,6 +34,19 @@ external commands and internal recorder outcomes through the real event queue an
 dispatcher, verify that machine actions invoke the recorder in order, and check that
 an unreported recorder change still produces a disagreement diagnostic.
 
+The Radio tests drive the generated Radio machine through its port against a fake
+radio service: start outcomes, range rejection, a tune that waits for completion,
+issue and completion failures, latest-wins replacement of a waiting command with a
+superseded answer, a band switch waiting behind a tune, band-switch and audio
+faults abandoning work in progress, band-edge stop and wrap, stale completions, and
+a seeded random check that every command is answered exactly once. The radio
+control tests run the real radio control service against a fake Si4735 on a fake
+I2C bus and tick. They check that a tune returns before it completes, that each
+poll is at most one status transaction and respects the poll interval, that a tune
+fails at the 2 s device timeout, that a stuck receiver fails a poll or an issue
+within the provisional 5 ms device-ready bound, and that the published result
+changes only when a tune completes. The fake is not a model of Si4735 timing.
+
 The command-policy tests cover every decision-0008 action in Idle, Recording and
 Finalizing, verify that no action is deferred, require one stable acknowledgement for
 every rejection, and check the current CLI-to-action mappings. These are portable

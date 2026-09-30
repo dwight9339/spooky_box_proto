@@ -51,7 +51,7 @@ typedef enum CtxMenu {
     CTX_MENU_BAND
 } CtxMenu;
 
-/* The receiver's bands, in menu order (radio.md SwitchBand). */
+/* The receiver's bands, in menu order (RadioSm BAND). */
 typedef enum CtxBand {
     CTX_BAND_FM = 0,
     CTX_BAND_AM,
