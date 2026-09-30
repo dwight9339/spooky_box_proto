@@ -19,6 +19,11 @@ the single unattended baseline regression. See
 [recording regression](../docs/procedures/spooky-bench-recording-regression.md). Run
 `spookybench --json ...` for one machine-readable result.
 
+`diag identity` reads the M7-reported build token, retained boot epoch, reset flags
+and compatible capability bits. New manifests compare that observation with the
+identity embedded in the staged CM7 ELF; legacy schema-v1 images remain supported
+with target identity explicitly unavailable.
+
 See [installation and usage](../docs/procedures/spooky-bench-setup.md) and the
 [implementation plan](../docs/history/2026-09-23-spooky-bench-plan.md).
 

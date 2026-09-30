@@ -225,11 +225,28 @@ class Serial:
             self.state["wav_active"] = False
             self.pending = b"OK WAV ABORT\r\n"
             return len(data)
+        if command == "DIAG IDENTITY":
+            identity_count = self.state.get("identity_requests", 0) + 1
+            self.state["identity_requests"] = identity_count
+            identity_epoch = 2 if self.scenario == "identity-reset" and identity_count > 1 else 1
+        else:
+            identity_epoch = self.state.get("boot_epoch", 1)
         answers = {
             "LOG STATUS": b"OK LOG QUEUED=0 PEAK=128 DROP_WRITES=0 DROP_BYTES=0 TX_LOST=0 TX_BYTES=2048 TX_ERRORS=0 CONTEXT=0 FLIGHT=0\r\n",
             "DIAG STATUS": b"OK DIAG V=1 CORE=7 COUNT=1 OVERWRITTEN=0 SD_MAX_MS=25 LOOP_MAX_MS=0 RADIO_OVR=0 PDM_OVR=0 SD_ERR=0 AUDIO_ERR=0 HAS_FAULT=0\r\n",
+            "DIAG IDENTITY": (f"OK IDENTITY V={'2' if self.scenario == 'identity-v2' else '1'} "
+                f"CORE=7 BUILD={'wrong-build' if self.scenario == 'identity-mismatch' else 'test-build'} "
+                f"BOOT={identity_epoch} RESET=1 CAPS=15\r\n").encode(),
             "DIAG LAST": b"OK DIAG LAST NONE\r\n",
             "DIAG DUMP": b"OK DIAG DUMP V=1 CORE=7 FIRST=1 COUNT=1\r\nDIAG EVENT SEQ=1 MS=0 EVENT=BOOT A=1 B=7\r\nOK DIAG END COUNT=1 GAPS=0\r\n"}
+        if command == "DIAG IDENTITY":
+            if self.scenario == "identity-numeric":
+                answers[command] = (f"OK IDENTITY V=1 CORE=7 BUILD=20260929 "
+                                    f"BOOT={identity_epoch} RESET=1 CAPS=15\r\n").encode()
+            elif self.scenario == "identity-uninitialized":
+                answers[command] = b"ERR IDENTITY not initialized\r\n"
+            elif self.scenario == "identity-unsupported":
+                answers[command] = b"ERR unknown command; type HELP\r\n"
         if command == "IPC STATUS":
             count = self.state.get("ipc_requests", 0) + 1
             self.state["ipc_requests"] = count

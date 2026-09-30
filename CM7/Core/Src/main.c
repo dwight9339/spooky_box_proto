@@ -28,6 +28,7 @@
 #include "app_dispatch.h"
 #include "audio_path_service.h"
 #include "board_diagnostics.h"
+#include "build_identity.h"
 #include "codec_volume_service.h"
 #include "command_policy.h"
 #include "target_logger.h"
@@ -370,6 +371,11 @@ static void UsbCliCommand(const char *line)
     return;
   }
 
+  if (BuildIdentity_HandleCommand(command))
+  {
+    return;
+  }
+
   if (Diagnostics_HandleCommand(command))
   {
     return;
@@ -696,6 +702,7 @@ int main(void)
 
   /* Configure the peripherals common clocks */
   PeriphCommonClock_Config();
+  BuildIdentity_Init();
 /* USER CODE BEGIN Boot_Mode_Sequence_2 */
 #if defined(SPOOKY_IPC_SMOKE)
   IpcSmoke_Init(); /* M4 is still held in its boot STOP wait. */

@@ -7,6 +7,20 @@ from .config import read_json
 from .result import BenchError
 
 MAX_ELF = 16 * 1024**2
+MAX_SOURCE_SNAPSHOT = 64 * 1024**2
+BUILD_ID_MARKER = b"SBID1:"
+
+
+def embedded_build_id(raw):
+    matches = re.findall(rb"SBID1:([A-Za-z0-9_.-]{1,128})\x00", raw)
+    if not matches:
+        if BUILD_ID_MARKER in raw:
+            raise ValueError("Malformed embedded build identity")
+        return None
+    unique = set(matches)
+    if len(unique) != 1:
+        raise ValueError("Ambiguous embedded build identity")
+    return unique.pop().decode("ascii")
 
 
 def elf_ranges(raw, core):
@@ -50,11 +64,12 @@ def elf_ranges(raw, core):
     return sorted(ranges, key=lambda r: r["start"])
 
 
-def validate_pair(path):
+def _validate_pair(path):
     try:
         manifest, _ = read_json(path)
         required = {"schema_version", "build_id", "preset", "source_revision", "dirty", "source_snapshot_sha256", "images"}
-        if not isinstance(manifest, dict) or not required <= set(manifest) or set(manifest) - required - {"compiler", "build_flags"} or type(manifest["schema_version"]) is not int or manifest["schema_version"] != 1:
+        optional = {"compiler", "build_flags", "source_snapshot_path"}
+        if not isinstance(manifest, dict) or not required <= set(manifest) or set(manifest) - required - optional or type(manifest["schema_version"]) is not int or manifest["schema_version"] != 1:
             raise ValueError("Invalid manifest schema")
         if manifest["preset"] not in ("Debug", "Release", "IpcSmoke", "IpcMismatch"):
             raise ValueError("Unknown build preset")
@@ -66,11 +81,25 @@ def validate_pair(path):
         manifest.update(compiler=compiler, build_flags=flags)
         if not isinstance(manifest["build_id"], str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", manifest["build_id"]):
             raise ValueError("Invalid build_id")
+        if manifest["build_id"] == "unidentified":
+            raise ValueError("The default 'unidentified' build cannot produce bench evidence; "
+                             "rebuild with -DSPOOKY_BUILD_ID=<unique-token>")
         if not isinstance(manifest["source_revision"], str) or not re.fullmatch(r"[0-9a-f]{40}", manifest["source_revision"]):
             raise ValueError("source_revision must be a full Git SHA")
         snapshot = manifest["source_snapshot_sha256"]
         if type(manifest["dirty"]) is not bool or (snapshot is not None and (not isinstance(snapshot, str) or not re.fullmatch(r"[0-9a-f]{64}", snapshot))) or (manifest["dirty"] and snapshot is None):
             raise ValueError("Dirty builds require source_snapshot_sha256")
+        snapshot_path = manifest.get("source_snapshot_path")
+        if snapshot_path is not None:
+            if not manifest["dirty"] or not isinstance(snapshot_path, str) or not snapshot_path or len(snapshot_path) > 2048:
+                raise ValueError("Invalid source_snapshot_path")
+            source = Path(path).resolve().parent / snapshot_path
+            with source.open("rb") as stream:
+                snapshot_raw = stream.read(MAX_SOURCE_SNAPSHOT + 1)
+            if len(snapshot_raw) > MAX_SOURCE_SNAPSHOT:
+                raise ValueError("Source snapshot exceeds 64 MiB cap")
+            if hashlib.sha256(snapshot_raw).hexdigest() != snapshot:
+                raise BenchError("source_snapshot_hash", "Source snapshot hash does not match manifest")
         if not isinstance(manifest["images"], dict) or set(manifest["images"]) != {"CM7", "CM4"}:
             raise ValueError("Manifest must declare exactly CM7 and CM4")
         images = {}
@@ -85,20 +114,39 @@ def validate_pair(path):
                 raise ValueError("ELF exceeds 16 MiB cap")
             if hashlib.sha256(raw).hexdigest() != item["sha256"]:
                 raise BenchError("firmware_hash", f"{core} hash does not match manifest")
+            if core == "CM7":
+                target_id = embedded_build_id(raw)
+                if target_id is not None and target_id != manifest["build_id"]:
+                    raise BenchError("firmware_identity", "CM7 embedded build identity does not match manifest")
             images[core] = (raw, elf_ranges(raw, core))
-        return manifest, images
+        return manifest, images, snapshot_raw if snapshot_path is not None else None
     except BenchError:
         raise
     except (OSError, ValueError, TypeError, KeyError, struct.error) as exc:
         raise BenchError("invalid_manifest", str(exc)) from exc
 
 
+def validate_pair(path):
+    manifest, images, _ = _validate_pair(path)
+    return manifest, images
+
+
 def stage_pair(path, run):
-    manifest, images = validate_pair(path)
-    run.reserve(sum(len(raw) for raw, _ in images.values()))
+    manifest, images, snapshot_raw = _validate_pair(path)
+    run.reserve(sum(len(raw) for raw, _ in images.values()) +
+                (len(snapshot_raw) if snapshot_raw is not None else 0))
     (run.path / "firmware").mkdir()
     for core, (raw, _) in images.items():
         (run.path / "firmware" / (core + ".elf")).write_bytes(raw)
+    if snapshot_raw is not None:
+        (run.path / "source-snapshot").write_bytes(snapshot_raw)
     run.write_json("build-info.json", manifest)
-    return {"build": manifest, "provenance": "manifest_declared_not_target_reported",
+    target_id = embedded_build_id(images["CM7"][0])
+    return {"build": manifest, "provenance": "manifest_declared_pending_target_observation",
+            "expected_target_identity": ({"state": "required", "schema_version": 1,
+                "build_id": target_id} if target_id is not None else
+                {"state": "unavailable", "reason": "legacy_image_without_identity_marker"}),
+            "source_snapshot": ({"state": "archived", "path": "source-snapshot",
+                "sha256": manifest["source_snapshot_sha256"]} if snapshot_raw is not None else
+                {"state": "not_supplied", "sha256": manifest["source_snapshot_sha256"]}),
             "load_ranges": {core: ranges for core, (_, ranges) in images.items()}}
