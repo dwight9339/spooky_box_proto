@@ -44,8 +44,9 @@ the measured milliseconds in `B`, sets `HAS_FAULT=1`, and remains available via
 ## Recording-aware behavior
 
 - Recorder USB replies make one nonblocking submission attempt, then enter a
-  four-line queue drained one line per loop. Queue overflow is a visible
-  `USB_BACKPRESSURE` fault instead of a 250 ms foreground spin.
+  four-line queue drained one line per loop. Progress lines coalesce and give way
+  to outcome replies; losing a reply is a visible `USB_BACKPRESSURE` fault instead
+  of a 250 ms foreground spin (see [USB CLI](usb-cli.md)).
 - Periodic fuel-gauge and magnetometer bus transactions pause during recording.
   Battery/charge status uses the last successful fuel-gauge snapshot.
 - A matrix animation that was started before recording is disabled without I2C

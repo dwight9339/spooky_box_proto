@@ -56,6 +56,11 @@ The storage-lease test checks exclusive ownership across recorder, SD stress,
 WAV transfer and status clients, including busy acquisition and invalid-release
 counters. Media mounting and SDMMC behavior remain hardware-only evidence.
 
+The reply-queue test checks the recorder's USB reply policy: with the port closed for
+a whole recording, progress lines coalesce to the newest one and the outcome and
+diagnostic replies survive in order; a full queue evicts progress before replies, then
+the oldest reply, and counts both. USB CDC timing remains hardware-only evidence.
+
 The event-queue tests cover decision 0007: post order, sequence and time, admission
 by class with the internal reserve, reject-newest overrun, one reconcile event after
 rejected input, bounded run-to-completion dispatch, the reserve's exact limit when

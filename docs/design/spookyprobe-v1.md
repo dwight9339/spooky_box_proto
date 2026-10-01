@@ -116,7 +116,7 @@ An accepted USB send is not proof of host receipt.
 | 15 SESSION_MISMATCH | Authoritative Session machine state: 0 idle, 1 recording, 2 finalizing (a fault) | Recorder active: 1 yes, 0 no |
 | 16 COMMAND_REJECTED | Semantic command-action ID from `command_policy.h` | Session state: 0 idle, 1 recording, 2 finalizing |
 | 17 FOREGROUND_BUDGET | Foreground service ID from `foreground_budget.h` | Measured duration in milliseconds |
-| 18 USB_BACKPRESSURE | Dropped recorder reply length | Recorder reply queue capacity |
+| 18 USB_BACKPRESSURE | Evicted recorder reply length (progress lines are not reported) | Recorder reply queue capacity |
 
 IPC events are present only in IPC experiment builds. Logger and event-queue loss
 events are sampled at most once per second, so one event can summarize multiple

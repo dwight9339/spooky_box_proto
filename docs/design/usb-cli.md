@@ -312,7 +312,21 @@ RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,...
 `RECORD LATENCY` reports, for the current or last recording, the number of block
 writes, the longest `f_write`, the longest block conversion before it, and a
 histogram of `f_write` durations in 10 ms bins (0-9 ms through 60-69 ms, then
-70 ms and above). Counters reset at `RECORD START`.
+70 ms and above). Counters reset at `RECORD START`. Its last two fields,
+`usb-superseded` and `usb-lost`, are cumulative since boot and describe the recorder
+reply queue below.
+
+Recorder replies make one nonblocking submission attempt and otherwise wait in a
+four-line queue that is drained one line per loop pass. Only the newest
+`RECORD progress` line stays queued: a newer one replaces it, and any other reply that
+finds the queue full evicts it. `usb-superseded` counts progress lines removed this
+way. Only when the queue holds four non-progress replies does a new reply evict the
+oldest one; that counts in `usb-lost` and records a `USB_BACKPRESSURE` fault. A host
+that stops reading during a recording therefore receives the outcome (`OK RECORD PASS`
+or `ERR RECORD ABORT`) and `RECORD DIAG` when it resumes, after at most one stale line
+already in transfer and the newest progress line. Queued replies are sent as soon as
+the host polls again, so a host that discards received data when it opens the port
+(pyserial on Windows calls `PurgeComm` in `open()`) can lose them.
 `RECORD STOP` requests a clean stop after the next matched radio/mic block.
 SD maintenance and stress commands, WAV transfer, and radio band/tuning changes are
 rejected while recording is active. `SD STATUS` remains nonintrusive: while the

@@ -4,6 +4,7 @@
 #include "session_control.h"
 
 #include "ff.h"
+#include "reply_queue.h"
 #include "storage_service.h"
 #include "usb_test.h"
 
@@ -29,7 +30,6 @@
 #define RECORDER_MAX_SECONDS               3600U
 #define RECORDER_PREALLOC_SECONDS            60U
 #define RECORDER_PROGRESS_PERIOD_MS        5000U
-#define RECORDER_USB_QUEUE_DEPTH              4U
 #define RECORDER_WRITE_HIST_BIN_MS           10U
 #define RECORDER_WRITE_HIST_BINS              8U
 #define RECORDER_PDM_DC_POLE_Q15           32640
@@ -105,54 +105,59 @@ static RecordingLimits recording_limits;
 static const char *finish_reason;
 static bool finish_aborted;
 static bool session_event_pending;
-static char recorder_usb_queue[RECORDER_USB_QUEUE_DEPTH][240];
-static uint8_t recorder_usb_head;
-static uint8_t recorder_usb_count;
+/* Replies the CDC port did not accept; see reply_queue.h for the policy. */
+static ReplyQueue recorder_usb_queue;
 
 static void RecorderFlushUsb(void)
 {
-  if ((recorder_usb_count == 0U) ||
-      !UsbTest_SendText(recorder_usb_queue[recorder_usb_head]))
+  const char *line = ReplyQueue_Peek(&recorder_usb_queue);
+
+  if ((line != NULL) && UsbTest_SendText(line))
   {
-    return;
+    ReplyQueue_Pop(&recorder_usb_queue);
   }
-  recorder_usb_head = (uint8_t)((recorder_usb_head + 1U) %
-                                RECORDER_USB_QUEUE_DEPTH);
-  --recorder_usb_count;
 }
 
-static void RecorderSend(const char *format, ...)
+static void RecorderSendKind(ReplyKind kind, const char *format, va_list args)
 {
-  char message[240];
-  va_list args;
-  int length;
+  char message[REPLY_QUEUE_LINE_BYTES];
+  int length = vsnprintf(message, sizeof(message), format, args);
 
-  va_start(args, format);
-  length = vsnprintf(message, sizeof(message), format, args);
-  va_end(args);
   if (length <= 0)
   {
     return;
   }
   message[sizeof(message) - 1U] = '\0';
 
-  if ((recorder_usb_count != 0U) || !UsbTest_SendText(message))
+  if ((ReplyQueue_Peek(&recorder_usb_queue) != NULL) || !UsbTest_SendText(message))
   {
-    if (recorder_usb_count < RECORDER_USB_QUEUE_DEPTH)
+    if (ReplyQueue_Push(&recorder_usb_queue, kind, message) ==
+        REPLY_PUSH_EVICTED_REPLY)
     {
-      uint8_t tail = (uint8_t)((recorder_usb_head + recorder_usb_count) %
-                               RECORDER_USB_QUEUE_DEPTH);
-      (void)snprintf(recorder_usb_queue[tail], sizeof(recorder_usb_queue[tail]),
-                     "%s", message);
-      ++recorder_usb_count;
-    }
-    else
-    {
-      Diagnostics_Record(DIAG_USB_BACKPRESSURE, (uint32_t)length,
-                         RECORDER_USB_QUEUE_DEPTH);
+      Diagnostics_Record(DIAG_USB_BACKPRESSURE,
+                         recorder_usb_queue.last_lost_length, REPLY_QUEUE_DEPTH);
     }
   }
   printf("[record] %s", message);
+}
+
+static void RecorderSend(const char *format, ...)
+{
+  va_list args;
+
+  va_start(args, format);
+  RecorderSendKind(REPLY_KIND_KEEP, format, args);
+  va_end(args);
+}
+
+/* Periodic progress: a newer line supersedes one the port has not taken. */
+static void RecorderSendProgress(const char *format, ...)
+{
+  va_list args;
+
+  va_start(args, format);
+  RecorderSendKind(REPLY_KIND_PROGRESS, format, args);
+  va_end(args);
 }
 
 static void RecorderPutLe16(uint8_t *destination, uint16_t value)
@@ -828,6 +833,7 @@ void RadioRecorder_Init(DFSDM_Filter_HandleTypeDef *filter)
   finish_aborted = false;
   session_event_pending = false;
   recorder_filename[0] = '\0';
+  ReplyQueue_Init(&recorder_usb_queue);
   printf("[record] three-channel recorder ready; default=open\r\n");
 }
 
@@ -871,13 +877,16 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
   {
     RecorderSend("OK RECORD LATENCY writes=%lu write-max=%lums "
                  "convert-max=%lums "
-                 "write-hist-10ms=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu\r\n",
+                 "write-hist-10ms=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu "
+                 "usb-superseded=%lu usb-lost=%lu\r\n",
                  (unsigned long)write_count, (unsigned long)max_write_ms,
                  (unsigned long)max_convert_ms,
                  (unsigned long)write_hist[0], (unsigned long)write_hist[1],
                  (unsigned long)write_hist[2], (unsigned long)write_hist[3],
                  (unsigned long)write_hist[4], (unsigned long)write_hist[5],
-                 (unsigned long)write_hist[6], (unsigned long)write_hist[7]);
+                 (unsigned long)write_hist[6], (unsigned long)write_hist[7],
+                 (unsigned long)recorder_usb_queue.progress_superseded,
+                 (unsigned long)recorder_usb_queue.replies_lost);
     return true;
   }
   if (strcmp(command, "RECORD STOP") == 0)
@@ -1001,7 +1010,7 @@ void RadioRecorder_Service(void)
   if ((now - progress_last_ms) >= RECORDER_PROGRESS_PERIOD_MS)
   {
     progress_last_ms = now;
-    RecorderSend("RECORD progress=%lu.%01lus queues=%u/%u,%u/%u "
+    RecorderSendProgress("RECORD progress=%lu.%01lus queues=%u/%u,%u/%u "
                  "max-write=%lums\r\n",
                  (unsigned long)(frames_written / RECORDER_SAMPLE_RATE_HZ),
                  (unsigned long)(((frames_written % RECORDER_SAMPLE_RATE_HZ) *

@@ -42,6 +42,8 @@ spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.
 spooky_test(command_policy_qualification_test command_policy_test.c ../CM7/App/command_policy.c)
 target_compile_definitions(command_policy_qualification_test PRIVATE SPOOKY_RADIO_TUNE_QUALIFICATION)
 spooky_test(storage_lease_test storage_lease_test.c ../CM7/App/storage_lease.c)
+# The recorder USB reply queue policy (jjy.10).
+spooky_test(reply_queue_test reply_queue_test.c ../CM7/App/reply_queue.c)
 spooky_test(recording_limits_test recording_limits_test.c
     ../CM7/App/recording_limits.c)
 spooky_test(session_test session_test.c ../CM7/App/sm/session_port.c)
