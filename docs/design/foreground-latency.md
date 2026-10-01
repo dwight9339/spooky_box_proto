@@ -41,6 +41,18 @@ count. A violation also records `FOREGROUND_BUDGET` with the service ID in `A` a
 the measured milliseconds in `B`, sets `HAS_FAULT=1`, and remains available via
 `DIAG LAST`/`DIAG DUMP`.
 
+## Interrupt preemption
+
+Service and loop timings include any interrupt work that preempts them. While
+recording, the largest interrupt work on the M7 is the per-block copy in the audio
+DMA interrupts: the DFSDM microphone interrupt (priority 4) copies one 16 KiB block
+every 85.33 ms, and the radio receive interrupt (priority 0) copies 1024 samples
+every 10.7 ms. At the current 64 MHz, cache-off configuration these hold the
+foreground for up to about 4.3 ms per microphone block, well inside the budgets
+above; see [M7 interrupt cost](../evidence/2026-10-01-isr-timing.md) for the
+measured bound. The opt-in `SPOOKY_ISR_TIMING_QUALIFICATION` build times every
+handler for such measurements.
+
 ## Recording-aware behavior
 
 - Recorder USB replies make one nonblocking submission attempt, then enter a

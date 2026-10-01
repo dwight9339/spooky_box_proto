@@ -61,6 +61,13 @@ if(SPOOKY_LOGGER_LOAD_QUALIFICATION)
     target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/App/logger_load.c)
 endif()
 
+option(SPOOKY_ISR_TIMING_QUALIFICATION
+    "Time every M7 interrupt handler through a RAM vector table (jjy.11)" OFF)
+if(SPOOKY_ISR_TIMING_QUALIFICATION)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_ISR_TIMING_QUALIFICATION=1)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/App/isr_timing.c)
+endif()
+
 set(SPOOKY_RECORDING_CARD_RESERVE_SECONDS "60" CACHE STRING
     "Seconds of three-channel audio retained before reporting card full")
 set(SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES "0" CACHE STRING

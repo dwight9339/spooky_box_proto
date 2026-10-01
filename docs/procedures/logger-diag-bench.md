@@ -30,7 +30,10 @@ reliability. No M4 logger, Pico firmware, or host serial capture tool is include
    cause UART backpressure because there is no flow control. Configure the
    `IpcSmoke` preset with `-DSPOOKY_LOGGER_LOAD_QUALIFICATION=ON` for
    `LOG LOAD <bytes/s> <seconds>|STATUS|HIST|STOP` and `LOG FAULT`, which forces
-   the 250 ms transmit watchdog abort.
+   the 250 ms transmit watchdog abort. To attribute latency outliers to
+   interrupt work, also configure `-DSPOOKY_ISR_TIMING_QUALIFICATION=ON`
+   (any preset) and use `ISR RESET`, `ISR LIST`, `ISR GET <exception>` and
+   `ISR BURST`; see [M7 interrupt cost](../evidence/2026-10-01-isr-timing.md).
 4. Request a dump and disconnect CDC; reconnect after more than five seconds.
    Verify a new command works. During a slow dump under recording, verify GAP
    rows and matching END counts when entries are overwritten. Mark dumps without

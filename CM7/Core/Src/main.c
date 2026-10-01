@@ -38,6 +38,9 @@
 #if defined(SPOOKY_LOGGER_LOAD_QUALIFICATION)
 #include "logger_load.h"
 #endif
+#if defined(SPOOKY_ISR_TIMING_QUALIFICATION)
+#include "isr_timing.h"
+#endif
 #if defined(SPOOKY_IPC_SMOKE)
 #include "ipc_smoke.h"
 #endif
@@ -320,6 +323,12 @@ static void UsbCliCommand(const char *line)
 
 #if defined(SPOOKY_LOGGER_LOAD_QUALIFICATION)
   if (LoggerLoad_HandleCommand(command))
+  {
+    return;
+  }
+#endif
+#if defined(SPOOKY_ISR_TIMING_QUALIFICATION)
+  if (IsrTiming_HandleCommand(command))
   {
     return;
   }
@@ -646,6 +655,9 @@ int main(void)
   /* Configure the peripherals common clocks */
   PeriphCommonClock_Config();
   BuildIdentity_Init();
+#if defined(SPOOKY_ISR_TIMING_QUALIFICATION)
+  IsrTiming_Install(); /* After the clock is final: thresholds use SystemCoreClock. */
+#endif
 /* USER CODE BEGIN Boot_Mode_Sequence_2 */
 #if defined(SPOOKY_IPC_SMOKE)
   IpcSmoke_Init(); /* M4 is still held in its boot STOP wait. */
