@@ -61,8 +61,9 @@ tune time. Eight in-range targets per band; every tune succeeded.
 | LW | 307 | 152.9 | 153.0 | 154.9 |
 
 The FM maxima (49.3 ms at 95.5 MHz, 42.9 ms at 92.3 MHz) were the two targets with
-the strongest signal (RSSI 28 and 23). Raw results: `build/tune-timing-54w28-20261001a.json`
-in the worktree.
+the strongest signal (RSSI 28 and 23). Raw results (untracked, in the local `build/`
+directory): `build/tune-timing-54w28-20261001a.json` and, for the responsiveness
+check below, `build/tune-overlap-54w28-20261001a.txt`.
 
 ## Foreground stays responsive during a tune
 
