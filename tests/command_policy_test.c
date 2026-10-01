@@ -37,7 +37,12 @@ static void every_policy_row_has_the_decision_0008_class(void)
         COMMAND_POLICY_ALLOWED,  /* status/diagnostic read */
         COMMAND_POLICY_REJECTED, /* UI test pattern */
         COMMAND_POLICY_REJECTED, /* EMF calibration */
-        COMMAND_POLICY_REJECTED  /* radio guard still in force */
+#if defined(SPOOKY_RADIO_TUNE_QUALIFICATION)
+        COMMAND_POLICY_ALLOWED,  /* in-band tuning: opt-in qualification build */
+#else
+        COMMAND_POLICY_REJECTED, /* in-band tuning: guard until 54w.6 qualifies it */
+#endif
+        COMMAND_POLICY_REJECTED  /* band change: guard until 54w.12 qualifies it */
     };
     for (int action = COMMAND_ACTION_NONE; action < COMMAND_ACTION_COUNT; ++action) {
         const CommandPolicyRule *rule = CommandPolicy_GetRule((CommandAction)action);
@@ -88,10 +93,11 @@ static void current_cli_commands_map_to_the_shared_actions(void)
     CHECK(CommandPolicy_ActionFromCli("UI STATUS") == COMMAND_ACTION_NONE);
     CHECK(CommandPolicy_ActionFromCli("EMF ZERO") == COMMAND_ACTION_EMF_ZERO);
     CHECK(CommandPolicy_ActionFromCli("EMF READ") == COMMAND_ACTION_NONE);
-    CHECK(CommandPolicy_ActionFromCli("BAND FM") == COMMAND_ACTION_RADIO_CONTROL);
-    CHECK(CommandPolicy_ActionFromCli("TUNE 99100") == COMMAND_ACTION_RADIO_CONTROL);
-    CHECK(CommandPolicy_ActionFromCli("UP") == COMMAND_ACTION_RADIO_CONTROL);
-    CHECK(CommandPolicy_ActionFromCli("DOWN") == COMMAND_ACTION_RADIO_CONTROL);
+    CHECK(CommandPolicy_ActionFromCli("BAND FM") == COMMAND_ACTION_RADIO_BAND);
+    CHECK(CommandPolicy_ActionFromCli("BAND") == COMMAND_ACTION_STATUS_READ);
+    CHECK(CommandPolicy_ActionFromCli("TUNE 99100") == COMMAND_ACTION_RADIO_TUNE);
+    CHECK(CommandPolicy_ActionFromCli("UP") == COMMAND_ACTION_RADIO_TUNE);
+    CHECK(CommandPolicy_ActionFromCli("DOWN") == COMMAND_ACTION_RADIO_TUNE);
     CHECK(CommandPolicy_ActionFromCli("STATUS") == COMMAND_ACTION_NONE);
 }
 

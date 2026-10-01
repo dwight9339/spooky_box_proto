@@ -1,0 +1,106 @@
+@startuml RadioSm
+' Radio region: receiver control for tuning and band changes (decisions 0003, 0004,
+' 0006 and 0008). Source of truth for CM7/App/sm/RadioSm.[ch]; regenerate with
+' host/tools/behavior_model.py. Rules: docs/design/behavior/README.md.
+' Guards and actions call only functions in CM7/App/sm/radio_port.h.
+'
+' Commands come from the CLI today and from scan engines and physical controls
+' later; every command is answered exactly once to its source. In-band tunes do
+' not block: the machine waits in Tuning while the radio service polls completion
+' once per loop pass. A band switch is still one synchronous action; making it
+' incremental and qualifying it during recording is full_spooky_proto-54w.12.
+'
+' Band, frequency, signal quality and each band's last frequency are model data
+' kept by the radio service. The published frequency is always a completed result
+' (Principle II), never a requested target.
+'
+' Session state never makes a radio command legal or illegal here (top-level
+' DEV-I4). Today's recording guard is applied by the shared command policy before
+' a command reaches this machine (decision 0003, Principle VI).
+
+[*] --> Stopped
+
+state Stopped
+state Operational {
+  state Settled
+  state Tuning
+}
+state Faulted
+state TuneIssue <<choice>>
+state BandSwitch <<choice>>
+state NextCommand <<choice>>
+
+' --- Start ----------------------------------------------------------------------
+' The boot sequence starts radio capture, powers up the receiver in FM, tunes the
+' FM default, enables digital output and starts the monitor, then reports the result.
+Stopped --> Settled : START_OK / rad_publish(RAD_PUB_STARTED);
+Stopped --> Faulted : START_FAILED / rad_publish(RAD_PUB_FAULT_START);
+Stopped : TUNE / rad_reject(RAD_REJECT_UNAVAILABLE);
+Stopped : STEP / rad_reject(RAD_REJECT_UNAVAILABLE);
+Stopped : BAND / rad_reject(RAD_REJECT_UNAVAILABLE);
+
+' --- Settled: the receiver is tuned and radio audio flows -----------------------
+Settled --> TuneIssue : TUNE [rad_request_in_range()] / rad_begin_request();
+Settled : TUNE [!rad_request_in_range()] / rad_reject(RAD_REJECT_RANGE);
+Settled --> TuneIssue : STEP / rad_begin_request();
+Settled --> BandSwitch : BAND / rad_switch_band_request();
+
+' Issuing the tune can fail on the bus; the last completed result stays published.
+TuneIssue --> Tuning : [rad_tune_issued()] / rad_publish(RAD_PUB_TUNE_STARTED);
+TuneIssue --> Settled : / rad_publish(RAD_PUB_TUNE_FAILED);
+
+' --- Tuning: an in-band tune was issued and its completion is pending ------------
+' Receiver audio keeps flowing. A newer command replaces any pending one (latest
+' wins, decision 0008 item 15); the replaced command is answered as superseded, so
+' scanning never builds a backlog and no command is silently dropped.
+Tuning : TUNE [rad_request_in_range()] / rad_hold_request();
+Tuning : TUNE [!rad_request_in_range()] / rad_reject(RAD_REJECT_RANGE);
+Tuning : STEP / rad_hold_request();
+Tuning : BAND / rad_hold_request();
+' A failed tune does not end a session; the radio fault stays visible
+' (decision 0008 item 14).
+Tuning --> NextCommand : TUNE_DONE / rad_publish(RAD_PUB_TUNED);
+Tuning --> NextCommand : TUNE_FAILED / rad_publish(RAD_PUB_TUNE_FAILED);
+
+NextCommand --> TuneIssue : [rad_pending_is_tune()] / rad_begin_pending();
+NextCommand --> BandSwitch : [rad_pending_is_band()] / rad_switch_band_pending();
+NextCommand --> Settled
+
+' --- Band switch -----------------------------------------------------------------
+' Mute the monitor and close the stream gate; power-cycle the receiver into the
+' band on its antenna path; tune the band's last frequency; restart digital output;
+' open the gate and unmute. The sequence is documented in radio_control_service.c.
+BandSwitch --> Settled : [rad_band_switched()] / rad_publish(RAD_PUB_BAND_CHANGED);
+BandSwitch --> Faulted : / rad_publish(RAD_PUB_FAULT_BAND);
+
+' --- Faults ---------------------------------------------------------------------
+' A radio SAI or DMA error, or a codec output or volume failure, stops radio audio.
+' During a session it is also a capture fault of the Session region.
+Operational --> Faulted : AUDIO_FAULT / rad_abandon(); rad_publish(RAD_PUB_FAULT_AUDIO);
+
+' Faulted: no radio audio; the receiver stays in reset and the monitored output
+' stays muted. Only a system reset leaves Faulted.
+Faulted : TUNE / rad_reject(RAD_REJECT_UNAVAILABLE);
+Faulted : STEP / rad_reject(RAD_REJECT_UNAVAILABLE);
+Faulted : BAND / rad_reject(RAD_REJECT_UNAVAILABLE);
+
+note right of Tuning
+  Worst-case tune duration and the scan
+  rate it allows during recording are
+  measured on the bench:
+  full_spooky_proto-54w.6.
+end note
+note right of Faulted
+  Recovery without a system reset, and
+  whether a session continues while the
+  radio is Faulted: full_spooky_proto-54w.12.
+end note
+
+/'! $CONFIG : toml
+[RenderConfig.C]
+IncludeGuardLabel = "SPOOKY_RADIO_SM_H"
+CFileIncludes = """
+    #include "radio_port.h"
+    """
+'/
+@enduml

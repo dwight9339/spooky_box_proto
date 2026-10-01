@@ -32,6 +32,13 @@
             }
         },
         {
+            "name": "RadioTuneQual",
+            "inherits": "Debug",
+            "cacheVariables": {
+                "SPOOKY_RADIO_TUNE_QUALIFICATION": "ON"
+            }
+        },
+        {
             "name": "Release",
             "inherits": "default",
             "cacheVariables": {
@@ -47,6 +54,10 @@
         {
             "name": "IpcMismatch",
             "configurePreset": "IpcMismatch"
+        },
+        {
+            "name": "RadioTuneQual",
+            "configurePreset": "RadioTuneQual"
         },
         {
             "name": "Debug",

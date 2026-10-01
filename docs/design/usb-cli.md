@@ -133,7 +133,22 @@ frequency, RSSI, SNR, and valid-channel flag, for example:
 OK RADIO BAND=FM FREQ=99100 kHz (99.100 MHz) RSSI=7 SNR=2 VALID=0
 ```
 
-Band and tuning changes are rejected while recording is active.
+`TUNE`, `UP`, `DOWN` and `BAND <band>` go to the Radio machine
+([RadioSm](behavior/RadioSm.puml)) through the bounded M7 event queue. If the queue
+refuses the command, the reply is `ERR BUSY` and nothing changes. Otherwise the reply
+comes when the command's outcome is known: a tune does not hold the CLI or the
+foreground loop while the receiver settles. One tune is in flight at a time, and
+one newer command waits behind it. A command that arrives while another is waiting
+replaces it, and the replaced command is answered `OK RADIO SUPERSEDED`, so a client
+that streams targets (for example a Pd slider) gets exactly one reply per line and
+no backlog builds up. Other replies are `ERR RADIO tune failed` (bus error, or no
+completion within 2 s), `ERR RADIO abandoned; radio fault` for a command still
+waiting when the radio faults, and `ERR RADIO audio path is not running` once the
+radio is out of service. A band switch is still one synchronous step.
+
+Band and tuning changes are rejected while recording is active. The opt-in
+`RadioTuneQual` preset admits in-band tuning while recording, for the bench
+qualification in `full_spooky_proto-54w.6` only.
 
 ## Volume
 

@@ -15,7 +15,12 @@ typedef enum AppEventType {
   APP_EVENT_SESSION_BLOCK_WRITTEN,
   APP_EVENT_SESSION_CARD_FULL,
   APP_EVENT_SESSION_FILE_LIMIT,
-  APP_EVENT_SESSION_CAPTURE_FAULT
+  APP_EVENT_SESSION_CAPTURE_FAULT,
+  APP_EVENT_RADIO_COMMAND,     /* arg0 packed RadCommand fields; arg1 kHz or band */
+  APP_EVENT_RADIO_STARTED,     /* arg0 1 if the radio started */
+  APP_EVENT_RADIO_TUNE_DONE,
+  APP_EVENT_RADIO_TUNE_FAILED,
+  APP_EVENT_RADIO_AUDIO_FAULT
 } AppEventType;
 
 bool AppEvents_Post(EvqClass event_class, uint16_t type, uint32_t arg0, uint32_t arg1);

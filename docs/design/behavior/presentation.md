@@ -60,15 +60,17 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 
 | ID | Domain event | Required acknowledgement | CLI reply today |
 |---|---|---|---|
-| PRES-RAD-01 | RadioStarted | Display | Boot log `[radio] tuned FM ...` and `[radio] digital output enabled ...` |
-| PRES-RAD-02 | TuneStarted | Display | None |
-| PRES-RAD-03 | Tuned | Display | `OK RADIO BAND=... FREQ=... RSSI=... SNR=... VALID=...` |
-| PRES-RAD-04 | TuneRejected | Reply to the command's source | `ERR <band> range: <min>..<max> kHz` |
-| PRES-RAD-05 | TuneFailed | Display, with the target and reason | `ERR RADIO tune failed` |
-| PRES-RAD-06 | BandTransitionStarted | Display, lights and audio | None |
-| PRES-RAD-07 | BandChanged | Display, lights and audio | `OK RADIO BAND=... FREQ=... RSSI=... SNR=... VALID=...` |
-| PRES-RAD-08 | RadioFault | Display, lights and audio, as a fault | `ERR RADIO band switch failed; reset required`, or a `[bridge] FAIL` log line; the red board LED turns on |
-| PRES-RAD-09 | RadioCommandRejected | Reply to the command's source | `ERR RADIO audio path is not running` |
+| PRES-RAD-01 | `RAD_PUB_STARTED` | Display | Boot log `[radio] tuned FM ...` and `[radio] digital output enabled ...` |
+| PRES-RAD-02 | `RAD_PUB_TUNE_STARTED` | Display | None |
+| PRES-RAD-03 | `RAD_PUB_TUNED` | Display | `OK RADIO BAND=... FREQ=... RSSI=... SNR=... VALID=...` |
+| PRES-RAD-04 | `RAD_PUB_REJECTED_RANGE` | Reply to the command's source | `ERR <band> range: <min>..<max> kHz` |
+| PRES-RAD-05 | `RAD_PUB_TUNE_FAILED` | Display, with the target and reason | `ERR RADIO tune failed` |
+| PRES-RAD-06 | Band switch started; not published while the switch is one synchronous action (`full_spooky_proto-54w.12`) | Display, lights and audio | None |
+| PRES-RAD-07 | `RAD_PUB_BAND_CHANGED` | Display, lights and audio | `OK RADIO BAND=... FREQ=... RSSI=... SNR=... VALID=...` |
+| PRES-RAD-08 | `RAD_PUB_FAULT_START`, `RAD_PUB_FAULT_BAND`, `RAD_PUB_FAULT_AUDIO` | Display, lights and audio, as a fault | `ERR RADIO band switch failed; reset required`, or a `[bridge] FAIL` or `[radio] audio fault` log line; the red board LED turns on |
+| PRES-RAD-09 | `RAD_PUB_REJECTED_UNAVAILABLE` | Reply to the command's source | `ERR RADIO audio path is not running` |
+| PRES-RAD-10 | `RAD_PUB_SUPERSEDED` | Reply to the command's source | `OK RADIO SUPERSEDED` |
+| PRES-RAD-11 | `RAD_PUB_ABANDONED` | Reply to the command's source | `ERR RADIO abandoned; radio fault` |
 
 ## Session prompt and button lights
 
@@ -137,14 +139,16 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | PRES-SES-07 | Target | Session outcome and CLI reply implemented; no nearly-full-card evidence |
 | PRES-SES-08 | Target | Session outcome and CLI reply implemented; no file-limit evidence |
 | PRES-RAD-01 | Proven for the boot log | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
-| PRES-RAD-02 | Target | Not implemented |
-| PRES-RAD-03 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
-| PRES-RAD-04 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
+| PRES-RAD-02 | Target | Published by the Radio machine; no surface renders it |
+| PRES-RAD-03 | Target | CLI reply now sent through the Radio machine; the [radio regression](../../evidence/2026-09-24-radio-regression.md) proved the blocking path it replaced and has not been rerun (`full_spooky_proto-54w.28`) |
+| PRES-RAD-04 | Target | Same basis as PRES-RAD-03 |
 | PRES-RAD-05 | Target | CLI reply implemented without a reason; no bench evidence |
 | PRES-RAD-06 | Target | Not implemented |
-| PRES-RAD-07 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
+| PRES-RAD-07 | Target | Same basis as PRES-RAD-03 |
 | PRES-RAD-08 | Target | CLI reply and log implemented; no bench evidence |
 | PRES-RAD-09 | Target | CLI reply implemented; no bench evidence |
+| PRES-RAD-10 | Target | CLI reply implemented; no bench evidence |
+| PRES-RAD-11 | Target | CLI reply implemented; no bench evidence |
 | PRES-LED-01 to PRES-LED-03 | Target | User direction 2026-09-27, recorded in `full_spooky_proto-54w.18`. Not implemented; the LED pins were chosen for PWM-capable timers. |
 | PRES-LED-04 to PRES-LED-06 | Target | [Decision 0005](../../decisions/0005-button-0-session-prompt.md), items 14 to 16. Not implemented. |
 | PRES-PRM-01, PRES-PRM-02 | Target | User direction 2026-09-27, `full_spooky_proto-54w.18`. Not implemented. |

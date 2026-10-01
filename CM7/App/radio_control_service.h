@@ -48,14 +48,30 @@ typedef struct
   uint32_t target_khz;        /* Most recent requested tune target. */
   RadioTuneStatus tune;       /* Most recent successful tune result. */
   RadioControlFault last_fault;
+  bool tune_in_flight;        /* A non-blocking tune has not completed yet. */
 } RadioControlStatus;
+
+typedef enum
+{
+  RADIO_TUNE_POLL_IDLE = 0,   /* no tune in flight */
+  RADIO_TUNE_POLL_PENDING,
+  RADIO_TUNE_POLL_DONE,
+  RADIO_TUNE_POLL_FAILED      /* bus error or no completion within 2 s */
+} RadioTunePoll;
 
 /* Owns the Si4735 on I2C1, its reset line and the SW antenna switch. It does
  * not touch audio DMA or the codec; callers sequence muting around transitions. */
 bool RadioControl_ProbeControlPath(I2C_HandleTypeDef *i2c);
 bool RadioControl_Start(I2C_HandleTypeDef *i2c);
-bool RadioControl_Tune(uint32_t frequency_khz, RadioTuneStatus *result);
-bool RadioControl_TuneStep(bool up, RadioTuneStatus *result);
+/* Non-blocking in-band tuning (full_spooky_proto-54w.28). BeginTune issues the tune
+ * in the current band and returns; PollTune performs at most one bounded status
+ * transaction per call and reports completion. One tune is in flight at a time; a
+ * band switch or reset abandons it. The published tune status changes only when
+ * a tune completes. */
+bool RadioControl_TuneInRange(uint32_t frequency_khz);
+uint32_t RadioControl_StepTarget(bool up, bool wrap);
+bool RadioControl_BeginTune(uint32_t frequency_khz);
+RadioTunePoll RadioControl_PollTune(RadioTuneStatus *result);
 bool RadioControl_SwitchBand(RadioBand band, RadioTuneStatus *result);
 void RadioControl_PowerDown(void);
 void RadioControl_HoldReset(void);

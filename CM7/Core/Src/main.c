@@ -41,6 +41,7 @@
 #include "prototype_power.h"
 #include "fuel_gauge_test.h"
 #include "magnetometer_test.h"
+#include "radio_adapter.h"
 #include "radio_control_service.h"
 #include "radio_recorder.h"
 #include "sd_test.h"
@@ -140,43 +141,6 @@ static void RadioAudio_Service(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-/* Sequences the monitored output around a receiver function change. The radio
- * service only changes the Si4735; this caller owns muting and the DMA copy. */
-static bool RadioAudioSwitchBand(RadioBand band, RadioTuneStatus *tune_status)
-{
-  if ((band >= RADIO_BAND_COUNT) || (tune_status == NULL))
-  {
-    return false;
-  }
-  if (!CodecVolume_SetTransitionMuted(true))
-  {
-    goto failed;
-  }
-  AudioPath_SetStreamEnabled(false);
-
-  if (!RadioControl_SwitchBand(band, tune_status))
-  {
-    goto failed;
-  }
-
-  AudioPath_SetStreamEnabled(true);
-  if (!CodecVolume_SetTransitionMuted(false))
-  {
-    goto failed;
-  }
-  return true;
-
-failed:
-  AudioPath_SetStreamEnabled(false);
-  AudioPath_MarkStopped();
-  (void)CodecVolume_SetTransitionMuted(true);
-  RadioControl_HoldReset();
-  BSP_LED_Off(LED_GREEN);
-  BSP_LED_On(LED_RED);
-  printf("[radio] FAIL: band switch; receiver reset and output muted\r\n");
-  return false;
-}
-
 static bool RadioAudioStart(void)
 {
   if (!AudioPath_Init(&hsai_BlockA2, &hsai_BlockA1) ||
@@ -251,30 +215,6 @@ static bool RadioParseBand(const char *text, RadioBand *band)
   return false;
 }
 
-static void RadioUsbSendStatus(const RadioTuneStatus *tune_status)
-{
-  const RadioBandInfo *config;
-  char response[160];
-
-  if ((tune_status == NULL) || (tune_status->band >= RADIO_BAND_COUNT))
-  {
-    (void)UsbTest_SendText("ERR RADIO status unavailable\r\n");
-    return;
-  }
-  config = RadioControl_GetBandInfo(tune_status->band);
-  (void)snprintf(response, sizeof(response),
-                 "OK RADIO BAND=%s FREQ=%lu kHz (%lu.%03lu MHz) "
-                 "RSSI=%u SNR=%u VALID=%u\r\n",
-                 config->name,
-                 (unsigned long)tune_status->frequency_khz,
-                 (unsigned long)(tune_status->frequency_khz / 1000U),
-                 (unsigned long)(tune_status->frequency_khz % 1000U),
-                 tune_status->rssi_dbuv,
-                 tune_status->snr_db,
-                 tune_status->valid);
-  (void)UsbTest_SendText(response);
-}
-
 static void RadioUsbSendBand(void)
 {
   RadioControlStatus status;
@@ -329,11 +269,10 @@ static void UsbCliCommand(const char *line)
   const RadioBandInfo *config;
   RadioControlStatus radio_status;
   RadioBand target_band;
-  RadioTuneStatus tune_status;
   CommandAction action;
   CommandPolicyClass policy;
   uint32_t frequency_khz;
-  bool tuned;
+  bool posted = false;
   size_t length;
 
   if (line == NULL)
@@ -465,8 +404,7 @@ static void UsbCliCommand(const char *line)
   }
   if (strcmp(command, "STATUS") == 0)
   {
-    (void)RadioControl_GetStatus(&radio_status);
-    RadioUsbSendStatus(&radio_status.tune);
+    RadioAdapter_SendStatus();
     return;
   }
   if ((strcmp(command, "VOLUME") == 0) ||
@@ -494,13 +432,10 @@ static void UsbCliCommand(const char *line)
       (void)UsbTest_SendText("ERR usage: BAND FM|AM|SW|LW\r\n");
       return;
     }
-    if (!RadioAudioSwitchBand(target_band, &tune_status))
+    if (!RadioAdapter_RequestBand((uint32_t)target_band))
     {
-      (void)UsbTest_SendText(
-        "ERR RADIO band switch failed; reset required\r\n");
-      return;
+      (void)UsbTest_SendText("ERR BUSY\r\n");
     }
-    RadioUsbSendStatus(&tune_status);
     return;
   }
 
@@ -509,11 +444,11 @@ static void UsbCliCommand(const char *line)
 
   if (strcmp(command, "UP") == 0)
   {
-    tuned = RadioControl_TuneStep(true, &tune_status);
+    posted = RadioAdapter_RequestStep(true);
   }
   else if (strcmp(command, "DOWN") == 0)
   {
-    tuned = RadioControl_TuneStep(false, &tune_status);
+    posted = RadioAdapter_RequestStep(false);
   }
   else if ((strncmp(command, "TUNE", 4U) == 0) &&
            ((command[4] == ' ') || (command[4] == '\t')))
@@ -534,7 +469,7 @@ static void UsbCliCommand(const char *line)
       (void)UsbTest_SendText(response);
       return;
     }
-    tuned = RadioControl_Tune(frequency_khz, &tune_status);
+    posted = RadioAdapter_RequestTune(frequency_khz);
   }
   else
   {
@@ -542,17 +477,12 @@ static void UsbCliCommand(const char *line)
     return;
   }
 
-  if (!tuned)
+  /* The Radio machine answers when the tune completes, fails or is superseded
+   * (RadioSm); only a rejected post is answered here. */
+  if (!posted)
   {
-    (void)RadioControl_GetStatus(&radio_status);
-    (void)UsbTest_SendText("ERR RADIO tune failed\r\n");
-    printf("[radio] USB %s tune failed at %lu kHz\r\n",
-           config->name, (unsigned long)radio_status.target_khz);
-    return;
+    (void)UsbTest_SendText("ERR BUSY\r\n");
   }
-
-  RadioControl_LogTune("USB tuned", &tune_status);
-  RadioUsbSendStatus(&tune_status);
 }
 
 static void RadioAudio_Service(void)
@@ -572,8 +502,11 @@ static void RadioAudio_Service(void)
     BSP_LED_On(LED_RED);
     printf("[bridge] FAIL: runtime SAI/DMA flags=0x%08lX; output muted\r\n",
            (unsigned long)audio_status.fault_flags);
+    RadioAdapter_ReportAudioFault();
     return;
   }
+
+  RadioAdapter_Service();
 
   if (!CodecVolume_Service())
   {
@@ -581,6 +514,7 @@ static void RadioAudio_Service(void)
     AudioPath_ReportFault(
       (codec_status.last_error == CODEC_VOLUME_ERROR_OUTPUT)
         ? AUDIO_PATH_FAULT_CODEC_OUTPUT : AUDIO_PATH_FAULT_VOLUME_ADC);
+    RadioAdapter_ReportAudioFault();
   }
 }
 
@@ -771,6 +705,7 @@ Error_Handler();
   SdTest_Start();
   RadioRecorder_Init(&hdfsdm1_filter0);
   AppDispatch_Init();
+  RadioAdapter_ReportStarted(AudioPath_IsRunning());
   WavTransfer_Init();
   if (!FuelGaugeTest_Start(&hi2c2))
   {

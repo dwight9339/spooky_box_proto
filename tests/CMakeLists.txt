@@ -38,6 +38,9 @@ spooky_test(logger_diag_test logger_diag_test.c stubs/fake_hal.c
 spooky_test(event_queue_test event_queue_test.c ../CM7/App/event_queue.c)
 spooky_test(audio_timeline_test audio_timeline_test.c ../Common/Src/audio_timeline.c)
 spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.c)
+# The same policy test for the opt-in in-band tuning qualification build (54w.6).
+spooky_test(command_policy_qualification_test command_policy_test.c ../CM7/App/command_policy.c)
+target_compile_definitions(command_policy_qualification_test PRIVATE SPOOKY_RADIO_TUNE_QUALIFICATION)
 spooky_test(storage_lease_test storage_lease_test.c ../CM7/App/storage_lease.c)
 spooky_test(recording_limits_test recording_limits_test.c
     ../CM7/App/recording_limits.c)
@@ -50,6 +53,11 @@ spooky_generated_sm(session_authority_test SessionSm.c)
 target_include_directories(session_authority_test PRIVATE ../CM7/Core/Inc)
 spooky_test(input_resolution_test input_resolution_test.c ../CM7/App/sm/input_resolution_port.c)
 spooky_generated_sm(input_resolution_test InputResolutionSm.c)
+spooky_test(radio_test radio_test.c ../CM7/App/sm/radio_port.c)
+spooky_generated_sm(radio_test RadioSm.c)
+# The radio control service's non-blocking tune against a fake Si4735 (54w.28).
+spooky_test(radio_control_test radio_control_test.c ../CM7/App/radio_control_service.c)
+target_include_directories(radio_control_test BEFORE PRIVATE stubs/radio)
 spooky_test(context_test context_test.c ../CM7/App/sm/context_port.c)
 spooky_generated_sm(context_test ContextSm.c)
 spooky_test(input_context_test input_context_test.c ../CM7/App/event_queue.c

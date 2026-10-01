@@ -1,5 +1,23 @@
-/* Extracted from the proven M7 radio bring-up without changing the Si4735
- * command sequence, property values, delays or timeouts. */
+/* Extracted from the proven M7 radio bring-up. The start and band-switch paths
+ * keep the proven Si4735 command sequence, property values, delays and timeouts.
+ * In-band tuning is also available without blocking (full_spooky_proto-54w.28):
+ * RadioControl_BeginTune issues TUNE_FREQ and returns, and RadioControl_PollTune
+ * performs at most one status transaction per call until the tune completes. Its
+ * device-ready waits are bounded by RADIO_FAST_CTS_TIMEOUT_MS, so a stuck
+ * receiver shows up as a failed tune instead of a stalled foreground loop.
+ *
+ * Band transition sequence (RadioControl_SwitchBand with the caller's muting), as
+ * the firmware performs it. Every receiver command waits for CTS before and after
+ * it is sent, each wait up to 2 s; the fixed delays add up to 71 ms.
+ *   1. Caller mutes the codec over I2C4 and closes the stream gate.
+ *   2. Set the digital output rate to zero (10 ms).
+ *   3. Power down the receiver (1 ms).
+ *   4. Select the band's antenna path.
+ *   5. Power up in the band's function with digital output.
+ *   6. Set reference clock, prescaler, volume and hard mute (10 ms after each).
+ *   7. Tune the band's last frequency and poll completion every 2 ms, up to 2 s.
+ *   8. Set digital output rate and format (10 ms after each).
+ *   9. Caller opens the stream gate and unmutes the codec. */
 #include "radio_control_service.h"
 
 #include "main.h"
@@ -32,6 +50,13 @@
 
 #define RADIO_I2C_TIMEOUT_MS           100U
 #define RADIO_DEVICE_TIMEOUT_MS        2000U
+/* Bounded device-ready wait for the non-blocking tune path. The Si4735 normally
+ * reports CTS within a millisecond of these commands; the bound stays provisional
+ * until bench latency evidence sets it (Principle IV). */
+#define RADIO_FAST_CTS_TIMEOUT_MS      5U
+/* The blocking path polls tune completion every 2 ms; the non-blocking path keeps
+ * the same minimum interval between status transactions. */
+#define RADIO_TUNE_POLL_INTERVAL_MS    2U
 #define RADIO_DIGITAL_RATE_HZ          48000U
 #define RADIO_DEFAULT_FM_KHZ           99100U
 
@@ -81,7 +106,13 @@ static uint32_t radio_last_frequency_khz[RADIO_BAND_COUNT] =
   RADIO_DEFAULT_FM_KHZ, 1000U, 6000U, 198U
 };
 
-static HAL_StatusTypeDef WaitCts(uint8_t *status)
+/* The non-blocking tune in flight, if any. */
+static bool tune_in_flight;
+static RadioBand tune_band;
+static uint32_t tune_start_tick;
+static uint32_t tune_last_poll_tick;
+
+static HAL_StatusTypeDef WaitCtsWithin(uint8_t *status, uint32_t timeout_ms)
 {
   uint32_t start_tick = HAL_GetTick();
   uint8_t value = 0U;
@@ -105,15 +136,21 @@ static HAL_StatusTypeDef WaitCts(uint8_t *status)
       }
     }
     HAL_Delay(1U);
-  } while ((HAL_GetTick() - start_tick) < RADIO_DEVICE_TIMEOUT_MS);
+  } while ((HAL_GetTick() - start_tick) < timeout_ms);
 
   return HAL_TIMEOUT;
 }
 
-static HAL_StatusTypeDef Command(const uint8_t *command,
-                                 uint16_t command_length,
-                                 uint8_t *response,
-                                 uint16_t response_length)
+static HAL_StatusTypeDef WaitCts(uint8_t *status)
+{
+  return WaitCtsWithin(status, RADIO_DEVICE_TIMEOUT_MS);
+}
+
+static HAL_StatusTypeDef CommandWithin(const uint8_t *command,
+                                       uint16_t command_length,
+                                       uint8_t *response,
+                                       uint16_t response_length,
+                                       uint32_t cts_timeout_ms)
 {
   uint8_t status = 0U;
 
@@ -123,7 +160,7 @@ static HAL_StatusTypeDef Command(const uint8_t *command,
     return HAL_ERROR;
   }
 
-  if (WaitCts(NULL) != HAL_OK)
+  if (WaitCtsWithin(NULL, cts_timeout_ms) != HAL_OK)
   {
     return HAL_TIMEOUT;
   }
@@ -133,7 +170,7 @@ static HAL_StatusTypeDef Command(const uint8_t *command,
   {
     return HAL_ERROR;
   }
-  if (WaitCts(&status) != HAL_OK)
+  if (WaitCtsWithin(&status, cts_timeout_ms) != HAL_OK)
   {
     return HAL_TIMEOUT;
   }
@@ -154,6 +191,15 @@ static HAL_StatusTypeDef Command(const uint8_t *command,
     return HAL_ERROR;
   }
   return HAL_OK;
+}
+
+static HAL_StatusTypeDef Command(const uint8_t *command,
+                                 uint16_t command_length,
+                                 uint8_t *response,
+                                 uint16_t response_length)
+{
+  return CommandWithin(command, command_length, response, response_length,
+                       RADIO_DEVICE_TIMEOUT_MS);
 }
 
 bool RadioControl_ProbeControlPath(I2C_HandleTypeDef *i2c)
@@ -255,32 +301,29 @@ static bool SetProperty(uint16_t property, uint16_t value)
   return true;
 }
 
-static bool TuneFrequency(RadioBand band, uint32_t frequency_khz,
-                          RadioTuneStatus *tune_status)
+/* Converts a requested frequency to what the receiver will report: FM command
+ * frequencies are in 10 kHz units; AM, SW and LW use 1 kHz. */
+static uint32_t RoundToDeviceUnit(RadioBand band, uint32_t frequency_khz)
 {
-  const RadioBandConfig *config;
+  return (band == RADIO_BAND_FM) ? ((frequency_khz + 5U) / 10U) * 10U
+                                 : frequency_khz;
+}
+
+static bool IssueTune(RadioBand band, uint32_t frequency_khz,
+                      uint32_t cts_timeout_ms)
+{
+  const RadioBandConfig *config = &band_configs[band];
   uint8_t tune[6] = {0U};
-  const uint8_t get_interrupt = SI4735_CMD_GET_INT_STATUS;
-  uint8_t get_tune_status[2];
-  uint8_t response[8] = {0U};
   uint8_t status = 0U;
   uint16_t device_frequency;
   uint16_t tune_length;
-  uint32_t start_tick;
 
-  if ((tune_status == NULL) || (band >= RADIO_BAND_COUNT))
-  {
-    return false;
-  }
-  config = &band_configs[band];
   radio_target_khz = frequency_khz;
   if ((frequency_khz < config->info.minimum_khz) ||
       (frequency_khz > config->info.maximum_khz))
   {
     return false;
   }
-
-  /* FM command frequencies are in 10 kHz units; AM/SW/LW use 1 kHz. */
   device_frequency = (band == RADIO_BAND_FM)
     ? (uint16_t)((frequency_khz + 5U) / 10U)
     : (uint16_t)frequency_khz;
@@ -291,34 +334,42 @@ static bool TuneFrequency(RadioBand band, uint32_t frequency_khz,
   tune[4] = (uint8_t)(config->antenna_capacitance >> 8);
   tune[5] = (uint8_t)config->antenna_capacitance;
   tune_length = (band == RADIO_BAND_FM) ? 5U : 6U;
-  get_tune_status[0] = config->tune_status_command;
-  get_tune_status[1] = 0x01U;
 
-  if (Command(tune, tune_length, &status, sizeof(status)) != HAL_OK)
+  return CommandWithin(tune, tune_length, &status, sizeof(status),
+                       cts_timeout_ms) == HAL_OK;
+}
+
+typedef enum
+{
+  TUNE_POLL_PENDING = 0,
+  TUNE_POLL_DONE,
+  TUNE_POLL_BUS_FAILED
+} TunePollResult;
+
+/* One GET_INT_STATUS transaction, and TUNE_STATUS once STC is set. */
+static TunePollResult PollTuneOnce(RadioBand band, uint32_t cts_timeout_ms,
+                                   RadioTuneStatus *tune_status)
+{
+  const RadioBandConfig *config = &band_configs[band];
+  const uint8_t get_interrupt = SI4735_CMD_GET_INT_STATUS;
+  const uint8_t get_tune_status[2] = {config->tune_status_command, 0x01U};
+  uint8_t response[8] = {0U};
+  uint8_t status = 0U;
+  uint16_t device_frequency;
+
+  if (CommandWithin(&get_interrupt, sizeof(get_interrupt), &status,
+                    sizeof(status), cts_timeout_ms) != HAL_OK)
   {
-    return false;
+    return TUNE_POLL_BUS_FAILED;
   }
-
-  start_tick = HAL_GetTick();
-  do
+  if ((status & SI4735_STATUS_STCINT) == 0U)
   {
-    if (Command(&get_interrupt, sizeof(get_interrupt), &status,
-                sizeof(status)) != HAL_OK)
-    {
-      return false;
-    }
-    if ((status & SI4735_STATUS_STCINT) != 0U)
-    {
-      break;
-    }
-    HAL_Delay(2U);
-  } while ((HAL_GetTick() - start_tick) < RADIO_DEVICE_TIMEOUT_MS);
-
-  if ((status & SI4735_STATUS_STCINT) == 0U ||
-      Command(get_tune_status, sizeof(get_tune_status), response,
-              sizeof(response)) != HAL_OK)
+    return TUNE_POLL_PENDING;
+  }
+  if (CommandWithin(get_tune_status, sizeof(get_tune_status), response,
+                    sizeof(response), cts_timeout_ms) != HAL_OK)
   {
-    return false;
+    return TUNE_POLL_BUS_FAILED;
   }
 
   device_frequency = ((uint16_t)response[2] << 8) | response[3];
@@ -332,7 +383,35 @@ static bool TuneFrequency(RadioBand band, uint32_t frequency_khz,
   radio_band = band;
   radio_tune_status = *tune_status;
   radio_last_frequency_khz[band] = tune_status->frequency_khz;
-  return true;
+  return TUNE_POLL_DONE;
+}
+
+/* The blocking tune used while powering up a band: the proven sequence, polling
+ * completion every 2 ms for up to 2 s. */
+static bool TuneFrequency(RadioBand band, uint32_t frequency_khz,
+                          RadioTuneStatus *tune_status)
+{
+  TunePollResult result = TUNE_POLL_PENDING;
+  uint32_t start_tick;
+
+  if ((tune_status == NULL) || (band >= RADIO_BAND_COUNT) ||
+      !IssueTune(band, frequency_khz, RADIO_DEVICE_TIMEOUT_MS))
+  {
+    return false;
+  }
+
+  start_tick = HAL_GetTick();
+  do
+  {
+    result = PollTuneOnce(band, RADIO_DEVICE_TIMEOUT_MS, tune_status);
+    if (result != TUNE_POLL_PENDING)
+    {
+      break;
+    }
+    HAL_Delay(RADIO_TUNE_POLL_INTERVAL_MS);
+  } while ((HAL_GetTick() - start_tick) < RADIO_DEVICE_TIMEOUT_MS);
+
+  return result == TUNE_POLL_DONE;
 }
 
 static bool PowerUpBand(RadioBand band, uint32_t frequency_khz,
@@ -429,55 +508,104 @@ bool RadioControl_Start(I2C_HandleTypeDef *i2c)
   return true;
 }
 
-bool RadioControl_Tune(uint32_t frequency_khz, RadioTuneStatus *result)
+bool RadioControl_TuneInRange(uint32_t frequency_khz)
 {
   const RadioBandInfo *info = &band_configs[radio_band].info;
-  uint32_t target_khz;
-
-  radio_target_khz = frequency_khz;
-  if ((result == NULL) || (frequency_khz < info->minimum_khz) ||
-      (frequency_khz > info->maximum_khz))
-  {
-    radio_last_fault = RADIO_CONTROL_FAULT_TUNE;
-    return false;
-  }
-  target_khz = (radio_band == RADIO_BAND_FM)
-    ? ((frequency_khz + 5U) / 10U) * 10U
-    : frequency_khz;
-  if (!TuneFrequency(radio_band, target_khz, result))
-  {
-    radio_last_fault = RADIO_CONTROL_FAULT_TUNE;
-    return false;
-  }
-  radio_last_fault = RADIO_CONTROL_FAULT_NONE;
-  return true;
+  return (frequency_khz >= info->minimum_khz) &&
+         (frequency_khz <= info->maximum_khz);
 }
 
-bool RadioControl_TuneStep(bool up, RadioTuneStatus *result)
+/* One band step from the last completed frequency. At the band edge in the step
+ * direction, `wrap` moves to the opposite edge and otherwise the edge holds. */
+uint32_t RadioControl_StepTarget(bool up, bool wrap)
 {
   const RadioBandInfo *info = &band_configs[radio_band].info;
   const uint32_t current_khz = radio_tune_status.frequency_khz;
-  uint32_t target_khz;
 
   if (up)
   {
-    target_khz = (current_khz <= (info->maximum_khz - info->step_khz))
-      ? current_khz + info->step_khz
-      : info->maximum_khz;
+    if (current_khz <= (info->maximum_khz - info->step_khz))
+    {
+      return current_khz + info->step_khz;
+    }
+    return (wrap && (current_khz >= info->maximum_khz)) ? info->minimum_khz
+                                                         : info->maximum_khz;
   }
-  else
+  if (current_khz >= (info->minimum_khz + info->step_khz))
   {
-    target_khz = (current_khz >= (info->minimum_khz + info->step_khz))
-      ? current_khz - info->step_khz
-      : info->minimum_khz;
+    return current_khz - info->step_khz;
   }
-  if ((result == NULL) || !TuneFrequency(radio_band, target_khz, result))
+  return (wrap && (current_khz <= info->minimum_khz)) ? info->maximum_khz
+                                                       : info->minimum_khz;
+}
+
+bool RadioControl_BeginTune(uint32_t frequency_khz)
+{
+  uint32_t target_khz;
+
+  if (tune_in_flight || !radio_powered)
+  {
+    return false;
+  }
+  if (!RadioControl_TuneInRange(frequency_khz))
+  {
+    radio_target_khz = frequency_khz;
+    radio_last_fault = RADIO_CONTROL_FAULT_TUNE;
+    return false;
+  }
+  target_khz = RoundToDeviceUnit(radio_band, frequency_khz);
+  if (!IssueTune(radio_band, target_khz, RADIO_FAST_CTS_TIMEOUT_MS))
   {
     radio_last_fault = RADIO_CONTROL_FAULT_TUNE;
     return false;
   }
-  radio_last_fault = RADIO_CONTROL_FAULT_NONE;
+  tune_in_flight = true;
+  tune_band = radio_band;
+  tune_start_tick = HAL_GetTick();
+  tune_last_poll_tick = tune_start_tick;
   return true;
+}
+
+RadioTunePoll RadioControl_PollTune(RadioTuneStatus *result)
+{
+  RadioTuneStatus completed;
+  const uint32_t now = HAL_GetTick();
+
+  if (!tune_in_flight)
+  {
+    return RADIO_TUNE_POLL_IDLE;
+  }
+  if ((now - tune_last_poll_tick) < RADIO_TUNE_POLL_INTERVAL_MS)
+  {
+    return RADIO_TUNE_POLL_PENDING;
+  }
+  tune_last_poll_tick = now;
+
+  switch (PollTuneOnce(tune_band, RADIO_FAST_CTS_TIMEOUT_MS, &completed))
+  {
+    case TUNE_POLL_DONE:
+      tune_in_flight = false;
+      radio_last_fault = RADIO_CONTROL_FAULT_NONE;
+      if (result != NULL)
+      {
+        *result = completed;
+      }
+      return RADIO_TUNE_POLL_DONE;
+    case TUNE_POLL_BUS_FAILED:
+      tune_in_flight = false;
+      radio_last_fault = RADIO_CONTROL_FAULT_TUNE;
+      return RADIO_TUNE_POLL_FAILED;
+    case TUNE_POLL_PENDING:
+    default:
+      break;
+  }
+  if ((now - tune_start_tick) >= RADIO_DEVICE_TIMEOUT_MS)
+  {
+    tune_in_flight = false;
+    radio_last_fault = RADIO_CONTROL_FAULT_TUNE;
+    return RADIO_TUNE_POLL_FAILED;
+  }
+  return RADIO_TUNE_POLL_PENDING;
 }
 
 bool RadioControl_SwitchBand(RadioBand band, RadioTuneStatus *result)
@@ -491,6 +619,7 @@ bool RadioControl_SwitchBand(RadioBand band, RadioTuneStatus *result)
     return false;
   }
   config = &band_configs[band];
+  tune_in_flight = false;
 
   /* Remove digital output cleanly before changing receiver function. */
   if (!SetProperty(SI4735_PROP_DIGITAL_RATE, 0U) ||
@@ -527,6 +656,7 @@ void RadioControl_HoldReset(void)
 {
   HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
   radio_powered = false;
+  tune_in_flight = false;
 }
 
 const RadioBandInfo *RadioControl_GetBandInfo(RadioBand band)
@@ -545,5 +675,6 @@ bool RadioControl_GetStatus(RadioControlStatus *status)
   status->target_khz = radio_target_khz;
   status->tune = radio_tune_status;
   status->last_fault = radio_last_fault;
+  status->tune_in_flight = tune_in_flight;
   return true;
 }

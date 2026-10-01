@@ -21,9 +21,9 @@ region's Markdown file is deleted in the change that lands its diagram.
 |---|---|---|
 | [InputResolutionSm.puml](InputResolutionSm.puml) ([rendered](InputResolutionSm.svg)) | InputResolution: clicks, holds, the Shift layer and chords, and the Button 0 session hold and prompt; resolves inputs into gestures ([decisions 0005](../../decisions/0005-button-0-session-prompt.md) and [0009](../../decisions/0009-first-slice-field-controls.md)) | StateSmith diagram |
 | [ContextSm.puml](ContextSm.puml) ([rendered](ContextSm.svg)) | Context: which mode, engine page, menu or utility has the controls, and what a gesture means there ([decision 0009](../../decisions/0009-first-slice-field-controls.md)) | StateSmith diagram |
+| [RadioSm.puml](RadioSm.puml) ([rendered](RadioSm.svg)) | Radio: in-band tuning without blocking the foreground loop, band switches and radio faults; commands wait latest-wins behind a tune in flight ([decisions 0003](../../decisions/0003-radio-control-during-recording.md) and [0008](../../decisions/0008-recording-safe-command-policy.md)) | StateSmith diagram |
 | [SessionSm.puml](SessionSm.puml) ([rendered](SessionSm.svg)) | Session: the authoritative recording lifecycle; queued commands invoke recorder operations through its port | StateSmith diagram |
 | [top-level.md](top-level.md) | Device chart, parallel regions, cross-region invariants | Tables |
-| [radio.md](radio.md) | Radio: tuning, band transitions and radio faults | Tables |
 | [presentation.md](presentation.md) | How domain events and published state reach the user | Hand-written contract |
 
 Each diagram generates `CM7/App/sm/<Name>Sm.c` and `.h`, and the rendered
@@ -130,7 +130,7 @@ Regions that have not yet moved to a diagram are specified as Markdown tables. T
 conventions apply to those files only.
 
 - **Stable IDs.** Every state, invariant and transition has an ID with its machine's
-  prefix: `RAD-S1` for a state, `RAD-I1` for an invariant, `RAD-01` for a transition.
+  prefix: `DEV-S1` for a state, `DEV-I1` for an invariant, `DEV-01` for a transition.
   IDs are never reused or renumbered. When a row's meaning changes, it gets a new ID
   and the old ID moves to the file's Retired IDs table.
 - **Tables are authoritative.** Mermaid diagrams illustrate the tables and must not
