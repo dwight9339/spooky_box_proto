@@ -8,6 +8,8 @@ option(SPOOKY_IPC_SMOKE "Build the unvalidated dual-core IPC bench experiment" O
 set(SPOOKY_IPC_M4_VERSION "1" CACHE STRING "M4 diagnostic ABI; 2 tests mismatch")
 option(SPOOKY_RADIO_TUNE_QUALIFICATION
     "Allow in-band tuning while recording for bench qualification (54w.6)" OFF)
+option(SPOOKY_DEMO
+    "Build the Halloween 2026 demo-only behavior (decision 0011, demo branch only)" OFF)
 set(SPOOKY_RECORDING_CARD_RESERVE_SECONDS "60" CACHE STRING
     "Seconds of three-channel audio retained before reporting card full")
 set(SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES "0" CACHE STRING
@@ -46,6 +48,7 @@ function(spooky_add_core core_name target_name)
             "-DSPOOKY_IPC_SMOKE:BOOL=${SPOOKY_IPC_SMOKE}"
             "-DSPOOKY_IPC_M4_VERSION:STRING=${SPOOKY_IPC_M4_VERSION}"
             "-DSPOOKY_RADIO_TUNE_QUALIFICATION:BOOL=${SPOOKY_RADIO_TUNE_QUALIFICATION}"
+            "-DSPOOKY_DEMO:BOOL=${SPOOKY_DEMO}"
             "-DSPOOKY_RECORDING_CARD_RESERVE_SECONDS:STRING=${SPOOKY_RECORDING_CARD_RESERVE_SECONDS}"
             "-DSPOOKY_ROLLING_CAPTURE_RESERVE_BYTES:STRING=${SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES}"
             "-DSPOOKY_RECORDING_FINALIZE_RESERVE_BYTES:STRING=${SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES}"

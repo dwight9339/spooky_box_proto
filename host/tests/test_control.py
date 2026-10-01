@@ -119,6 +119,15 @@ class ControlTests(unittest.TestCase):
         with self.assertRaisesRegex(BenchError, "SPOOKY_BUILD_ID"):
             validate_pair(self.manifest_path)
 
+    def test_manifest_accepts_demo_preset_and_rejects_unknown(self):
+        self.manifest["preset"] = "Demo"
+        self.save_manifest()
+        self.assertEqual(validate_pair(self.manifest_path)[0]["preset"], "Demo")
+        self.manifest["preset"] = "Showcase"
+        self.save_manifest()
+        with self.assertRaisesRegex(BenchError, "Unknown build preset"):
+            validate_pair(self.manifest_path)
+
     def test_stage_pair_uses_validated_snapshot_bytes(self):
         snapshot = self.root / "source.patch"
         snapshot.write_bytes(b"validated bytes")
