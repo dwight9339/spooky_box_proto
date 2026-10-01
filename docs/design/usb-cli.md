@@ -43,6 +43,7 @@ EMF ZERO
 EMF STREAM START 100
 EMF STREAM STOP
 RECORD STATUS
+RECORD RESULT
 RECORD LATENCY
 RECORD START 60
 RECORD STOP
@@ -326,7 +327,23 @@ that stops reading during a recording therefore receives the outcome (`OK RECORD
 or `ERR RECORD ABORT`) and `RECORD DIAG` when it resumes, after at most one stale line
 already in transfer and the newest progress line. Queued replies are sent as soon as
 the host polls again, so a host that discards received data when it opens the port
-(pyserial on Windows calls `PurgeComm` in `open()`) can lose them.
+(pyserial on Windows calls `PurgeComm` in `open()`) can lose them. Such a host
+recovers the outcome with `RECORD RESULT`.
+
+`RECORD RESULT` is a read-only query, accepted in every session state, that reports
+the last finished recording since boot:
+
+```text
+OK RECORD RESULT NONE
+OK RECORD RESULT seq=2 outcome=PASS file=REC075.WAV frames=286720 bytes=1720320 elapsed=6025ms finalized=1 reason=stopped
+```
+
+`seq` counts finished recordings since boot. `outcome` is `PASS` exactly when the
+pushed line was `OK RECORD PASS`; otherwise it is `ABORT`, including a clean stop
+whose finalization failed. `reason` is last and may contain spaces. The record is
+written before the pushed outcome line, so it is never older than that line. While a
+recording is active the reply still describes the previous one; a host that started
+a recording matches `file` (and `seq`) before treating the result as its own.
 `RECORD STOP` requests a clean stop after the next matched radio/mic block.
 SD maintenance and stress commands, WAV transfer, and radio band/tuning changes are
 rejected while recording is active. `SD STATUS` remains nonintrusive: while the

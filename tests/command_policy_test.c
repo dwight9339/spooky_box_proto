@@ -80,6 +80,7 @@ static void current_cli_commands_map_to_the_shared_actions(void)
           COMMAND_ACTION_SESSION_START);
     CHECK(CommandPolicy_ActionFromCli("RECORD STOP") == COMMAND_ACTION_SESSION_STOP);
     CHECK(CommandPolicy_ActionFromCli("RECORD STATUS") == COMMAND_ACTION_STATUS_READ);
+    CHECK(CommandPolicy_ActionFromCli("RECORD RESULT") == COMMAND_ACTION_STATUS_READ);
     CHECK(CommandPolicy_ActionFromCli("SLEEP START") == COMMAND_ACTION_SLEEP);
     CHECK(CommandPolicy_ActionFromCli("WAV FETCH REC000.WAV") ==
           COMMAND_ACTION_WAV_TRANSFER);

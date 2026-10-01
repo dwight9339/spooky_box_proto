@@ -4,6 +4,7 @@
 #include "session_control.h"
 
 #include "ff.h"
+#include "recording_result.h"
 #include "reply_queue.h"
 #include "storage_service.h"
 #include "usb_test.h"
@@ -107,6 +108,7 @@ static bool finish_aborted;
 static bool session_event_pending;
 /* Replies the CDC port did not accept; see reply_queue.h for the policy. */
 static ReplyQueue recorder_usb_queue;
+static RecordingResult last_result;
 
 static void RecorderFlushUsb(void)
 {
@@ -599,6 +601,9 @@ static bool RecorderFinish(bool aborted, const char *reason)
   elapsed_ms = HAL_GetTick() - recording_start_ms;
   Diagnostics_Record(DIAG_RECORD_END, frames_written,
     ((aborted || !finalized) ? 1U : 0U) | (finalized ? 2U : 0U));
+  /* Kept before the reply is pushed, so RECORD RESULT never trails it. */
+  RecordingResult_Record(&last_result, aborted, finalized, recorder_filename,
+                         frames_written, data_bytes, elapsed_ms, reason);
 
   if (aborted || !finalized)
   {
@@ -834,6 +839,7 @@ void RadioRecorder_Init(DFSDM_Filter_HandleTypeDef *filter)
   session_event_pending = false;
   recorder_filename[0] = '\0';
   ReplyQueue_Init(&recorder_usb_queue);
+  RecordingResult_Init(&last_result);
   printf("[record] three-channel recorder ready; default=open\r\n");
 }
 
@@ -870,6 +876,16 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
                    (recorder_filename[0] != '\0') ? recorder_filename : "none",
                    (unsigned long)frames_written,
                    (unsigned long)max_write_ms);
+    }
+    return true;
+  }
+  if (strcmp(command, "RECORD RESULT") == 0)
+  {
+    char reply[REPLY_QUEUE_LINE_BYTES];
+
+    if (RecordingResult_Format(&last_result, reply, sizeof(reply)) != 0U)
+    {
+      RecorderSend("%s", reply);
     }
     return true;
   }
@@ -921,7 +937,7 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
     return true;
   }
 
-  RecorderSend("ERR usage: RECORD STATUS|LATENCY|START [seconds]|STOP\r\n");
+  RecorderSend("ERR usage: RECORD STATUS|RESULT|LATENCY|START [seconds]|STOP\r\n");
   return true;
 }
 

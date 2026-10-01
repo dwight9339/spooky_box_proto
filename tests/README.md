@@ -61,6 +61,11 @@ a whole recording, progress lines coalesce to the newest one and the outcome and
 diagnostic replies survive in order; a full queue evicts progress before replies, then
 the oldest reply, and counts both. USB CDC timing remains hardware-only evidence.
 
+The recording-result test checks the `RECORD RESULT` record: `NONE` before the first
+recording, PASS only when not aborted and finalized, the sequence (which skips 0 on
+wrap), truncated file and reason strings, and that the longest reply fits the
+recorder's 240-byte reply line.
+
 The event-queue tests cover decision 0007: post order, sequence and time, admission
 by class with the internal reserve, reject-newest overrun, one reconcile event after
 rejected input, bounded run-to-completion dispatch, the reserve's exact limit when
