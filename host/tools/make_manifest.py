@@ -6,14 +6,14 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from spookybench.firmware import MAX_ELF, elf_ranges, validate_pair
+from spookybench.firmware import MAX_ELF, PRESETS, elf_ranges, validate_pair
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cm7", required=True)
     parser.add_argument("--cm4", required=True)
-    parser.add_argument("--preset", required=True, choices=("Debug", "Release", "IpcSmoke", "IpcMismatch"))
+    parser.add_argument("--preset", required=True, choices=PRESETS)
     parser.add_argument("--source-revision", required=True, help="full Git SHA of the image build")
     parser.add_argument("--build-id", required=True)
     parser.add_argument("--source-snapshot", help="archived source snapshot/patch for a dirty image build")
