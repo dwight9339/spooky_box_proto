@@ -39,6 +39,13 @@
             }
         },
         {
+            "name": "Demo",
+            "inherits": "Debug",
+            "cacheVariables": {
+                "SPOOKY_DEMO": "ON"
+            }
+        },
+        {
             "name": "Release",
             "inherits": "default",
             "cacheVariables": {
@@ -58,6 +65,10 @@
         {
             "name": "RadioTuneQual",
             "configurePreset": "RadioTuneQual"
+        },
+        {
+            "name": "Demo",
+            "configurePreset": "Demo"
         },
         {
             "name": "Debug",

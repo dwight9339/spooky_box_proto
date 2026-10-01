@@ -69,6 +69,8 @@ cmake --build --preset Debug
 ```
 
 Presets: `Debug`, `Release`, and the opt-in `IpcSmoke` and `IpcMismatch` experiments.
+On `demo/halloween-2026` only, the opt-in `Demo` preset (Debug plus `SPOOKY_DEMO=1`)
+builds the demo image.
 Each writes both core images to `build/<Preset>/firmware/CM7|CM4/`. Build Debug and
 Release after any firmware change.
 

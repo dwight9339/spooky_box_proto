@@ -140,6 +140,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 include("../cmake/ipc_smoke.cmake")
+include("../cmake/demo.cmake")
 
 # Use the same FatFs R0.12c release as the passing sibling SDMMC tests.
 set(STM32CUBE_H7_ROOT

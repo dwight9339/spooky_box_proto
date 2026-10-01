@@ -8,6 +8,8 @@ from .result import BenchError
 
 MAX_ELF = 16 * 1024**2
 MAX_SOURCE_SNAPSHOT = 64 * 1024**2
+# Demo exists only on demo/halloween-2026 (decision 0011); its evidence is demo-image evidence.
+PRESETS = ("Debug", "Release", "IpcSmoke", "IpcMismatch", "Demo")
 BUILD_ID_MARKER = b"SBID1:"
 
 
@@ -71,7 +73,7 @@ def _validate_pair(path):
         optional = {"compiler", "build_flags", "source_snapshot_path"}
         if not isinstance(manifest, dict) or not required <= set(manifest) or set(manifest) - required - optional or type(manifest["schema_version"]) is not int or manifest["schema_version"] != 1:
             raise ValueError("Invalid manifest schema")
-        if manifest["preset"] not in ("Debug", "Release", "IpcSmoke", "IpcMismatch"):
+        if manifest["preset"] not in PRESETS:
             raise ValueError("Unknown build preset")
         compiler, flags = manifest.get("compiler"), manifest.get("build_flags")
         if compiler is not None and (not isinstance(compiler, str) or not 1 <= len(compiler) <= 256):

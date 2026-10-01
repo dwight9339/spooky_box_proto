@@ -63,6 +63,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Link directories setup
 include("../cmake/ipc_smoke.cmake")
+include("../cmake/demo.cmake")
 
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
