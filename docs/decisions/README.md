@@ -22,6 +22,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0010](0010-sd-backed-rolling-capture.md) | Sixty-second SD-backed rolling capture | Accepted |
 | [0011](0011-halloween-2026-demo-build.md) | Halloween 2026 demo build | Accepted |
 | [0012](0012-common-audio-sample-timeline.md) | Common audio sample timeline | Accepted |
+| [0013](0013-matrix-emf-radio-and-status-mapping.md) | LED matrix mapping for EMF, radio onsets and recording status | Accepted |
 
 ## Template
 
