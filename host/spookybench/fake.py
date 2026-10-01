@@ -180,7 +180,7 @@ class Serial:
                     4096 - math.ceil(self.state.get("sd_used_bytes", 0) / MIB)
                 self.pending = (f"OK SD PRESENT=1 MOUNTED=1 TYPE=SDHC/SDXC "
                     f"CAPACITY=30000MiB FREE={free}MiB BLOCKS={blocks} "
-                    "BUS=4 CLOCKDIV=0\r\n").encode()
+                    "BUS=4 CLOCKDIV=2\r\n").encode()
             return len(data)
         if command.startswith("SD STRESS ") and command != "SD STRESS STOP":
             if self.scenario == "sd-existing":

@@ -340,8 +340,10 @@ unmounting the current owner.
 `SD STATUS` mounts the volume and reports the card type, capacity, free space,
 logical block count, bus width, and active clock divider. `SD REINIT` unmounts,
 deinitializes, and mounts it again. The configuration uses four-bit mode, hardware
-flow control, `ClockDiv=2` for card initialization/mounting, and `ClockDiv=0` for
-file transfers.
+flow control, and `ClockDiv=2` (75 MHz / 4 = 18.75 MHz) for mounting and transfers.
+The card is never switched to high speed, so the bus stays within the 25 MHz
+default-speed limit. `ClockDiv=0` bypasses the divider and runs the bus at 75 MHz;
+a 2 GB SDSC card fails data CRC there.
 
 `SD STRESS [size-MiB] [passes]` defaults to a 64 MiB, one-pass test. Each pass
 overwrites `SDTEST.BIN` with a changing pseudorandom pattern in 16 KiB chunks,

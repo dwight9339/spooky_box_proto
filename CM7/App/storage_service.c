@@ -3,27 +3,18 @@
 #include "main.h"
 #include "sd_diskio.h"
 
-#define STORAGE_MOUNT_CLOCK_DIV     2U
-#define STORAGE_TRANSFER_CLOCK_DIV  0U
+/*
+ * SDMMC_CK = 75 MHz PLL1Q / (2 * CLKDIV) = 18.75 MHz. The card is never switched
+ * to high speed (CMD6), so the bus must stay within the 25 MHz default-speed limit
+ * for every card class. CLKDIV 0 bypasses the divider and runs the bus at 75 MHz.
+ */
+#define STORAGE_CLOCK_DIV  2U
 
 static SD_HandleTypeDef *storage_sd;
 static FATFS storage_filesystem;
 static StorageLease storage_lease;
 static bool storage_mounted;
 static FRESULT storage_last_result;
-
-static void StorageSetClockDiv(uint32_t clock_div)
-{
-  if ((storage_sd == NULL) || (storage_sd->Instance == NULL))
-  {
-    return;
-  }
-  storage_sd->Init.ClockDiv = clock_div;
-  if (HAL_SD_GetState(storage_sd) != HAL_SD_STATE_RESET)
-  {
-    MODIFY_REG(storage_sd->Instance->CLKCR, SDMMC_CLKCR_CLKDIV, clock_div);
-  }
-}
 
 static FRESULT StorageUnmount(void)
 {
@@ -64,7 +55,7 @@ void StorageService_Init(SD_HandleTypeDef *sd)
   storage_sd->Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
   storage_sd->Init.BusWide = SDMMC_BUS_WIDE_4B;
   storage_sd->Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_ENABLE;
-  storage_sd->Init.ClockDiv = STORAGE_MOUNT_CLOCK_DIV;
+  storage_sd->Init.ClockDiv = STORAGE_CLOCK_DIV;
 }
 
 FRESULT StorageService_Acquire(StorageOwner owner)
@@ -82,7 +73,6 @@ FRESULT StorageService_Acquire(StorageOwner owner)
     return storage_last_result;
   }
 
-  StorageSetClockDiv(STORAGE_MOUNT_CLOCK_DIV);
   result = f_mount(&storage_filesystem, "", 1U);
   if (result != FR_OK)
   {
@@ -92,7 +82,6 @@ FRESULT StorageService_Acquire(StorageOwner owner)
     return result;
   }
   storage_mounted = true;
-  StorageSetClockDiv(STORAGE_TRANSFER_CLOCK_DIV);
   storage_last_result = FR_OK;
   return FR_OK;
 }
