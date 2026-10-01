@@ -54,6 +54,13 @@ if(SPOOKY_RADIO_TUNE_QUALIFICATION)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_RADIO_TUNE_QUALIFICATION=1)
 endif()
 
+option(SPOOKY_LOGGER_LOAD_QUALIFICATION
+    "Add LOG LOAD and LOG FAULT for logger saturation bench qualification (jjy.6)" OFF)
+if(SPOOKY_LOGGER_LOAD_QUALIFICATION)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_LOGGER_LOAD_QUALIFICATION=1)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/App/logger_load.c)
+endif()
+
 set(SPOOKY_RECORDING_CARD_RESERVE_SECONDS "60" CACHE STRING
     "Seconds of three-channel audio retained before reporting card full")
 set(SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES "0" CACHE STRING

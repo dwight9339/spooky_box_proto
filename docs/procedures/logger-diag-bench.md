@@ -27,7 +27,10 @@ reliability. No M4 logger, Pico firmware, or host serial capture tool is include
    temporary bench build. Confirm that execution progresses, loss counters
    increase, and text output resumes afterward. Preserve counter deltas at the
    device, probe, and host independently. Merely unplugging the probe does not
-   cause UART backpressure because there is no flow control.
+   cause UART backpressure because there is no flow control. Configure the
+   `IpcSmoke` preset with `-DSPOOKY_LOGGER_LOAD_QUALIFICATION=ON` for
+   `LOG LOAD <bytes/s> <seconds>|STATUS|HIST|STOP` and `LOG FAULT`, which forces
+   the 250 ms transmit watchdog abort.
 4. Request a dump and disconnect CDC; reconnect after more than five seconds.
    Verify a new command works. During a slow dump under recording, verify GAP
    rows and matching END counts when entries are overwritten. Mark dumps without

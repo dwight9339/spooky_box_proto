@@ -35,6 +35,9 @@
 #include "diagnostics.h"
 #include "foreground_budget.h"
 #include "ipc_smoke_cli.h"
+#if defined(SPOOKY_LOGGER_LOAD_QUALIFICATION)
+#include "logger_load.h"
+#endif
 #if defined(SPOOKY_IPC_SMOKE)
 #include "ipc_smoke.h"
 #endif
@@ -315,6 +318,12 @@ static void UsbCliCommand(const char *line)
     return;
   }
 
+#if defined(SPOOKY_LOGGER_LOAD_QUALIFICATION)
+  if (LoggerLoad_HandleCommand(command))
+  {
+    return;
+  }
+#endif
   if (Diagnostics_HandleCommand(command))
   {
     return;
@@ -756,6 +765,9 @@ Error_Handler();
       FuelGaugeTest_Service(!RadioRecorder_IsCapturing()));
     RUN_FOREGROUND(FOREGROUND_SERVICE_USB, UsbTest_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_WAV, WavTransfer_Service());
+#if defined(SPOOKY_LOGGER_LOAD_QUALIFICATION)
+    RUN_FOREGROUND(FOREGROUND_SERVICE_LOGGER, LoggerLoad_Service());
+#endif
     RUN_FOREGROUND(FOREGROUND_SERVICE_LOGGER, TargetLogger_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_DIAGNOSTICS, Diagnostics_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_UI,
