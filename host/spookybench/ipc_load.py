@@ -16,7 +16,8 @@ PASS = re.compile(r"^OK RECORD PASS file=(REC[0-9]{3}\.WAV) frames=([0-9]+) "
                   r"(?: reason=(.+))?$")
 DIAG = re.compile(r"^RECORD DIAG queues radio=([0-9]+)/([0-9]+) "
                   r"pdm=([0-9]+)/([0-9]+) max-write=([0-9]+)ms "
-                  r"peaks=([0-9]+),([0-9]+),([0-9]+)$")
+                  r"peaks=([0-9]+),([0-9]+),([0-9]+)"
+                  r"(?: margin=(OK|LOW))?$")  # margin: decision 0014; absent before it
 IDLE = re.compile(r"^OK RECORD IDLE last-file=([^ ]+) frames=([0-9]+) "
                   r"max-write=([0-9]+)ms$")
 
@@ -67,7 +68,8 @@ def _record(raw, complete):
         value.update(kind="RECORD DIAG", fields={"radio_high_water": int(match[1]),
             "radio_depth": int(match[2]), "pdm_high_water": int(match[3]),
             "pdm_depth": int(match[4]), "max_write_ms": int(match[5]),
-            "peaks": [int(match[6]), int(match[7]), int(match[8])]})
+            "peaks": [int(match[6]), int(match[7]), int(match[8])],
+            "storage_margin": match[9]})
         return value
     match = IDLE.fullmatch(text)
     if match:

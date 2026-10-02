@@ -1,6 +1,6 @@
 # 0014. SD media policy for recording
 
-- **Status:** Proposed
+- **Status:** Accepted 2026-10-01
 - **Date:** 2026-10-01
 - **Supersedes:** none
 - **Beads:** `full_spooky_proto-jjy.8` (this decision); `full_spooky_proto-jjy.14`

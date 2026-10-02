@@ -74,6 +74,10 @@ supported, card-type names, speed-class and allocation-unit decoding, and the
 `SD INFO` line, including '?' for unprintable identity bytes and worst-case field
 widths. Formatting and card reads remain hardware-only evidence.
 
+The storage-margin test checks the decision 0014 warning: the queue high-water and
+single-write thresholds (each inclusive), latching with the first values kept, a
+single first-crossing edge, and reset between recordings.
+
 The event-queue tests cover decision 0007: post order, sequence and time, admission
 by class with the internal reserve, reject-newest overrun, one reconcile event after
 rejected input, bounded run-to-completion dispatch, the reserve's exact limit when

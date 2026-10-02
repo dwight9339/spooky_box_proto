@@ -76,6 +76,10 @@ set(SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES "0" CACHE STRING
     "Additional allocation bytes needed to finalize a recording")
 set(SPOOKY_RECORDING_WAV_MAX_FRAMES "715827876" CACHE STRING
     "Maximum WAV frames; override only for bounded storage-limit bench tests")
+set(SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS "4" CACHE STRING
+    "Audio queue high-water (of 8 blocks) that reports low storage margin (decision 0014)")
+set(SPOOKY_STORAGE_MARGIN_WRITE_MS "341" CACHE STRING
+    "Single SD write duration that reports low storage margin (decision 0014)")
 set(SPOOKY_BUILD_ID "unidentified" CACHE STRING
     "ASCII build identity reported by DIAG IDENTITY")
 string(LENGTH "${SPOOKY_BUILD_ID}" SPOOKY_BUILD_ID_LENGTH)
@@ -88,6 +92,8 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES=${SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES}
     SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES=${SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES}
     SPOOKY_RECORDING_WAV_MAX_FRAMES=${SPOOKY_RECORDING_WAV_MAX_FRAMES}
+    SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS=${SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS}
+    SPOOKY_STORAGE_MARGIN_WRITE_MS=${SPOOKY_STORAGE_MARGIN_WRITE_MS}
     SPOOKY_BUILD_ID=\"${SPOOKY_BUILD_ID}\"
 )
 
@@ -121,6 +127,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/recording_result.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/reply_queue.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/sd_media.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_margin.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_lease.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/sm/session_port.c

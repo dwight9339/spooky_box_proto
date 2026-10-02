@@ -20,6 +20,10 @@ set(SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES "0" CACHE STRING
     "Additional allocation bytes needed to finalize a recording")
 set(SPOOKY_RECORDING_WAV_MAX_FRAMES "715827876" CACHE STRING
     "Maximum WAV frames; override only for bounded storage-limit bench tests")
+set(SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS "4" CACHE STRING
+    "Audio queue high-water (of 8 blocks) that reports low storage margin (decision 0014)")
+set(SPOOKY_STORAGE_MARGIN_WRITE_MS "341" CACHE STRING
+    "Single SD write duration that reports low storage margin (decision 0014)")
 set(SPOOKY_BUILD_ID "unidentified" CACHE STRING
     "ASCII build identity reported by the M7 target")
 string(LENGTH "${SPOOKY_BUILD_ID}" SPOOKY_BUILD_ID_LENGTH)
@@ -56,6 +60,8 @@ function(spooky_add_core core_name target_name)
             "-DSPOOKY_ROLLING_CAPTURE_RESERVE_BYTES:STRING=${SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES}"
             "-DSPOOKY_RECORDING_FINALIZE_RESERVE_BYTES:STRING=${SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES}"
             "-DSPOOKY_RECORDING_WAV_MAX_FRAMES:STRING=${SPOOKY_RECORDING_WAV_MAX_FRAMES}"
+            "-DSPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS:STRING=${SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS}"
+            "-DSPOOKY_STORAGE_MARGIN_WRITE_MS:STRING=${SPOOKY_STORAGE_MARGIN_WRITE_MS}"
             ${core_identity_arg}
         BUILD_ALWAYS                true
     )

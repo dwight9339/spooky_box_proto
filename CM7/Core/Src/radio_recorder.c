@@ -7,6 +7,7 @@
 #include "recording_result.h"
 #include "reply_queue.h"
 #include "sd_media.h"
+#include "storage_margin.h"
 #include "storage_service.h"
 #include "usb_test.h"
 
@@ -48,6 +49,14 @@
 #endif
 #ifndef SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES
 #define SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES 0U
+#endif
+/* Decision 0014 item 5: half the eight-block (683 ms) queue headroom, until the
+ * media survey fixes the thresholds. */
+#ifndef SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS
+#define SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS 4U
+#endif
+#ifndef SPOOKY_STORAGE_MARGIN_WRITE_MS
+#define SPOOKY_STORAGE_MARGIN_WRITE_MS 341U
 #endif
 
 typedef enum
@@ -110,6 +119,10 @@ static bool session_event_pending;
 /* Replies the CDC port did not accept; see reply_queue.h for the policy. */
 static ReplyQueue recorder_usb_queue;
 static RecordingResult last_result;
+static StorageMargin storage_margin;
+static const StorageMarginLimits storage_margin_limits = {
+  SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS, SPOOKY_STORAGE_MARGIN_WRITE_MS
+};
 
 static void RecorderFlushUsb(void)
 {
@@ -543,6 +556,24 @@ static void RecorderConvertBlock(const int16_t *radio, const int32_t *pdm)
   }
 }
 
+/* Decision 0014 item 5: latch a storage-margin warning once a queue or a write
+ * passes its threshold. The queues fill in interrupts during a slow write, so
+ * the high-water mark is read after each write. */
+static void RecorderCheckMargin(uint32_t write_ms)
+{
+  uint32_t high_water = radio_queue_high_water;
+
+  if (pdm_queue_high_water > high_water)
+  {
+    high_water = pdm_queue_high_water;
+  }
+  if (StorageMargin_Update(&storage_margin, &storage_margin_limits, high_water,
+                           write_ms))
+  {
+    Diagnostics_Record(DIAG_STORAGE_MARGIN, high_water, write_ms);
+  }
+}
+
 static bool RecorderWriteBlock(void)
 {
   UINT written = 0U;
@@ -567,6 +598,7 @@ static bool RecorderWriteBlock(void)
   }
   ++write_hist[bin];
   ++write_count;
+  RecorderCheckMargin(write_ms);
   if ((result != FR_OK) || (written != RECORDER_OUTPUT_BYTES))
   {
     Diagnostics_Record(DIAG_SD_ERROR, (uint32_t)result, written);
@@ -593,7 +625,7 @@ void RadioRecorder_StopCapture(void)
 static void RecorderReportDiagnostics(void)
 {
   RecorderSend("RECORD DIAG queues radio=%u/%u pdm=%u/%u "
-               "max-write=%lums peaks=%lu,%lu,%lu\r\n",
+               "max-write=%lums peaks=%lu,%lu,%lu margin=%s\r\n",
                (unsigned int)radio_queue_high_water,
                RECORDER_QUEUE_DEPTH,
                (unsigned int)pdm_queue_high_water,
@@ -601,7 +633,8 @@ static void RecorderReportDiagnostics(void)
                (unsigned long)max_write_ms,
                (unsigned long)radio_left_peak,
                (unsigned long)radio_right_peak,
-               (unsigned long)pdm_peak);
+               (unsigned long)pdm_peak,
+               storage_margin.low ? "LOW" : "OK");
 }
 
 /* Returns whether the file was finalized. */
@@ -711,6 +744,7 @@ bool RadioRecorder_StartCapture(void)
 
   frames_written = 0U;
   max_write_ms = 0U;
+  StorageMargin_Reset(&storage_margin);
   max_convert_ms = 0U;
   output_pending = false;
   write_count = 0U;
@@ -877,14 +911,15 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
     if (recorder_state == RECORDER_ACTIVE)
     {
       RecorderSend("OK RECORD ACTIVE file=%s audio=%lu.%01lus "
-                   "queues=%u/%u,%u/%u max-write=%lums\r\n",
+                   "queues=%u/%u,%u/%u max-write=%lums margin=%s\r\n",
                    recorder_filename,
                    (unsigned long)(frames_written / RECORDER_SAMPLE_RATE_HZ),
                    (unsigned long)(((frames_written % RECORDER_SAMPLE_RATE_HZ) *
                                     10U) / RECORDER_SAMPLE_RATE_HZ),
                    (unsigned int)radio_queue_count, RECORDER_QUEUE_DEPTH,
                    (unsigned int)pdm_queue_count, RECORDER_QUEUE_DEPTH,
-                   (unsigned long)max_write_ms);
+                   (unsigned long)max_write_ms,
+                   storage_margin.low ? "LOW" : "OK");
     }
     else
     {

@@ -24,6 +24,7 @@ typedef enum
   DIAG_COMMAND_REJECTED,
   DIAG_FOREGROUND_BUDGET,
   DIAG_USB_BACKPRESSURE,
+  DIAG_STORAGE_MARGIN, /* Decision 0014 warning; not a fault. */
   DIAG_EVENT_LIMIT
 } DiagEventType;
 

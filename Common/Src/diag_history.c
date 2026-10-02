@@ -58,6 +58,8 @@ const char *DiagHistory_Name(uint32_t type)
     "RECORD_END", "SD_WRITE", "SD_ERROR", "RADIO_OVERRUN", "PDM_OVERRUN",
     "AUDIO_ERROR", "IPC_LINK", "LOOP_STALL", "LOG_LOSS", "LOG_ERROR", "SLEEP",
     "EVENT_QUEUE_LOSS", "SESSION_MISMATCH", "COMMAND_REJECTED",
-    "FOREGROUND_BUDGET", "USB_BACKPRESSURE"};
+    "FOREGROUND_BUDGET", "USB_BACKPRESSURE", "STORAGE_MARGIN"};
+  _Static_assert((sizeof(names) / sizeof(names[0])) == DIAG_EVENT_LIMIT,
+                 "every diagnostic event needs a name");
   return type < DIAG_EVENT_LIMIT ? names[type] : names[0];
 }

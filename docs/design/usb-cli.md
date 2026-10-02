@@ -309,10 +309,19 @@ request produces about 60.075 seconds of audio:
 OK RECORD START file=REC000.WAV duration=open format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]
 ...
 OK RECORD PASS file=REC000.WAV ... reason=stopped
-RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,...
+RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,... margin=OK|LOW
 ```
 
-`RECORD STATUS` reports progress, current queue depths, and the longest SD write.
+`RECORD STATUS` reports progress, current queue depths, the longest SD write and the
+storage margin.
+
+The storage margin (decision 0014) becomes `LOW` once either audio queue's high-water
+mark reaches 4 of 8 blocks or a single SD write takes 341 ms or more, half the
+queue headroom. It latches for the rest of the recording, appears in `RECORD STATUS`
+and `RECORD DIAG`, and records one `STORAGE_MARGIN` diagnostic event. It is a warning,
+not a fault: it does not set `HAS_FAULT` or stop the recording. The thresholds are the
+build settings `SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS` and `SPOOKY_STORAGE_MARGIN_WRITE_MS`
+until the media survey fixes them.
 `RECORD LATENCY` reports, for the current or last recording, the number of block
 writes, the longest `f_write`, the longest block conversion before it, and a
 histogram of `f_write` durations in 10 ms bins (0-9 ms through 60-69 ms, then
