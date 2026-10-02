@@ -96,6 +96,15 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     SPOOKY_STORAGE_MARGIN_WRITE_MS=${SPOOKY_STORAGE_MARGIN_WRITE_MS}
     SPOOKY_BUILD_ID=\"${SPOOKY_BUILD_ID}\"
 )
+# HAL ACMD41 power-up tries (HAL default 0xFFFF). Lowered so an unresponsive
+# card fails close to the SD 1 s power-up allowance instead of ~38 s (jjy.15).
+# The HAL is compiled in the generated STM32_Drivers library, so it needs the
+# definition too; both targets use the same value.
+set(SPOOKY_SDMMC_MAX_VOLT_TRIAL 2000U)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    SDMMC_MAX_VOLT_TRIAL=${SPOOKY_SDMMC_MAX_VOLT_TRIAL})
+target_compile_definitions(STM32_Drivers PRIVATE
+    SDMMC_MAX_VOLT_TRIAL=${SPOOKY_SDMMC_MAX_VOLT_TRIAL})
 
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)

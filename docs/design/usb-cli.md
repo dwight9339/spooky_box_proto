@@ -388,6 +388,22 @@ The card is never switched to high speed, so the bus stays within the 25 MHz
 default-speed limit. `ClockDiv=0` bypasses the divider and runs the bus at 75 MHz;
 a 2 GB SDSC card fails data CRC there.
 
+Card initialization is bounded. The SD power-up handshake (ACMD41) is tried at most
+2000 times, about 1.2 s, slightly more than the SD 1 s power-up allowance. After that,
+the card must reach the transfer state within 1 s. A card that fails either step fails
+the mount in about 1.2 s instead of blocking the foreground for about 38 s. The working
+cards tested mount within about 300 ms. A failed mount, `SD INFO`, `SD FORMAT` or
+`RECORD START` reports the failing step, preserved before the handle is deinitialized:
+
+```text
+ERR SD mount failed result=FR_NOT_READY(3) stage=HAL_INIT hal=0x01000000 state=0 init_ms=1156 ready_ms=0
+```
+
+`stage` is `HAL_INIT` (identification or power-up failed; `hal=0x01000000` is the HAL's
+invalid-voltage-range error, a card that never finished powering up), `NOT_READY` (it
+never reached the transfer state; `state` is the last card state), `NO_CARD` or `OK`
+(the card initialized and the failure is the filesystem itself, such as
+`FR_NO_FILESYSTEM`).
 `SD STRESS [size-MiB] [passes]` defaults to a 64 MiB, one-pass test. Each pass
 overwrites `SDTEST.BIN` with a changing pseudorandom pattern in 16 KiB chunks,
 syncs it to the card, reads the whole file back, and compares every byte. A

@@ -6,6 +6,7 @@
 #include "ff.h"
 #include "recording_result.h"
 #include "reply_queue.h"
+#include "sd_diskio.h"
 #include "sd_media.h"
 #include "storage_margin.h"
 #include "storage_service.h"
@@ -252,9 +253,11 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
   result = StorageService_Acquire(STORAGE_OWNER_RECORDER);
   if (result != FR_OK)
   {
-    RecorderSend("ERR RECORD mount failed result=%s(%u) hal=0x%08lX\r\n",
+    char detail[96];
+
+    RecorderSend("ERR RECORD mount failed result=%s(%u) %s\r\n",
                  StorageService_ResultName(result), (unsigned int)result,
-                 (unsigned long)StorageService_HalError());
+                 SdDiskIo_InitDetail(detail, sizeof(detail)));
     return false;
   }
   /* Decision 0014: only SDHC/SDXC cards record. */

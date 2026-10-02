@@ -1,6 +1,7 @@
 #include "sd_test.h"
 
 #include "ff.h"
+#include "sd_diskio.h"
 #include "sd_media.h"
 #include "storage_service.h"
 #include "usb_test.h"
@@ -36,6 +37,8 @@ static uint32_t sd_stress_verified;
 static uint32_t sd_stress_write_max_ms;
 static uint32_t sd_stress_read_max_ms;
 static SdFormatArm sd_format_arm;
+/* Init failure detail for error replies; foreground only. */
+static char sd_init_detail[96];
 
 static void SdSend(const char *text)
 {
@@ -69,9 +72,9 @@ static void SdStatus(void)
   if (result != FR_OK)
   {
     (void)snprintf(response, sizeof(response),
-                   "ERR SD mount failed result=%s(%u) hal=0x%08lX\r\n",
+                   "ERR SD mount failed result=%s(%u) %s\r\n",
                    StorageService_ResultName(result), (unsigned int)result,
-                   (unsigned long)StorageService_HalError());
+                   SdDiskIo_InitDetail(sd_init_detail, sizeof(sd_init_detail)));
     SdSend(response);
     return;
   }
@@ -307,9 +310,9 @@ static void SdStressStart(uint32_t size_mib, uint32_t passes)
   if (result != FR_OK)
   {
     (void)snprintf(response, sizeof(response),
-                   "ERR SD mount failed result=%s(%u) hal=0x%08lX\r\n",
+                   "ERR SD mount failed result=%s(%u) %s\r\n",
                    StorageService_ResultName(result), (unsigned int)result,
-                   (unsigned long)StorageService_HalError());
+                   SdDiskIo_InitDetail(sd_init_detail, sizeof(sd_init_detail)));
     SdSend(response);
     return;
   }
@@ -427,10 +430,10 @@ static void SdFormatConfirm(void)
   else
   {
     (void)snprintf(response, sizeof(response),
-                   "ERR SD FORMAT failed result=%s(%u) hal=0x%08lX MS=%lu\r\n",
+                   "ERR SD FORMAT failed result=%s(%u) %s MS=%lu\r\n",
                    StorageService_ResultName(report.result),
                    (unsigned int)report.result,
-                   (unsigned long)StorageService_HalError(),
+                   SdDiskIo_InitDetail(sd_init_detail, sizeof(sd_init_detail)),
                    (unsigned long)report.duration_ms);
   }
   SdSend(response);
@@ -503,9 +506,9 @@ bool SdTest_HandleCommand(const char *command)
     else
     {
       (void)snprintf(response, sizeof(response),
-                     "ERR SD INFO failed result=%s(%u) hal=0x%08lX\r\n",
+                     "ERR SD INFO failed result=%s(%u) %s\r\n",
                      StorageService_ResultName(result), (unsigned int)result,
-                     (unsigned long)StorageService_HalError());
+                     SdDiskIo_InitDetail(sd_init_detail, sizeof(sd_init_detail)));
     }
     SdSend(response);
     return true;
