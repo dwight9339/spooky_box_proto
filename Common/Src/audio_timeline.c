@@ -126,6 +126,38 @@ AudioTimelineResult AudioTimeline_AlignStart(const AudioTimelineStream *stream,
   return AUDIO_TIMELINE_OK;
 }
 
+uint64_t AudioTimeline_NextHalfFrame(const AudioTimelineStream *stream)
+{
+  if (stream == NULL)
+  {
+    return 0U;
+  }
+  return stream->completed_halves * stream->frames_per_half;
+}
+
+AudioTimelineResult AudioTimeline_DeliverySkip(
+  const AudioTimelineAlignment *alignment, uint64_t next_half_frame,
+  uint32_t *skip_frames)
+{
+  uint64_t skip;
+
+  if ((alignment == NULL) || (skip_frames == NULL))
+  {
+    return AUDIO_TIMELINE_ERR_ARGUMENT;
+  }
+  if (alignment->origin.frame < next_half_frame)
+  {
+    return AUDIO_TIMELINE_ERR_BEFORE_ORIGIN;
+  }
+  skip = alignment->origin.frame - next_half_frame;
+  if (skip > UINT32_MAX)
+  {
+    return AUDIO_TIMELINE_ERR_ARGUMENT;
+  }
+  *skip_frames = (uint32_t)skip;
+  return AUDIO_TIMELINE_OK;
+}
+
 AudioTimelineResult AudioTimeline_Offset(AudioTimelinePosition origin,
                                          AudioTimelinePosition position,
                                          uint64_t *offset)

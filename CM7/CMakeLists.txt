@@ -133,6 +133,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/log_buffer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/diag_history.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/audio_timeline.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/target_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/diagnostics.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/foreground_budget.c

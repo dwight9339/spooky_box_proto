@@ -27,6 +27,7 @@ static volatile uint32_t rx_full_count;
 static volatile uint32_t fault_flags;
 static volatile bool stream_enabled;
 static bool running;
+static AudioTimelineStream radio_timeline;
 
 static uint32_t __attribute__((optimize("O3")))
 MeasureFs(GPIO_TypeDef *port, uint32_t pin)
@@ -201,6 +202,9 @@ bool AudioPath_StartCapture(void)
   rx_full_count = 0U;
   fault_flags = 0U;
   stream_enabled = false;
+  /* The DMA starts at index 0 with no halves completed: a new epoch. */
+  (void)AudioTimeline_StreamStart(&radio_timeline,
+                                  AUDIO_PATH_HALF_SAMPLES / 2U, 2U, 0U);
   if (HAL_SAI_Receive_DMA(sai, (uint8_t *)radio_rx_buffer,
                           AUDIO_PATH_BUFFER_SAMPLES) != HAL_OK)
   {
@@ -263,6 +267,7 @@ bool AudioPath_StartMonitor(void)
 {
   SAI_HandleTypeDef * const sai = monitor_tx_sai;
   uint32_t observed;
+  uint32_t full_base;
   uint32_t start_tick;
   uint32_t measured_fs_hz;
 
@@ -271,16 +276,17 @@ bool AudioPath_StartMonitor(void)
     return false;
   }
 
-  /* Count only buffers received after the radio's digital output started. */
-  rx_half_count = 0U;
-  rx_full_count = 0U;
+  /* Wait for a buffer received after the radio's digital output started. The
+   * counters keep running: they are the timeline's completed-half count, whose
+   * parity must match the half the DMA is filling (decision 0012 item 2). */
+  full_base = rx_full_count;
   start_tick = HAL_GetTick();
-  while ((rx_full_count == 0U) && (fault_flags == 0U) &&
+  while ((rx_full_count == full_base) && (fault_flags == 0U) &&
          ((HAL_GetTick() - start_tick) < AUDIO_PATH_START_TIMEOUT_MS))
   {
     HAL_Delay(1U);
   }
-  if ((rx_full_count == 0U) || (fault_flags != 0U))
+  if ((rx_full_count == full_base) || (fault_flags != 0U))
   {
     printf("[bridge] FAIL: no complete radio PCM buffer (flags=0x%08lX)\r\n",
            (unsigned long)fault_flags);
@@ -377,6 +383,71 @@ bool AudioPath_GetStatus(AudioPathStatus *status)
   status->fault_flags = fault_flags;
   status->rx_half_count = rx_half_count;
   status->rx_full_count = rx_full_count;
+  return true;
+}
+
+/* Reads the completed-half count and the DMA down-counter together; the
+ * caller masks interrupts so no completion is counted between the reads. */
+static bool ObserveLocked(AudioTimelinePosition *position)
+{
+  const uint32_t completed = rx_half_count + rx_full_count;
+  const uint32_t remaining = __HAL_DMA_GET_COUNTER(&hdma_sai2_a);
+
+  return AudioTimeline_StreamObserve(&radio_timeline, completed, remaining,
+                                     position) == AUDIO_TIMELINE_OK;
+}
+
+bool AudioPath_GetPosition(AudioTimelinePosition *position)
+{
+  const uint32_t primask = __get_PRIMASK();
+  bool ok;
+
+  if ((position == NULL) || !running)
+  {
+    return false;
+  }
+  __disable_irq();
+  ok = ObserveLocked(position);
+  __set_PRIMASK(primask);
+  return ok;
+}
+
+bool AudioPath_AlignCaptureLocked(uint32_t mic_latency_frames,
+                                  AudioPathCaptureStart *start)
+{
+  uint32_t tx_remaining;
+  uint32_t rx_index;
+  uint32_t tx_index;
+
+  if ((start == NULL) || !running || !stream_enabled)
+  {
+    return false;
+  }
+  (void)memset(start, 0, sizeof(*start));
+  if (!ObserveLocked(&start->mic_start) ||
+      (AudioTimeline_AlignStart(&radio_timeline, start->mic_start,
+                                mic_latency_frames, &start->alignment) !=
+       AUDIO_TIMELINE_OK) ||
+      (AudioTimeline_DeliverySkip(&start->alignment,
+                                  AudioTimeline_NextHalfFrame(&radio_timeline),
+                                  &start->skip_frames) != AUDIO_TIMELINE_OK))
+  {
+    return false;
+  }
+  /* Monitor path phase for the loopback qualification (decision 0012 item 9).
+   * Both buffers are AUDIO_PATH_BUFFER_SAMPLES halfwords of stereo frames. */
+  if ((monitor_tx_sai != NULL) && (monitor_tx_sai->hdmatx != NULL))
+  {
+    tx_remaining = __HAL_DMA_GET_COUNTER(monitor_tx_sai->hdmatx);
+    rx_index = (AUDIO_PATH_BUFFER_SAMPLES -
+                __HAL_DMA_GET_COUNTER(&hdma_sai2_a)) % AUDIO_PATH_BUFFER_SAMPLES;
+    tx_index = (AUDIO_PATH_BUFFER_SAMPLES - tx_remaining) %
+               AUDIO_PATH_BUFFER_SAMPLES;
+    start->monitor_phase_frames =
+      ((rx_index + AUDIO_PATH_BUFFER_SAMPLES - tx_index) %
+       AUDIO_PATH_BUFFER_SAMPLES) / 2U;
+    start->monitor_phase_valid = true;
+  }
   return true;
 }
 

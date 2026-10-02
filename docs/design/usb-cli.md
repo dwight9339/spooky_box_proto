@@ -44,6 +44,7 @@ EMF STREAM START 100
 EMF STREAM STOP
 RECORD STATUS
 RECORD RESULT
+RECORD TIMELINE
 RECORD LATENCY
 RECORD START 60
 RECORD STOP
@@ -305,8 +306,18 @@ on the card. The interleaved channel order is:
 The file is standard PCM at 48 kHz, 16 bits, and three channels: 288,000 bytes/s, or
 about 17.3 MB/minute. Firmware combines both input streams into 4096-frame blocks and
 writes 24 KiB every 85.33 ms. Each input has an eight-block queue, providing about
-683 ms of write-stall tolerance. The initial block alignment of microphone and radio
-may differ by up to one 512-frame radio DMA half (about 10.7 ms).
+683 ms of write-stall tolerance.
+
+The start follows decision 0012. Immediately before the microphone DMA starts, with
+interrupts masked for a few microseconds, the firmware reads the radio DMA position,
+enables radio capture and starts the microphone DMA. The recorder then drops the radio
+frames received before that position plus the microphone start latency *C*
+(`SPOOKY_RECORD_MIC_LATENCY_FRAMES`), so radio frame 0 and microphone sample 0 are
+meant to be the same instant. *C* is 0 until the decision 0012 item 9 loopback
+qualification measures it, and that qualification is also what establishes the
+alignment tolerance; until then, start alignment is a design target, not a proven
+property. Before this change the radio track could start up to one 512-frame radio DMA
+half (about 10.7 ms) before the microphone.
 
 Capture starts only after the file is preallocated, so no allocation search runs while
 recording. `RECORD START` mounts and checks the card and replies
@@ -440,6 +451,23 @@ whose finalization failed. `reason` is last and may contain spaces. The record i
 written before the pushed outcome line, so it is never older than that line. While a
 recording is active the reply still describes the previous one; a host that started
 a recording matches `file` (and `seq`) before treating the result as its own.
+`RECORD TIMELINE` is a read-only query that reports the radio stream timeline and the
+start alignment of the current or last recording since boot:
+
+```text
+OK RECORD TIMELINE NONE epoch=1 now=123456789
+OK RECORD TIMELINE file=REC076.WAV epoch=1 origin=123456789 mic-start=123456789 p=21 skip=533 c=0 tx-rx-phase=731 now=124000000
+```
+
+Positions are radio frames since the radio stream started in this `epoch`, which
+restarts at boot. `mic-start` is the radio frame in progress when the microphone DMA
+started and `origin` is that frame plus `c`, the first frame of the recording on both
+tracks. `p` is `mic-start`'s offset into its 512-frame DMA half and `skip` the number
+of radio frames dropped from the first half delivered after the start. `tx-rx-phase`
+is the SAI2 radio receive DMA index minus the SAI1 monitor transmit index, in frames
+modulo the 1024-frame buffer, or `none` without a running monitor; the loopback
+qualification uses it to compare boots. `now` is the current position.
+
 `RECORD STOP` requests a clean stop after the next matched radio/mic block.
 SD maintenance and stress commands, WAV transfer, and radio band/tuning changes are
 rejected while recording is active. `SD STATUS` remains nonintrusive: while the
