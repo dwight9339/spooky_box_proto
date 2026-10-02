@@ -115,3 +115,17 @@ void ReplyQueue_Pop(ReplyQueue *queue)
   queue->head = (uint8_t)((queue->head + 1U) % REPLY_QUEUE_DEPTH);
   --queue->count;
 }
+
+uint8_t ReplyQueue_Clear(ReplyQueue *queue)
+{
+  uint8_t discarded;
+
+  if (queue == NULL)
+  {
+    return 0U;
+  }
+  discarded = queue->count;
+  queue->head = 0U;
+  queue->count = 0U;
+  return discarded;
+}

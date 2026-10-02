@@ -75,6 +75,7 @@ static uint32_t fuel_last_report_ms;
 static bool fuel_running;
 static FuelGaugeSnapshot fuel_cached_snapshot;
 static bool fuel_cache_valid;
+static uint32_t fuel_cache_ms; /* When fuel_cached_snapshot was read. */
 
 static bool FuelGaugeReadBytes(uint8_t command, uint8_t *bytes,
                                uint16_t length)
@@ -613,6 +614,7 @@ bool FuelGaugeTest_Start(I2C_HandleTypeDef *i2c)
 
   fuel_last_report_ms = HAL_GetTick();
   fuel_cached_snapshot = snapshot;
+  fuel_cache_ms = fuel_last_report_ms;
   fuel_cache_valid = true;
   fuel_running = true;
   return true;
@@ -655,20 +657,32 @@ bool FuelGaugeTest_ReportNow(void)
 
   fuel_last_report_ms = HAL_GetTick();
   fuel_cached_snapshot = snapshot;
+  fuel_cache_ms = fuel_last_report_ms;
   fuel_cache_valid = true;
   FuelGaugePrintChargingUpdate(&snapshot);
   return true;
 }
 
-bool FuelGaugeTest_ReadTelemetry(FuelGaugeTelemetry *telemetry)
+bool FuelGaugeTest_ReadTelemetry(FuelGaugeTelemetry *telemetry, bool allow_bus_io)
 {
   FuelGaugeSnapshot snapshot;
 
-  if ((telemetry == NULL) || !fuel_running || !fuel_cache_valid)
+  if ((telemetry == NULL) || !fuel_running)
+  {
+    return false;
+  }
+  if (allow_bus_io && FuelGaugeReadSnapshot(&snapshot))
+  {
+    fuel_cached_snapshot = snapshot;
+    fuel_cache_ms = HAL_GetTick();
+    fuel_cache_valid = true;
+  }
+  if (!fuel_cache_valid)
   {
     return false;
   }
   snapshot = fuel_cached_snapshot;
+  telemetry->age_ms = HAL_GetTick() - fuel_cache_ms;
 
   telemetry->voltage_mV = snapshot.voltage_mV;
   telemetry->remaining_capacity_mAh = snapshot.remaining_capacity_mAh;

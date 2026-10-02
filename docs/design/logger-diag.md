@@ -27,8 +27,9 @@ loss/errors, and charging sleep entry/wake are instrumented. The latest fault
 and cumulative counters are retained separately after history wraps. No heap,
 USB, or text formatting occurs in event producers.
 
-Use device USB CDC commands `LOG STATUS`, `DIAG STATUS`, `DIAG QUEUE`, `DIAG LAST`,
-`DIAG DUMP` and `DIAG STOP`. `DIAG QUEUE` reports the capacity and counters of the M7
+Use device USB CDC commands `LOG STATUS`, `DIAG STATUS`, `DIAG QUEUE`, `DIAG USB`,
+`DIAG LAST`, `DIAG DUMP` and `DIAG STOP`. `DIAG USB` reports the USB command receive
+counters (see [USB CLI](usb-cli.md#command-input-and-flow-control)). `DIAG QUEUE` reports the capacity and counters of the M7
 application event queue ([decision 0007](../decisions/0007-m7-event-queue.md)); a
 rejected internal event is recorded as an `EVENT_QUEUE_LOSS` fault. A recording-safe
 policy rejection is recorded as `COMMAND_REJECTED`, with the semantic action and

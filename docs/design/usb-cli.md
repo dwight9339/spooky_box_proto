@@ -75,6 +75,30 @@ DIAG LATENCY
 
 HELP is streamed in short lines.
 
+## Command input and flow control
+
+Commands are lines of at most 63 characters, ended by CR or LF. The firmware handles
+one line per foreground pass, and only once the previous reply has gone out. Received
+bytes wait in a 256-byte ring. The CDC OUT endpoint is re-armed only while another
+full 64-byte packet fits in it; otherwise the device NAKs the host, which holds its
+data until the firmware has drained the ring (`full_spooky_proto-8lw.24`). A client
+that sends faster than the firmware answers is slowed down instead of losing bytes, so
+every complete line it sends gets exactly one reply. A line longer than 63 characters is
+answered `ERR command too long`. While the endpoint is paused, the host retries
+continuously. The HAL enables an interrupt for every NAKed OUT token; the firmware masks
+it when the interface is configured, so a pause costs no CPU. Unmasked, those
+interrupts starved a recording into an overrun during a command flood
+([evidence](../evidence/2026-10-02-usb-flow-hostless-battery.md)).
+
+`DIAG USB` reports the receive counters since the last enumeration:
+
+```text
+OK DIAG USB RX_PACKETS=... RX_PAUSES=... RX_OVERRUNS=0 RX_QUEUED=... RX_PAUSED=0|1
+```
+
+`RX_PAUSES` counts how often flow control held the host back. `RX_OVERRUNS` counts
+packets that did not fit and were truncated; it stays zero unless flow control fails.
+
 ## Target build identity
 
 `DIAG IDENTITY` is a bounded read-only query owned by M7. Its single response is:
@@ -378,8 +402,8 @@ until the media survey fixes them.
 `RECORD LATENCY` reports, for the current or last recording, the number of block
 writes, the longest `f_write`, the longest block conversion before it, and a
 histogram of `f_write` durations in 10 ms bins (0-9 ms through 60-69 ms, then
-70 ms and above). Counters reset at `RECORD START`. Its last two fields,
-`usb-superseded` and `usb-lost`, are cumulative since boot and describe the recorder
+70 ms and above). Counters reset at `RECORD START`. Its fields `usb-superseded`,
+`usb-lost` and `usb-detached` are cumulative since boot and describe the recorder
 reply queue below.
 
 Recorder replies make one nonblocking submission attempt and otherwise wait in a
@@ -394,6 +418,13 @@ already in transfer and the newest progress line. Queued replies are sent as soo
 the host polls again, so a host that discards received data when it opens the port
 (pyserial on Windows calls `PurgeComm` in `open()`) can lose them. Such a host
 recovers the outcome with `RECORD RESULT`.
+
+The queue holds lines only for a host that has the CDC interface configured
+(`full_spooky_proto-8lw.20`). With no host attached, as in a field recording, the
+recorder queues nothing. When the host goes away, the lines already queued are
+discarded rather than delivered stale to the next host. Both cases count in
+`usb-detached`, are not faults and leave `HAS_FAULT` unset; the lines still appear on
+the UART log, and `RECORD RESULT` keeps the outcome.
 
 `RECORD RESULT` is a read-only query, accepted in every session state, that reports
 the last finished recording since boot:
@@ -522,6 +553,22 @@ OK SD FORMAT FAT32 CLUSTER=32768 ALIGN_SECTORS=8192 SECTORS=31116288 FREE=15189M
 
 Failures report `ERR SD FORMAT unsupported card TYPE=SDSC; SDHC/SDXC required` or
 `ERR SD FORMAT failed result=<FRESULT>(<n>) hal=0x<error> MS=<n>`.
+
+## Battery and charge status
+
+`BATTERY READ` (also `BATTERY` or `BATTERY STATUS`) and `CHARGE STATUS` report the
+BQ27441 fuel gauge. Outside recording each request reads the gauge, which takes a few
+milliseconds of I2C. While recording, fuel-gauge I2C pauses
+([foreground latency](foreground-latency.md)) and the reply carries the last
+successful reading. `AGE_S` is that reading's age in seconds:
+
+```text
+OK BATTERY PRESENT=1 SOC=..% VOLTAGE=.. mV REMAINING=.. mAh FULL=.. mAh DESIGN=.. mAh SOH=..% FLAGS=0x.... AGE_S=0
+OK CHARGE VBUS=1 STATE=CHARGING|DISCHARGING|IDLE CURRENT=.. mA POWER=.. mW FULL=0|1 AGE_S=0
+```
+
+`STATE` comes from the gauge's average current: above 5 mA is charging, below -5 mA
+discharging. The average lags a charger change by a few seconds.
 
 ## Low-power charging monitor
 

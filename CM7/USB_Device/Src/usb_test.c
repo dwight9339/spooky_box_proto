@@ -1,5 +1,6 @@
 #include "usb_test.h"
 
+#include "cdc_rx_flow.h"
 #include "main.h"
 #include "usbd_cdc.h"
 #include "usbd_core.h"
@@ -9,7 +10,6 @@
 #include <string.h>
 
 #define USB_TEST_RX_BUFFER_SIZE  CDC_DATA_FS_OUT_PACKET_SIZE
-#define USB_TEST_RX_QUEUE_SIZE   256U
 #define USB_TEST_LINE_SIZE       64U
 #define USB_TEST_TX_BUFFER_SIZE 1024U
 
@@ -24,13 +24,12 @@ extern volatile uint32_t usb_diag_disconnect_count;
 USBD_HandleTypeDef hUsbDeviceFS;
 
 static uint8_t usb_rx_buffer[USB_TEST_RX_BUFFER_SIZE] __attribute__((aligned(4)));
-static uint8_t usb_rx_queue[USB_TEST_RX_QUEUE_SIZE] __attribute__((aligned(4)));
+/* 8lw.24: the OUT endpoint is re-armed only while a full packet fits, so the
+ * host is NAKed instead of losing bytes when commands arrive faster than the
+ * foreground handles them. */
+static CdcRxFlow usb_rx_flow;
 static uint8_t usb_tx_buffer[USB_TEST_TX_BUFFER_SIZE] __attribute__((aligned(4)));
 static char usb_line_buffer[USB_TEST_LINE_SIZE];
-static volatile uint16_t usb_rx_queue_head;
-static volatile uint16_t usb_rx_queue_tail;
-static volatile uint32_t usb_rx_packets;
-static volatile uint32_t usb_dropped_packets;
 static volatile bool usb_tx_busy;
 static uint32_t usb_line_length;
 static bool usb_line_overflow;
@@ -52,8 +51,15 @@ static USBD_CDC_LineCodingTypeDef usb_line_coding =
 
 static int8_t UsbCdcInit(void)
 {
-  usb_rx_queue_head = 0U;
-  usb_rx_queue_tail = 0U;
+  uint32_t USBx_BASE = (uint32_t)USB_OTG_FS;
+
+  /* 8lw.24: the HAL's USB-reset handler unmasks an interrupt for every NAKed OUT
+   * token, and its handler only clears the flag. While reception is paused for
+   * flow control the host retries continuously, and those interrupts starved the
+   * foreground until a recording overran. Configuration follows every reset, so
+   * masking it here keeps it masked. */
+  USBx_DEVICE->DOEPMSK &= ~USB_OTG_DOEPMSK_NAKM;
+  CdcRxFlow_Init(&usb_rx_flow, USB_TEST_RX_BUFFER_SIZE);
   usb_line_length = 0U;
   usb_line_overflow = false;
   usb_tx_busy = false;
@@ -64,8 +70,7 @@ static int8_t UsbCdcInit(void)
 
 static int8_t UsbCdcDeInit(void)
 {
-  usb_rx_queue_head = 0U;
-  usb_rx_queue_tail = 0U;
+  CdcRxFlow_Init(&usb_rx_flow, USB_TEST_RX_BUFFER_SIZE);
   usb_line_length = 0U;
   usb_line_overflow = false;
   usb_tx_busy = false;
@@ -109,7 +114,6 @@ static int8_t UsbCdcControl(uint8_t command, uint8_t *buffer, uint16_t length)
 static int8_t UsbCdcReceive(uint8_t *buffer, uint32_t *length)
 {
   uint32_t packet_length;
-  bool packet_dropped = false;
 
   if ((buffer == NULL) || (length == NULL))
   {
@@ -117,27 +121,44 @@ static int8_t UsbCdcReceive(uint8_t *buffer, uint32_t *length)
   }
   packet_length = (*length <= USB_TEST_RX_BUFFER_SIZE) ?
                   *length : USB_TEST_RX_BUFFER_SIZE;
-  ++usb_rx_packets;
-  for (uint32_t index = 0U; index < packet_length; ++index)
+  if (CdcRxFlow_Push(&usb_rx_flow, buffer, packet_length))
   {
-    uint16_t next_head = (uint16_t)((usb_rx_queue_head + 1U) %
-                                    USB_TEST_RX_QUEUE_SIZE);
-    if (next_head == usb_rx_queue_tail)
-    {
-      packet_dropped = true;
-      break;
-    }
-    usb_rx_queue[usb_rx_queue_head] = buffer[index];
-    usb_rx_queue_head = next_head;
+    (void)USBD_CDC_SetRxBuffer(&hUsbDeviceFS, usb_rx_buffer);
+    (void)USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   }
-  if (packet_dropped)
-  {
-    ++usb_dropped_packets;
-  }
-
-  (void)USBD_CDC_SetRxBuffer(&hUsbDeviceFS, usb_rx_buffer);
-  (void)USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   return (int8_t)USBD_OK;
+}
+
+/* Re-arms a paused OUT endpoint once the foreground has made room. The endpoint
+ * is idle while paused; the interrupt is masked only so that the USB stack's
+ * own state is not touched from two contexts at once. */
+static void UsbResumeReceive(void)
+{
+  if (CdcRxFlow_Resume(&usb_rx_flow))
+  {
+    HAL_NVIC_DisableIRQ(OTG_FS_IRQn);
+    (void)USBD_CDC_SetRxBuffer(&hUsbDeviceFS, usb_rx_buffer);
+    (void)USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+    HAL_NVIC_EnableIRQ(OTG_FS_IRQn);
+  }
+}
+
+bool UsbTest_HostAttached(void)
+{
+  return usb_started && (hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED);
+}
+
+void UsbTest_GetRxStats(UsbTestRxStats *stats)
+{
+  if (stats == NULL)
+  {
+    return;
+  }
+  stats->packets = usb_rx_flow.packets;
+  stats->pauses = usb_rx_flow.pauses;
+  stats->overruns = usb_rx_flow.overruns;
+  stats->paused = usb_rx_flow.paused;
+  stats->queued = (uint32_t)(CDC_RX_FLOW_CAPACITY - 1U - CdcRxFlow_Free(&usb_rx_flow));
 }
 
 static int8_t UsbCdcTransmitComplete(uint8_t *buffer, uint32_t *length,
@@ -425,11 +446,10 @@ bool UsbTest_SendText(const char *message)
 
 static void UsbProcessNextLine(void)
 {
-  while (usb_rx_queue_tail != usb_rx_queue_head)
+  uint8_t character;
+
+  while (CdcRxFlow_Pop(&usb_rx_flow, &character))
   {
-    uint8_t character = usb_rx_queue[usb_rx_queue_tail];
-    usb_rx_queue_tail = (uint16_t)((usb_rx_queue_tail + 1U) %
-                                   USB_TEST_RX_QUEUE_SIZE);
 
     if ((character == '\r') || (character == '\n'))
     {
@@ -540,4 +560,5 @@ void UsbTest_Service(void)
     return;
   }
   UsbProcessNextLine();
+  UsbResumeReceive();
 }

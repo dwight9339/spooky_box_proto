@@ -4,6 +4,7 @@
 #include "diagnostics.h"
 #include "app_events.h"
 #include "fake_hal.h"
+#include "usb_test.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,15 @@ bool UsbTest_SendText(const char *text)
   CHECK(usb_count < 300U);
   strcpy(usb_lines[usb_count++], text);
   return true;
+}
+
+void UsbTest_GetRxStats(UsbTestRxStats *stats)
+{
+  stats->packets = 12U;
+  stats->pauses = 3U;
+  stats->overruns = 0U;
+  stats->queued = 5U;
+  stats->paused = false;
 }
 
 static void test_buffer(void)
@@ -255,6 +265,16 @@ static void count_dispatch(void *context, const EvqEvent *event)
   ++*(uint32_t *)context;
 }
 
+/* 8lw.24: USB command receive counters on one DIAG line. */
+static void test_usb_diag(void)
+{
+  cli_reset();
+  CHECK(Diagnostics_HandleCommand("DIAG USB"));
+  Diagnostics_Service();
+  CHECK(strcmp(usb_lines[0], "OK DIAG USB RX_PACKETS=12 RX_PAUSES=3 RX_OVERRUNS=0 "
+    "RX_QUEUED=5 RX_PAUSED=0\r\n") == 0);
+}
+
 /* Decision 0007 item 14: queue counters on one DIAG line; a rejected internal
  * event is recorded as a fault. Uses the firmware queue instance, so it runs last. */
 static void test_queue_diag(void)
@@ -300,6 +320,7 @@ int main(void)
   test_logger();
   test_cli();
   test_foreground_latency();
+  test_usb_diag();
   test_queue_diag();
   puts("logger/diagnostics tests passed");
   return 0;
