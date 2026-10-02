@@ -24,6 +24,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0012](0012-common-audio-sample-timeline.md) | Common audio sample timeline | Accepted |
 | [0013](0013-matrix-emf-radio-and-status-mapping.md) | LED matrix mapping for EMF, radio onsets and recording status | Accepted |
 | [0014](0014-sd-media-policy.md) | SD media policy for recording | Accepted |
+| [0015](0015-raw-radio-track-during-in-band-tunes.md) | Raw radio track during in-band tunes | Accepted |
 
 ## Template
 
