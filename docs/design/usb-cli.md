@@ -52,6 +52,8 @@ SD REINIT
 SD STRESS 64 1
 SD STRESS STOP
 SD CLEAN
+SD FORMAT
+SD FORMAT CONFIRM
 WAV FETCH REC000.WAV
 WAV ABORT
 UI STATUS
@@ -398,6 +400,33 @@ verified before cancellation. Recording start and WAV transfer are rejected whil
 test owns the card. If a transfer, verification, or cleanup step fails, `SDTEST.BIN`
 is retained for inspection and the next stress command refuses to overwrite it.
 `SD CLEAN` removes only that fixed test file.
+
+`SD FORMAT` provides an optional in-device format; cards formatted elsewhere remain
+usable. It is two-step: `SD FORMAT` arms it, and `SD FORMAT CONFIRM` within 10 s
+erases every file on the card. A confirm that is unarmed or late is refused, and
+consumes the arm. Command policy rejects both while recording or finalizing. The
+storage service formats under its own exclusive owner (`FORMAT`) and does not need
+a readable filesystem, so a card with a damaged or foreign layout can be
+formatted. Only SDHC/SDXC cards are formatted; SDSC is refused before anything is
+written.
+
+The layout is one FAT32 volume with 32 KiB clusters and a single FAT. FatFs R0.12c
+places the partition at sector 63, and aligns the data area to the card's
+allocation unit read from its SD Status register (`ALIGN_SECTORS`; 1 when the card
+reports none). The service then mounts the new volume once to verify it. The format
+blocks the foreground for its whole duration, about 2 s for a 16 GB card, and runs
+only from idle maintenance:
+
+```text
+SD FORMAT
+OK SD FORMAT armed; erases every file on the card. Send SD FORMAT CONFIRM within 10 s
+SD FORMAT CONFIRM
+OK SD FORMAT started
+OK SD FORMAT FAT32 CLUSTER=32768 ALIGN_SECTORS=8192 SECTORS=31116288 FREE=15189MiB MS=1998
+```
+
+Failures report `ERR SD FORMAT unsupported card TYPE=SDSC; SDHC/SDXC required` or
+`ERR SD FORMAT failed result=<FRESULT>(<n>) hal=0x<error> MS=<n>`.
 
 ## Low-power charging monitor
 

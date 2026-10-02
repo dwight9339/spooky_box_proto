@@ -1,6 +1,7 @@
 #include "diskio.h"
 #include "main.h"
 #include "sd_diskio.h"
+#include "sd_media.h"
 
 #include <stdbool.h>
 
@@ -155,12 +156,18 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
       return RES_OK;
 
     case GET_BLOCK_SIZE:
+    {
+      HAL_SD_CardStatusTypeDef card_status;
+
       if (buff == NULL)
       {
         return RES_PARERR;
       }
-      *(DWORD *)buff = 1U;
+      /* Erase-block alignment for f_mkfs: the card's allocation unit. */
+      *(DWORD *)buff = (HAL_SD_GetCardStatus(&hsd1, &card_status) == HAL_OK)
+        ? SdMedia_AlignSectors(card_status.AllocationUnitSize) : 1U;
       return RES_OK;
+    }
 
     default:
       return RES_PARERR;

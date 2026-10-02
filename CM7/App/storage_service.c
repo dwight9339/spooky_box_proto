@@ -1,7 +1,10 @@
 #include "storage_service.h"
 
+#include "diskio.h"
 #include "main.h"
 #include "sd_diskio.h"
+
+#include <string.h>
 
 /*
  * SDMMC_CK = 75 MHz PLL1Q / (2 * CLKDIV) = 18.75 MHz. The card is never switched
@@ -10,11 +13,16 @@
  */
 #define STORAGE_CLOCK_DIV  2U
 
+/* FAT32 with 32 KiB clusters, the SD Association layout for SDHC; one FAT. */
+#define STORAGE_FORMAT_CLUSTER_BYTES  32768U
+#define STORAGE_FORMAT_WORK_BYTES      8192U
+
 static SD_HandleTypeDef *storage_sd;
 static FATFS storage_filesystem;
 static StorageLease storage_lease;
 static bool storage_mounted;
 static FRESULT storage_last_result;
+static BYTE storage_format_work[STORAGE_FORMAT_WORK_BYTES];
 
 static FRESULT StorageUnmount(void)
 {
@@ -100,6 +108,74 @@ FRESULT StorageService_Release(StorageOwner owner)
   (void)StorageLease_Release(&storage_lease, owner);
   storage_last_result = result;
   return result;
+}
+
+bool StorageService_Format(StorageFormatReport *report)
+{
+  HAL_SD_CardInfoTypeDef info;
+  FATFS *filesystem;
+  DWORD value;
+  uint32_t start = HAL_GetTick();
+
+  if (report == NULL)
+  {
+    return false;
+  }
+  (void)memset(report, 0, sizeof(*report));
+  if ((storage_sd == NULL) || !StorageService_CardPresent())
+  {
+    report->result = FR_NOT_READY;
+  }
+  else if (!StorageLease_TryAcquire(&storage_lease, STORAGE_OWNER_FORMAT))
+  {
+    report->result = FR_LOCKED;
+  }
+  else
+  {
+    if ((disk_initialize(0U) & STA_NOINIT) != 0U)
+    {
+      report->result = FR_NOT_READY;
+    }
+    else if (HAL_SD_GetCardInfo(storage_sd, &info) != HAL_OK)
+    {
+      report->result = FR_DISK_ERR;
+    }
+    else
+    {
+      report->card_type = info.CardType;
+      report->sectors = info.LogBlockNbr;
+      if (info.CardType != CARD_SDHC_SDXC)
+      {
+        report->unsupported = true;
+        report->result = FR_DENIED;
+      }
+      else
+      {
+        if (disk_ioctl(0U, GET_BLOCK_SIZE, &value) == RES_OK)
+        {
+          report->align_sectors = value;
+        }
+        report->result = f_mkfs("", FM_FAT32, STORAGE_FORMAT_CLUSTER_BYTES,
+                                storage_format_work, sizeof(storage_format_work));
+        if (report->result == FR_OK)
+        {
+          report->result = f_mount(&storage_filesystem, "", 1U);
+          storage_mounted = (report->result == FR_OK);
+        }
+        if ((report->result == FR_OK) &&
+            ((report->result = f_getfree("", &value, &filesystem)) == FR_OK))
+        {
+          report->cluster_bytes = (uint32_t)filesystem->csize * 512U;
+          report->free_bytes = (uint64_t)value * report->cluster_bytes;
+        }
+      }
+    }
+    (void)StorageUnmount();
+    (void)StorageLease_Release(&storage_lease, STORAGE_OWNER_FORMAT);
+  }
+  report->duration_ms = HAL_GetTick() - start;
+  storage_last_result = report->result;
+  return report->result == FR_OK;
 }
 
 bool StorageService_GetFreeBytes(StorageOwner owner, uint64_t *free_bytes)

@@ -66,6 +66,11 @@ recording, PASS only when not aborted and finalized, the sequence (which skips 0
 wrap), truncated file and reason strings, and that the longest reply fits the
 recorder's 240-byte reply line.
 
+The SD-media test checks the in-device format helpers: the FatFs data-area alignment
+derived from every SD Status allocation-unit code (a power of two of at most 16 MiB,
+1 when undefined) and the `SD FORMAT` arm/confirm window, including expiry, single
+use and tick wrap. Formatting itself remains hardware-only evidence.
+
 The event-queue tests cover decision 0007: post order, sequence and time, admission
 by class with the internal reserve, reject-newest overrun, one reconcile event after
 rejected input, bounded run-to-completion dispatch, the reserve's exact limit when

@@ -46,6 +46,8 @@ spooky_test(storage_lease_test storage_lease_test.c ../CM7/App/storage_lease.c)
 spooky_test(reply_queue_test reply_queue_test.c ../CM7/App/reply_queue.c)
 # The RECORD RESULT outcome record (jjy.12).
 spooky_test(recording_result_test recording_result_test.c ../CM7/App/recording_result.c)
+# SD FORMAT alignment and confirmation (jjy.14).
+spooky_test(sd_media_test sd_media_test.c ../CM7/App/sd_media.c)
 spooky_test(recording_limits_test recording_limits_test.c
     ../CM7/App/recording_limits.c)
 spooky_test(session_test session_test.c ../CM7/App/sm/session_port.c)

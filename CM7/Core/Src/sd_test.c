@@ -1,6 +1,7 @@
 #include "sd_test.h"
 
 #include "ff.h"
+#include "sd_media.h"
 #include "storage_service.h"
 #include "usb_test.h"
 
@@ -34,6 +35,7 @@ static uint32_t sd_stress_written;
 static uint32_t sd_stress_verified;
 static uint32_t sd_stress_write_max_ms;
 static uint32_t sd_stress_read_max_ms;
+static SdFormatArm sd_format_arm;
 
 static void SdSend(const char *text)
 {
@@ -393,6 +395,47 @@ static void SdClean(void)
   SdSend(response);
 }
 
+/* SD FORMAT arms; SD FORMAT CONFIRM within the window erases the card. */
+static void SdFormatConfirm(void)
+{
+  StorageFormatReport report;
+  char response[192];
+
+  if (!SdFormatArm_Confirm(&sd_format_arm, HAL_GetTick()))
+  {
+    SdSend("ERR SD FORMAT not armed or expired; send SD FORMAT first\r\n");
+    return;
+  }
+  SdSend("OK SD FORMAT started\r\n");
+  if (StorageService_Format(&report))
+  {
+    (void)snprintf(response, sizeof(response),
+                   "OK SD FORMAT FAT32 CLUSTER=%lu ALIGN_SECTORS=%lu SECTORS=%lu "
+                   "FREE=%luMiB MS=%lu\r\n",
+                   (unsigned long)report.cluster_bytes,
+                   (unsigned long)report.align_sectors,
+                   (unsigned long)report.sectors,
+                   (unsigned long)(report.free_bytes / (1024U * 1024U)),
+                   (unsigned long)report.duration_ms);
+  }
+  else if (report.unsupported)
+  {
+    (void)snprintf(response, sizeof(response),
+                   "ERR SD FORMAT unsupported card TYPE=%s; SDHC/SDXC required\r\n",
+                   (report.card_type == CARD_SDSC) ? "SDSC" : "OTHER");
+  }
+  else
+  {
+    (void)snprintf(response, sizeof(response),
+                   "ERR SD FORMAT failed result=%s(%u) hal=0x%08lX MS=%lu\r\n",
+                   StorageService_ResultName(report.result),
+                   (unsigned int)report.result,
+                   (unsigned long)StorageService_HalError(),
+                   (unsigned long)report.duration_ms);
+  }
+  SdSend(response);
+}
+
 void SdTest_Start(void)
 {
   sd_card_was_present = StorageService_CardPresent();
@@ -445,6 +488,23 @@ bool SdTest_HandleCommand(const char *command)
   if (strcmp(command, "SD CLEAN") == 0)
   {
     SdClean();
+    return true;
+  }
+  if (strcmp(command, "SD FORMAT") == 0)
+  {
+    if (!StorageService_CardPresent())
+    {
+      SdSend("ERR SD FORMAT no card detected\r\n");
+      return true;
+    }
+    SdFormatArm_Arm(&sd_format_arm, HAL_GetTick());
+    SdSend("OK SD FORMAT armed; erases every file on the card. "
+           "Send SD FORMAT CONFIRM within 10 s\r\n");
+    return true;
+  }
+  if (strcmp(command, "SD FORMAT CONFIRM") == 0)
+  {
+    SdFormatConfirm();
     return true;
   }
   if (strncmp(command, "SD STRESS", 9U) == 0)
