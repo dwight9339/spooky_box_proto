@@ -164,6 +164,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/build_identity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/ui_input_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/ui_render_service.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/emf_level.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/radio_activity.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/matrix_feedback.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/fuel_gauge_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/magnetometer_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/radio_recorder.c

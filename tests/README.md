@@ -94,6 +94,20 @@ clipped at an origin. The firmware does not yet link this module, so these tests
 nothing about DMA timing, the DFSDM start latency or recording alignment on the
 board.
 
+The matrix-feedback tests cover decision 0013. The EMF-level tests check each bucket
+boundary, unknown states for no sample, no baseline, a stale sample (more than
+500 ms old, across tick wrap) and a sensor fault, and recovery on the next sample. The
+radio-activity tests check that steady sound never fires however loud, onset sizes
+for doubled, tripled, quadrupled and eightfold steps, a short burst reported at its
+peak, re-arming only below 1.25x, held averages and a dropped pending onset while the
+radio is not measuring, reseeding after reset, and the near-silence floor. The
+renderer tests check the loop geometry with and without the trail, EMF colour latched
+at step 0 with unknown shown at once, step dropping under late service, kick shift,
+clipping, decay and alternation, the recording border going dark during kicks, and
+the three-blink fault border. The firmware does not yet drive these modules, so the
+tests say nothing about how the matrix looks, the onset detector on real radio audio
+or render cost under recording load.
+
 The IPC tests compile the same portable protocol code as both cores. They
 exercise invalid headers, version/size mismatches, first handshake, missing
 acknowledgements, corrupted echoes, stale repeated packets, recovery, sequence
