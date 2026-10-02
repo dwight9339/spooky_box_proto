@@ -78,6 +78,38 @@ static void wav_limit_stops_cleanly_before_overflow(void)
         RECORDING_LIMIT_FILE_SIZE);
 }
 
+static void allocation_limit_stops_before_an_unverified_cluster(void)
+{
+  RecordingLimits limits;
+  const uint32_t block = RECORDING_LIMIT_BLOCK_FRAMES;
+  const uint64_t three_blocks = RecordingLimits_FileBytes(3U * block);
+
+  CHECK(RecordingLimits_Init(&limits, 0U, 1000000000ULL, 60U, 0U, 0U));
+  CHECK(limits.allocation_bytes == 0U); /* unlimited until set */
+  CHECK(RecordingLimits_FileBytes(0U) == RECORDING_LIMIT_WAV_HEADER_BYTES);
+  RecordingLimits_SetAllocation(&limits, three_blocks);
+  CHECK(RecordingLimits_BeforeBlock(&limits, 2U * block) == RECORDING_LIMIT_NONE);
+  CHECK(RecordingLimits_BeforeBlock(&limits, 3U * block) == RECORDING_LIMIT_ALLOCATION);
+  /* Growing the allowance lets the next block through. */
+  RecordingLimits_SetAllocation(&limits, three_blocks + RECORDING_LIMIT_BLOCK_BYTES);
+  CHECK(RecordingLimits_BeforeBlock(&limits, 3U * block) == RECORDING_LIMIT_NONE);
+}
+
+static void card_full_takes_precedence_over_the_allocation_limit(void)
+{
+  RecordingLimits limits;
+  const uint64_t free_bytes = minute_bytes() + RECORDING_LIMIT_WAV_HEADER_BYTES +
+    (2ULL * RECORDING_LIMIT_BLOCK_BYTES);
+
+  CHECK(RecordingLimits_Init(&limits, 0U, free_bytes, 60U, 0U, 0U));
+  /* Preallocation capped at the free space above the reserve: both limits meet. */
+  RecordingLimits_SetAllocation(&limits, free_bytes - limits.reserve_bytes);
+  CHECK(RecordingLimits_BeforeBlock(&limits, RECORDING_LIMIT_BLOCK_FRAMES) ==
+        RECORDING_LIMIT_NONE);
+  CHECK(RecordingLimits_BeforeBlock(&limits, 2U * RECORDING_LIMIT_BLOCK_FRAMES) ==
+        RECORDING_LIMIT_CARD_FULL);
+}
+
 #define RUN(test) do { current_test = #test; test(); } while (0)
 
 int main(void)
@@ -88,6 +120,8 @@ int main(void)
   RUN(start_requires_one_block_beyond_the_reserve_and_header);
   RUN(card_full_stops_before_a_block_would_enter_the_reserve);
   RUN(wav_limit_stops_cleanly_before_overflow);
+  RUN(allocation_limit_stops_before_an_unverified_cluster);
+  RUN(card_full_takes_precedence_over_the_allocation_limit);
   if (failures != 0)
   {
     printf("recording_limits_test: %d failure(s)\n", failures);

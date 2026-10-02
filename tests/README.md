@@ -56,6 +56,28 @@ The storage-lease test checks exclusive ownership across recorder, SD stress,
 WAV transfer and status clients, including busy acquisition and invalid-release
 counters. Media mounting and SDMMC behavior remain hardware-only evidence.
 
+The reply-queue test checks the recorder's USB reply policy: with the port closed for
+a whole recording, progress lines coalesce to the newest one and the outcome and
+diagnostic replies survive in order; a full queue evicts progress before replies, then
+the oldest reply, and counts both. USB CDC timing remains hardware-only evidence.
+
+The recording-result test checks the `RECORD RESULT` record: `NONE` before the first
+recording, PASS only when not aborted and finalized, the sequence (which skips 0 on
+wrap), truncated file and reason strings, and that the longest reply fits the
+recorder's 240-byte reply line.
+
+The SD-media test checks the in-device format helpers: the FatFs data-area alignment
+derived from every SD Status allocation-unit code (a power of two of at most 16 MiB,
+1 when undefined) and the `SD FORMAT` arm/confirm window, including expiry, single
+use and tick wrap. It also checks the decision 0014 media helpers: only SDHC/SDXC is
+supported, card-type names, speed-class and allocation-unit decoding, and the
+`SD INFO` line, including '?' for unprintable identity bytes and worst-case field
+widths. Formatting and card reads remain hardware-only evidence.
+
+The storage-margin test checks the decision 0014 warning: the queue high-water and
+single-write thresholds (each inclusive), latching with the first values kept, a
+single first-crossing edge, and reset between recordings.
+
 The event-queue tests cover decision 0007: post order, sequence and time, admission
 by class with the internal reserve, reject-newest overrun, one reconcile event after
 rejected input, bounded run-to-completion dispatch, the reserve's exact limit when

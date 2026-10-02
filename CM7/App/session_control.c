@@ -42,6 +42,12 @@ void SessionControl_ReportCaptureFault(void)
   (void)AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_SESSION_CAPTURE_FAULT, 0U, 0U);
 }
 
+bool SessionControl_ReportPrepared(bool ok)
+{
+  return AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_SESSION_PREPARED,
+                        ok ? 1U : 0U, 0U);
+}
+
 void SessionControl_Init(void)
 {
   start_radio_ready = false;
@@ -72,6 +78,9 @@ void SessionControl_Dispatch(const EvqEvent *event)
       break;
     case APP_EVENT_SESSION_CAPTURE_FAULT:
       Session_OnCaptureFault();
+      break;
+    case APP_EVENT_SESSION_PREPARED:
+      Session_OnPrepared(event->arg0 != 0U);
       break;
     default:
       break;
@@ -115,6 +124,11 @@ bool ses_integration_open_file(uint32_t seconds)
   return RadioRecorder_OpenFile(seconds);
 }
 
+void ses_integration_discard_file(void)
+{
+  RadioRecorder_DiscardFile();
+}
+
 bool ses_integration_start_capture(void)
 {
   return RadioRecorder_StartCapture();
@@ -147,7 +161,9 @@ void ses_integration_publish(SesPublished event)
 
 void ses_integration_state_changed(SesState state)
 {
-  static const char *const names[] = {"Idle", "Recording", "Finalizing"};
+  static const char *const names[] = {
+    "Idle", "Recording", "Finalizing", "Preparing"
+  };
   printf("[session] authority state=%s\r\n",
          ((unsigned int)state < (sizeof(names) / sizeof(names[0])))
            ? names[state] : "?");

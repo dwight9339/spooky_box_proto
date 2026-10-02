@@ -53,7 +53,7 @@ bool StorageLease_Release(StorageLease *lease, StorageOwner owner)
 const char *StorageOwner_Name(StorageOwner owner)
 {
   static const char *const names[] = {
-    "NONE", "RECORDER", "SD_STRESS", "WAV_TRANSFER", "STATUS"
+    "NONE", "RECORDER", "SD_STRESS", "WAV_TRANSFER", "STATUS", "FORMAT"
   };
   return ((unsigned int)owner < (sizeof(names) / sizeof(names[0])))
     ? names[(unsigned int)owner] : "INVALID";

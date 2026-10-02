@@ -59,3 +59,7 @@ Simulated success is not hardware acceptance evidence.
 
 [2026-09-24 SD scratch results](../evidence/2026-09-24-bench-results.md#phase-3-bounded-sd-scratch-test),
 including a deliberate timeout with verified cleanup.
+
+[2026-10-01 SD failure and recovery](../evidence/2026-10-01-sd-failure-recovery.md):
+removal during each storage client, a physically full card, retained-file repair
+and two-pass endurance on an SDSC card.

@@ -37,6 +37,7 @@ int main(void)
   assert(!StorageLease_TryAcquire(&lease, STORAGE_OWNER_COUNT));
   assert(!StorageLease_Release(&lease, STORAGE_OWNER_NONE));
   assert(strcmp(StorageOwner_Name(STORAGE_OWNER_RECORDER), "RECORDER") == 0);
+  assert(strcmp(StorageOwner_Name(STORAGE_OWNER_FORMAT), "FORMAT") == 0);
   assert(strcmp(StorageOwner_Name(STORAGE_OWNER_COUNT), "INVALID") == 0);
   return 0;
 }

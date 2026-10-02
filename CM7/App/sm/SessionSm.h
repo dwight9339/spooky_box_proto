@@ -9,30 +9,33 @@ typedef enum SessionSm_EventId
 {
     SessionSm_EventId_BLOCK_WRITTEN = 0,
     SessionSm_EventId_CAPTURE_FAULT = 1,
-    SessionSm_EventId_START = 2,
-    SessionSm_EventId_STOP = 3
+    SessionSm_EventId_PREPARED = 2,
+    SessionSm_EventId_START = 3,
+    SessionSm_EventId_STOP = 4
 } SessionSm_EventId;
 
-#define SessionSm_EventIdCount (4)
+#define SessionSm_EventIdCount (5)
 
 typedef enum SessionSm_StateId
 {
     SessionSm_StateId_ROOT = 0,
     SessionSm_StateId_ACTIVE = 1,
     SessionSm_StateId_FINALIZING = 2,
-    SessionSm_StateId_RECORDING = 3,
-    SessionSm_StateId_IDLE = 4
+    SessionSm_StateId_PREPARING = 3,
+    SessionSm_StateId_RECORDING = 4,
+    SessionSm_StateId_IDLE = 5
 } SessionSm_StateId;
 
-#define SessionSm_StateIdCount (5)
+#define SessionSm_StateIdCount (6)
 
 // Subtree meta data generation can be disabled in settings.
 // Details: https://github.com/StateSmith/StateSmith/issues/538
-#define SessionSm_ROOT_SubtreeEndId (4)  // State 'SessionSm' subtree extends from itself (id: 0) to state 'Idle' (id: 4)
-#define SessionSm_ACTIVE_SubtreeEndId (3)  // State 'Active' subtree extends from itself (id: 1) to state 'Recording' (id: 3)
+#define SessionSm_ROOT_SubtreeEndId (5)  // State 'SessionSm' subtree extends from itself (id: 0) to state 'Idle' (id: 5)
+#define SessionSm_ACTIVE_SubtreeEndId (4)  // State 'Active' subtree extends from itself (id: 1) to state 'Recording' (id: 4)
 #define SessionSm_FINALIZING_SubtreeEndId (2)  // State 'Finalizing' subtree extends from itself (id: 2) to state 'Finalizing' (id: 2)
-#define SessionSm_RECORDING_SubtreeEndId (3)  // State 'Recording' subtree extends from itself (id: 3) to state 'Recording' (id: 3)
-#define SessionSm_IDLE_SubtreeEndId (4)  // State 'Idle' subtree extends from itself (id: 4) to state 'Idle' (id: 4)
+#define SessionSm_PREPARING_SubtreeEndId (3)  // State 'Preparing' subtree extends from itself (id: 3) to state 'Preparing' (id: 3)
+#define SessionSm_RECORDING_SubtreeEndId (4)  // State 'Recording' subtree extends from itself (id: 4) to state 'Recording' (id: 4)
+#define SessionSm_IDLE_SubtreeEndId (5)  // State 'Idle' subtree extends from itself (id: 5) to state 'Idle' (id: 5)
 
 
 // Generated state machine

@@ -18,6 +18,8 @@ void SessionControl_ReportBlockWritten(void);
 void SessionControl_ReportCardFull(void);
 void SessionControl_ReportFileLimit(void);
 void SessionControl_ReportCaptureFault(void);
+/* False when the event queue is full; the recorder retries next pass. */
+bool SessionControl_ReportPrepared(bool ok);
 
 void SessionControl_Init(void);
 void SessionControl_Dispatch(const EvqEvent *event);

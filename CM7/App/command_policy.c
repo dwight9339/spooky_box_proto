@@ -74,6 +74,9 @@ CommandPolicyClass CommandPolicy_Evaluate(CommandAction action, SesState state)
   const CommandPolicyRule *rule = CommandPolicy_GetRule(action);
   switch (state)
   {
+    /* Preparing a recording file holds the card and keeps the radio audio
+     * path committed, so it follows the recording rules. */
+    case SES_STATE_PREPARING:
     case SES_STATE_RECORDING:
       return rule->recording;
     case SES_STATE_FINALIZING:

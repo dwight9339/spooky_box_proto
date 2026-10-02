@@ -4,8 +4,11 @@ The M7 foreground loop gives capture and storage first priority while a recordin
 is active. Timing is measured with the millisecond HAL tick at every service
 boundary and from one loop start to the next. A sample is included only when DMA
 capture is active at both boundaries; for the aggregate loop, both boundaries are
-loop starts, so the pass that opens and preallocates the file and then starts
-capture is not a recording pass. This excludes file-open/start and the final
+loop starts, so the passes that prepare the file (open, name, create, search and
+preallocate; `full_spooky_proto-jjy.9`) and the pass that starts capture are not
+recording passes. Each preparation pass is bounded by
+`SPOOKY_RECORD_PREPARE_STEP_MS`, and the always-on `LOOP_MAX_MS` diagnostic still
+records any loop gap of 50 ms or more. This excludes file-open/start and the final
 header/sync/close after DMA stops; startup, diagnostics and maintenance intentionally
 have different latency characteristics.
 
@@ -41,11 +44,24 @@ count. A violation also records `FOREGROUND_BUDGET` with the service ID in `A` a
 the measured milliseconds in `B`, sets `HAS_FAULT=1`, and remains available via
 `DIAG LAST`/`DIAG DUMP`.
 
+## Interrupt preemption
+
+Service and loop timings include any interrupt work that preempts them. While
+recording, the largest interrupt work on the M7 is the per-block copy in the audio
+DMA interrupts: the DFSDM microphone interrupt (priority 4) copies one 16 KiB block
+every 85.33 ms, and the radio receive interrupt (priority 0) copies 1024 samples
+every 10.7 ms. At the current 64 MHz, cache-off configuration these hold the
+foreground for up to about 4.3 ms per microphone block, well inside the budgets
+above; see [M7 interrupt cost](../evidence/2026-10-01-isr-timing.md) for the
+measured bound. The opt-in `SPOOKY_ISR_TIMING_QUALIFICATION` build times every
+handler for such measurements.
+
 ## Recording-aware behavior
 
 - Recorder USB replies make one nonblocking submission attempt, then enter a
-  four-line queue drained one line per loop. Queue overflow is a visible
-  `USB_BACKPRESSURE` fault instead of a 250 ms foreground spin.
+  four-line queue drained one line per loop. Progress lines coalesce and give way
+  to outcome replies; losing a reply is a visible `USB_BACKPRESSURE` fault instead
+  of a 250 ms foreground spin (see [USB CLI](usb-cli.md)).
 - Periodic fuel-gauge and magnetometer bus transactions pause during recording.
   Battery/charge status uses the last successful fuel-gauge snapshot.
 - A matrix animation that was started before recording is disabled without I2C

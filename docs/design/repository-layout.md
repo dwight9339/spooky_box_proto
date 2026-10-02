@@ -57,6 +57,15 @@ used by `platformio/deploy.py`.
 | `.vscode/settings.json`, `.vscode/extensions.json` | Shared editor policy | Track only portable settings. |
 | `.vscode/c_cpp_properties.json`, `.vscode/launch.json` | Tool-generated machine state | Ignore because the generated versions contain local paths. |
 
+## Local changes to vendored code
+
+Vendored STM32 code is unmodified except for the changes listed here. Re-apply each
+one, or replace it deliberately, whenever `Drivers/` or `Middlewares/` is updated.
+
+| File | Change | Reason |
+| --- | --- | --- |
+| `Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_ll_sdmmc.h` | `SDMMC_MAX_VOLT_TRIAL` wrapped in `#ifndef`; the HAL default is unchanged | `CM7/CMakeLists.txt` sets it to 2000 for both the application and the generated `STM32_Drivers` library, so a card that never completes power-up fails in about 1.2 s instead of about 38 s (`jjy.15`) |
+
 ## Regeneration rule
 
 STM32CubeMX generation is currently frozen. The `.ioc` is an inventory and pin-map aid,

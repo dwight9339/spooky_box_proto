@@ -52,6 +52,9 @@ static void every_policy_row_has_the_decision_0008_class(void)
               active[action]);
         CHECK(CommandPolicy_Evaluate((CommandAction)action, SES_STATE_FINALIZING) ==
               active[action]);
+        /* Preparing a recording file (jjy.9) follows the recording rules. */
+        CHECK(CommandPolicy_Evaluate((CommandAction)action, SES_STATE_PREPARING) ==
+              active[action]);
         CHECK(rule->recording == active[action]);
     }
 }
@@ -80,11 +83,15 @@ static void current_cli_commands_map_to_the_shared_actions(void)
           COMMAND_ACTION_SESSION_START);
     CHECK(CommandPolicy_ActionFromCli("RECORD STOP") == COMMAND_ACTION_SESSION_STOP);
     CHECK(CommandPolicy_ActionFromCli("RECORD STATUS") == COMMAND_ACTION_STATUS_READ);
+    CHECK(CommandPolicy_ActionFromCli("RECORD RESULT") == COMMAND_ACTION_STATUS_READ);
     CHECK(CommandPolicy_ActionFromCli("SLEEP START") == COMMAND_ACTION_SLEEP);
     CHECK(CommandPolicy_ActionFromCli("WAV FETCH REC000.WAV") ==
           COMMAND_ACTION_WAV_TRANSFER);
     CHECK(CommandPolicy_ActionFromCli("SD STATUS") == COMMAND_ACTION_STATUS_READ);
     CHECK(CommandPolicy_ActionFromCli("SD REINIT") == COMMAND_ACTION_SD_MAINTENANCE);
+    CHECK(CommandPolicy_ActionFromCli("SD INFO") == COMMAND_ACTION_SD_MAINTENANCE);
+    CHECK(CommandPolicy_ActionFromCli("SD FORMAT") == COMMAND_ACTION_SD_MAINTENANCE);
+    CHECK(CommandPolicy_ActionFromCli("SD FORMAT CONFIRM") == COMMAND_ACTION_SD_MAINTENANCE);
     CHECK(CommandPolicy_ActionFromCli("UI LEDS") == COMMAND_ACTION_UI_TEST_PATTERN);
     CHECK(CommandPolicy_ActionFromCli("UI MATRIX ANIMATE") ==
           COMMAND_ACTION_UI_TEST_PATTERN);

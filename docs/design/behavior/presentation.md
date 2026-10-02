@@ -45,12 +45,14 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | PRES-SES-06 | `SES_PUB_STOP_IGNORED` | Reply to the command's source | `OK RECORD already idle` |
 | PRES-SES-07 | `SES_PUB_RECORDING_CARD_FULL` | Display, lights and audio, as a card-full fault; retain the valid finalized file | `ERR RECORD ABORT file=... reason=card full finalized=1` |
 | PRES-SES-08 | `SES_PUB_RECORDING_FILE_LIMIT` | Display, lights and audio, as a clean single-file ending | `OK RECORD PASS file=... reason=WAV size limit` |
+| PRES-SES-09 | `SES_PUB_RECORDING_PREPARING` | Reply to the command's source; a surface may show that a start is pending, never that recording has begun (PRES-R2) | `OK RECORD PREPARING prealloc-kib=...`, then `OK RECORD PREPARED file=...` with step timings |
+| PRES-SES-10 | `SES_PUB_RECORDING_CANCELLED` | Display, lights and audio: the start was cancelled and nothing was recorded | `OK RECORD STOP cancelled before capture; no file kept` |
 
 ## Published session state
 
 | Field | CLI today |
 |---|---|
-| Session state | `RECORD STATUS` replies `OK RECORD ACTIVE` or `OK RECORD IDLE` |
+| Session state | `RECORD STATUS` replies `OK RECORD PREPARING`, `OK RECORD ACTIVE` or `OK RECORD IDLE` |
 | File name | `RECORD STATUS` |
 | Written audio | `RECORD STATUS` and periodic `RECORD progress` lines |
 | Requested duration | The `OK RECORD START` reply only |
@@ -138,6 +140,8 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | PRES-SES-06 | Target | CLI reply implemented; no bench evidence |
 | PRES-SES-07 | Target | Session outcome and CLI reply implemented; no nearly-full-card evidence |
 | PRES-SES-08 | Target | Session outcome and CLI reply implemented; no file-limit evidence |
+| PRES-SES-09 | Proven for the CLI reply | [Stepped preallocation](../../evidence/2026-10-02-stepped-preallocation.md) |
+| PRES-SES-10 | Proven for the CLI reply | [Stepped preallocation](../../evidence/2026-10-02-stepped-preallocation.md) |
 | PRES-RAD-01 | Proven for the boot log | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | PRES-RAD-02 | Target | Published by the Radio machine; no surface renders it |
 | PRES-RAD-03 | Target | CLI reply now sent through the Radio machine; the [radio regression](../../evidence/2026-09-24-radio-regression.md) proved the blocking path it replaced and has not been rerun (`full_spooky_proto-54w.28`) |

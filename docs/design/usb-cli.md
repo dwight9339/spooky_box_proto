@@ -43,14 +43,18 @@ EMF ZERO
 EMF STREAM START 100
 EMF STREAM STOP
 RECORD STATUS
+RECORD RESULT
 RECORD LATENCY
 RECORD START 60
 RECORD STOP
 SD STATUS
+SD INFO
 SD REINIT
 SD STRESS 64 1
 SD STRESS STOP
 SD CLEAN
+SD FORMAT
+SD FORMAT CONFIRM
 WAV FETCH REC000.WAV
 WAV ABORT
 UI STATUS
@@ -103,7 +107,7 @@ nothing. Session actions then run through the authoritative Session machine.
 foreground service. The budget table and queue-headroom rationale are in
 [foreground latency](foreground-latency.md).
 
-While Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
+While Preparing, Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
 transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE` and `UI DISPLAY TEST`
 patterns, and radio tuning/band changes are rejected before their service handlers
 run. Status and diagnostic reads remain available. Every policy rejection is a
@@ -278,9 +282,60 @@ The file is standard PCM at 48 kHz, 16 bits, and three channels: 288,000 bytes/s
 about 17.3 MB/minute. Firmware combines both input streams into 4096-frame blocks and
 writes 24 KiB every 85.33 ms. Each input has an eight-block queue, providing about
 683 ms of write-stall tolerance. The initial block alignment of microphone and radio
-may differ by up to one 512-frame radio DMA half (about 10.7 ms). The first
-60 seconds are contiguously preallocated (or the whole requested duration when it
-is shorter).
+may differ by up to one 512-frame radio DMA half (about 10.7 ms).
+
+Capture starts only after the file is preallocated, so no allocation search runs while
+recording. `RECORD START` mounts and checks the card and replies
+`OK RECORD PREPARING prealloc-kib=...`; the Session state is then Preparing, which
+follows the recording command policy. The following foreground passes probe
+`REC###.WAV` names, create the file and search the FAT for one contiguous free run
+long enough for the preallocation. Each pass spends about `SPOOKY_RECORD_PREPARE_STEP_MS`
+(32 ms by default) and always makes progress (one name probe or one FAT sector).
+The preallocation is the first 60 seconds, or the whole requested duration when it is
+shorter, but never more than the free space above the card reserve. The search starts
+at the volume's next-free hint and wraps once around the volume. Once the run is
+found, the file is allocated and its header written; `OK RECORD PREPARED` reports the
+time spent in each step, and `OK RECORD START` follows when capture starts:
+
+```text
+OK RECORD PREPARED file=REC006.WAV prealloc-kib=16875 open=...ms name=...ms create=...ms search=...ms fat-sectors=... allocate=...ms steps=... step-max=...ms elapsed=...ms
+```
+
+When no contiguous run is long enough anywhere on the volume, the start is refused
+and the empty file deleted:
+`ERR RECORD free space too fragmented largest-run-kib=... need-kib=... fat-sectors=...`.
+Without a contiguous allocation the file would grow one cluster at a time, and FatFs
+would search the FAT inside a block write; on a nearly full, fragmented card one such
+write took 1.4 s and overran the queues
+([trial](../evidence/2026-10-01-prealloc-search-trial.md)). `RECORD STOP` while preparing cancels the start and
+deletes the empty file (`OK RECORD STOP cancelled before capture; no file kept`).
+`RECORD STATUS` reports `OK RECORD PREPARING file=... fat-sectors=... elapsed=...ms`
+during preparation. Volumes other than FAT32 skip the stepped search and rely on
+FatFs `f_expand`, whose FAT12/16 tables are at most 256 sectors.
+
+A recording longer than its preallocation (open-ended, or timed beyond 60 s) grows
+past it one cluster at a time. FatFs then takes the first free cluster after the file,
+scanning forward through any used clusters inside that block write. To keep that scan
+short, the recorder reads the FAT ahead of the file during the recording, one sector
+(128 clusters, about 14.5 s of audio with 32 KiB clusters) at a time in idle
+foreground passes, keeping about 30 s ahead of the write position. It counts the free
+clusters the file can reach across used stretches of at most
+`SPOOKY_RECORDING_MAX_GAP_FAT_SECTORS` FAT sectors (16 by default: 2048 clusters, about
+25 ms of FatFs reading inside one write). The recording may fill only the space
+verified that way. When a longer used stretch, or the end of one lap around the FAT,
+leaves no further reachable cluster, the recording finalizes before the next block
+would need one and reports the fault:
+`ERR RECORD ABORT file=... reason=free space fragmented finalized=1`. `RECORD LATENCY`
+reports `runway=none|open|end|failed`, the FAT sectors read ahead (`fat-ahead`) and the
+longest used stretch crossed in clusters (`gap-max`). The preallocated length is the
+build setting `SPOOKY_RECORDING_PREALLOC_SECONDS`, and the step budget is
+`SPOOKY_RECORD_PREPARE_STEP_MS`.
+
+The step budget bounds the FAT search but not a single directory call: each name
+probe, the file creation and the deletion of a discarded file scan the directory in
+one FatFs call. On a root of about 1,900 entries they took 60-116 ms, against 33 ms or
+less with 83 files ([evidence](../evidence/2026-10-02-stepped-preallocation.md);
+`full_spooky_proto-jjy.18`).
 
 At open, the recorder queries free space once and then subtracts each successful
 matched-block write from that cached budget. It does not run `f_getfree` on the
@@ -302,17 +357,58 @@ The requested duration is rounded up to the next 4096-frame block, so a 60-secon
 request produces about 60.075 seconds of audio:
 
 ```text
+OK RECORD PREPARING prealloc-kib=16875
+OK RECORD PREPARED file=REC000.WAV prealloc-kib=16875 ...
 OK RECORD START file=REC000.WAV duration=open format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]
 ...
 OK RECORD PASS file=REC000.WAV ... reason=stopped
-RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,...
+RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,... margin=OK|LOW
 ```
 
-`RECORD STATUS` reports progress, current queue depths, and the longest SD write.
+`RECORD STATUS` reports progress, current queue depths, the longest SD write and the
+storage margin.
+
+The storage margin (decision 0014) becomes `LOW` once either audio queue's high-water
+mark reaches 4 of 8 blocks or a single SD write takes 341 ms or more, half the
+queue headroom. It latches for the rest of the recording, appears in `RECORD STATUS`
+and `RECORD DIAG`, and records one `STORAGE_MARGIN` diagnostic event. It is a warning,
+not a fault: it does not set `HAS_FAULT` or stop the recording. The thresholds are the
+build settings `SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS` and `SPOOKY_STORAGE_MARGIN_WRITE_MS`
+until the media survey fixes them.
 `RECORD LATENCY` reports, for the current or last recording, the number of block
 writes, the longest `f_write`, the longest block conversion before it, and a
 histogram of `f_write` durations in 10 ms bins (0-9 ms through 60-69 ms, then
-70 ms and above). Counters reset at `RECORD START`.
+70 ms and above). Counters reset at `RECORD START`. Its last two fields,
+`usb-superseded` and `usb-lost`, are cumulative since boot and describe the recorder
+reply queue below.
+
+Recorder replies make one nonblocking submission attempt and otherwise wait in a
+four-line queue that is drained one line per loop pass. Only the newest
+`RECORD progress` line stays queued: a newer one replaces it, and any other reply that
+finds the queue full evicts it. `usb-superseded` counts progress lines removed this
+way. Only when the queue holds four non-progress replies does a new reply evict the
+oldest one; that counts in `usb-lost` and records a `USB_BACKPRESSURE` fault. A host
+that stops reading during a recording therefore receives the outcome (`OK RECORD PASS`
+or `ERR RECORD ABORT`) and `RECORD DIAG` when it resumes, after at most one stale line
+already in transfer and the newest progress line. Queued replies are sent as soon as
+the host polls again, so a host that discards received data when it opens the port
+(pyserial on Windows calls `PurgeComm` in `open()`) can lose them. Such a host
+recovers the outcome with `RECORD RESULT`.
+
+`RECORD RESULT` is a read-only query, accepted in every session state, that reports
+the last finished recording since boot:
+
+```text
+OK RECORD RESULT NONE
+OK RECORD RESULT seq=2 outcome=PASS file=REC075.WAV frames=286720 bytes=1720320 elapsed=6025ms finalized=1 reason=stopped
+```
+
+`seq` counts finished recordings since boot. `outcome` is `PASS` exactly when the
+pushed line was `OK RECORD PASS`; otherwise it is `ABORT`, including a clean stop
+whose finalization failed. `reason` is last and may contain spaces. The record is
+written before the pushed outcome line, so it is never older than that line. While a
+recording is active the reply still describes the previous one; a host that started
+a recording matches `file` (and `seq`) before treating the result as its own.
 `RECORD STOP` requests a clean stop after the next matched radio/mic block.
 SD maintenance and stress commands, WAV transfer, and radio band/tuning changes are
 rejected while recording is active. `SD STATUS` remains nonintrusive: while the
@@ -340,9 +436,27 @@ unmounting the current owner.
 `SD STATUS` mounts the volume and reports the card type, capacity, free space,
 logical block count, bus width, and active clock divider. `SD REINIT` unmounts,
 deinitializes, and mounts it again. The configuration uses four-bit mode, hardware
-flow control, `ClockDiv=2` for card initialization/mounting, and `ClockDiv=0` for
-file transfers.
+flow control, and `ClockDiv=2` (75 MHz / 4 = 18.75 MHz) for mounting and transfers.
+The card is never switched to high speed, so the bus stays within the 25 MHz
+default-speed limit. `ClockDiv=0` bypasses the divider and runs the bus at 75 MHz;
+a 2 GB SDSC card fails data CRC there.
 
+Card initialization is bounded. The SD power-up handshake (ACMD41) is tried at most
+2000 times, about 1.2 s, slightly more than the SD 1 s power-up allowance. After that,
+the card must reach the transfer state within 1 s. A card that fails either step fails
+the mount in about 1.2 s instead of blocking the foreground for about 38 s. The working
+cards tested mount within about 300 ms. A failed mount, `SD INFO`, `SD FORMAT` or
+`RECORD START` reports the failing step, preserved before the handle is deinitialized:
+
+```text
+ERR SD mount failed result=FR_NOT_READY(3) stage=HAL_INIT hal=0x01000000 state=0 init_ms=1156 ready_ms=0
+```
+
+`stage` is `HAL_INIT` (identification or power-up failed; `hal=0x01000000` is the HAL's
+invalid-voltage-range error, a card that never finished powering up), `NOT_READY` (it
+never reached the transfer state; `state` is the last card state), `NO_CARD` or `OK`
+(the card initialized and the failure is the filesystem itself, such as
+`FR_NO_FILESYSTEM`).
 `SD STRESS [size-MiB] [passes]` defaults to a 64 MiB, one-pass test. Each pass
 overwrites `SDTEST.BIN` with a changing pseudorandom pattern in 16 KiB chunks,
 syncs it to the card, reads the whole file back, and compares every byte. A
@@ -366,10 +480,53 @@ test owns the card. If a transfer, verification, or cleanup step fails, `SDTEST.
 is retained for inspection and the next stress command refuses to overwrite it.
 `SD CLEAN` removes only that fixed test file.
 
+`SD INFO` reads the card's identity and ratings without mounting a filesystem, so it
+also works on a card with no readable volume. It reports the card type, whether the
+recorder supports it (decision 0014: SDHC/SDXC only), capacity, the CID fields
+(manufacturer ID, OEM ID, product name and revision, serial number, manufacturing
+date) and the SD Status ratings (speed class, UHS speed grade, video speed class,
+allocation unit). Ratings are recorded as evidence; they do not bound write stalls.
+Command policy rejects it while recording.
+
+```text
+OK SD INFO TYPE=SDHC/SDXC SUPPORTED=1 CAPACITY=15193MiB MID=0x03 OID=SD PNM=SC16G PRV=8.0 PSN=0x934591FE MDT=2022-09 SPEED_CLASS=10 UHS_GRADE=0 VIDEO_CLASS=0 AU=4096KiB
+```
+
+`RECORD START` refuses an unsupported card before creating a file:
+`ERR RECORD unsupported card TYPE=SDSC; SDHC/SDXC required`. Reading, transfer and
+maintenance commands still work on such a card.
+
+`SD FORMAT` provides an optional in-device format; cards formatted elsewhere remain
+usable. It is two-step: `SD FORMAT` arms it, and `SD FORMAT CONFIRM` within 10 s
+erases every file on the card. A confirm that is unarmed or late is refused, and
+consumes the arm. Command policy rejects both while recording or finalizing. The
+storage service formats under its own exclusive owner (`FORMAT`) and does not need
+a readable filesystem, so a card with a damaged or foreign layout can be
+formatted. Only SDHC/SDXC cards are formatted; SDSC is refused before anything is
+written.
+
+The layout is one FAT32 volume with 32 KiB clusters and a single FAT. FatFs R0.12c
+places the partition at sector 63, and aligns the data area to the card's
+allocation unit read from its SD Status register (`ALIGN_SECTORS`; 1 when the card
+reports none). The service then mounts the new volume once to verify it. The format
+blocks the foreground for its whole duration, about 2 s for a 16 GB card, and runs
+only from idle maintenance:
+
+```text
+SD FORMAT
+OK SD FORMAT armed; erases every file on the card. Send SD FORMAT CONFIRM within 10 s
+SD FORMAT CONFIRM
+OK SD FORMAT started
+OK SD FORMAT FAT32 CLUSTER=32768 ALIGN_SECTORS=8192 SECTORS=31116288 FREE=15189MiB MS=1998
+```
+
+Failures report `ERR SD FORMAT unsupported card TYPE=SDSC; SDHC/SDXC required` or
+`ERR SD FORMAT failed result=<FRESULT>(<n>) hal=0x<error> MS=<n>`.
+
 ## Low-power charging monitor
 
 `SLEEP START` is a one-way low-power state entered from the CLI; it is rejected in IPC
-experiment builds and while the Session state is Recording or Finalizing. An active
+experiment builds and while the Session state is Preparing, Recording or Finalizing. An active
 session receives `ERR SLEEP unavailable while recording` and is unchanged. On entry,
 firmware prints one fuel-gauge update, mutes and stops
 the audio DMA, powers down and resets the radio, stops USB CDC/HSI48, makes

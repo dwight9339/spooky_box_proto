@@ -48,4 +48,5 @@ and filesystem operations are unchanged. This slice exposes their effects; it
 does not make the whole cooperative loop bounded.
 
 Host tests and bench procedure: [logger and diagnostics bench](../procedures/logger-diag-bench.md).
-Evidence: [2026-09-23 bench record](../evidence/2026-09-23-bench-results.md).
+Evidence: [2026-09-23 bench record](../evidence/2026-09-23-bench-results.md);
+[2026-10-01 saturation, UART faults and USB backpressure during recording](../evidence/2026-10-01-logger-saturation.md).
