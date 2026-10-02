@@ -4,8 +4,11 @@ The M7 foreground loop gives capture and storage first priority while a recordin
 is active. Timing is measured with the millisecond HAL tick at every service
 boundary and from one loop start to the next. A sample is included only when DMA
 capture is active at both boundaries; for the aggregate loop, both boundaries are
-loop starts, so the pass that opens and preallocates the file and then starts
-capture is not a recording pass. This excludes file-open/start and the final
+loop starts, so the passes that prepare the file (open, name, create, search and
+preallocate; `full_spooky_proto-jjy.9`) and the pass that starts capture are not
+recording passes. Each preparation pass is bounded by
+`SPOOKY_RECORD_PREPARE_STEP_MS`, and the always-on `LOOP_MAX_MS` diagnostic still
+records any loop gap of 50 ms or more. This excludes file-open/start and the final
 header/sync/close after DMA stops; startup, diagnostics and maintenance intentionally
 have different latency characteristics.
 

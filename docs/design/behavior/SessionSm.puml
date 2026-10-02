@@ -11,23 +11,36 @@
 
 state Idle
 state Active {
+  state Preparing
   state Recording
   state Finalizing
 }
 state OpenResult <<choice>>
+state PrepareResult <<choice>>
 state CaptureResult <<choice>>
 state FinalizeResult <<choice>>
 
 Idle : enter / ses_state_changed();
+Preparing : enter / ses_state_changed();
 Recording : enter / ses_state_changed();
 Finalizing : enter / ses_state_changed();
 
 ' Start: the guard can_start covers card present, the recording reserve, radio
 ' running, PDM ready and a duration of zero (open-ended) or 1 to 3600 seconds.
 Idle : START [!ses_can_start()] / ses_publish(SES_PUB_RECORDING_REJECTED);
+' open_file mounts and checks the card; the recorder then names and creates the
+' file and preallocates it in bounded foreground steps (jjy.9), and reports
+' PREPARED. Capture starts only once the space is allocated, so no allocation
+' search runs while recording.
 Idle --> OpenResult : START [ses_can_start()] / ses_open_file();
 OpenResult --> Idle : [!ses_file_opened()] / ses_publish(SES_PUB_RECORDING_REJECTED);
-OpenResult --> CaptureResult : else / ses_start_capture();
+OpenResult --> Preparing : else / ses_publish(SES_PUB_RECORDING_PREPARING);
+Preparing --> PrepareResult : PREPARED
+PrepareResult --> CaptureResult : [ses_prepare_ok()] / ses_start_capture();
+PrepareResult --> Idle : else / ses_discard_file(); ses_publish(SES_PUB_RECORDING_REJECTED);
+' Nothing has been captured yet, so a stop or a fault removes the empty file.
+Preparing --> Idle : STOP / ses_discard_file(); ses_publish(SES_PUB_RECORDING_CANCELLED);
+Preparing --> Idle : CAPTURE_FAULT / ses_discard_file(); ses_publish(SES_PUB_RECORDING_REJECTED);
 CaptureResult --> Recording : [ses_capture_started()] / ses_publish(SES_PUB_RECORDING_STARTED);
 CaptureResult --> Idle : else / ses_finalize_file(); ses_publish(SES_PUB_RECORDING_ABORTED);
 

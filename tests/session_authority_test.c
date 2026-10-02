@@ -28,6 +28,7 @@ static unsigned capture_calls;
 static unsigned request_stop_calls;
 static unsigned stop_capture_calls;
 static unsigned finalize_calls;
+static unsigned discard_calls;
 static uint32_t last_seconds;
 static bool last_radio_ready;
 static SesPublished published[16];
@@ -45,11 +46,20 @@ bool RadioRecorder_CanStart(uint32_t seconds, bool radio_ready)
     return can_start;
 }
 
+/* Like the recorder, a prepared file counts as active until it is discarded or
+ * capture ends. */
 bool RadioRecorder_OpenFile(uint32_t seconds)
 {
     ++open_calls;
     last_seconds = seconds;
+    if (open_ok) recorder_active = true;
     return open_ok;
+}
+
+void RadioRecorder_DiscardFile(void)
+{
+    ++discard_calls;
+    recorder_active = false;
 }
 
 bool RadioRecorder_StartCapture(void)
@@ -109,7 +119,7 @@ static void reset(void)
     target_reached = false;
     finalize_ok = true;
     can_start_calls = open_calls = capture_calls = 0;
-    request_stop_calls = stop_capture_calls = finalize_calls = 0;
+    request_stop_calls = stop_capture_calls = finalize_calls = discard_calls = 0;
     last_seconds = 0;
     last_radio_ready = false;
     published_count = 0;
@@ -125,11 +135,20 @@ static void pass(void)
     AppDispatch_Service();
 }
 
+/* The recorder's preparation steps end with an internal PREPARED report. */
+static void prepare(bool ok)
+{
+    CHECK(Session_GetState() == SES_STATE_PREPARING && recorder_active);
+    SessionControl_ReportPrepared(ok);
+    pass();
+}
+
 static void start_recording(void)
 {
     CHECK(SessionControl_RequestStart(60u, true));
     CHECK(!recorder_active);
     pass();
+    prepare(true);
     CHECK(Session_GetState() == SES_STATE_RECORDING);
     CHECK(recorder_active);
 }
@@ -140,8 +159,9 @@ static void an_external_start_drives_the_recorder_through_the_machine(void)
     start_recording();
     CHECK(can_start_calls == 1 && open_calls == 1 && capture_calls == 1);
     CHECK(last_seconds == 60u && last_radio_ready);
-    CHECK(published_count == 1);
-    CHECK(published[0] == SES_PUB_RECORDING_STARTED);
+    CHECK(published_count == 2);
+    CHECK(published[0] == SES_PUB_RECORDING_PREPARING);
+    CHECK(published[1] == SES_PUB_RECORDING_STARTED);
     CHECK(mismatch_records == 0);
 }
 
@@ -150,6 +170,7 @@ static void an_open_ended_start_reaches_the_recorder_as_zero(void)
     reset();
     CHECK(SessionControl_RequestStart(0u, true));
     pass();
+    prepare(true);
     CHECK(Session_GetState() == SES_STATE_RECORDING && recorder_active);
     CHECK(last_seconds == 0u && last_radio_ready);
 }
@@ -171,12 +192,36 @@ static void each_start_failure_has_one_explicit_outcome(void)
     CHECK(published_count == 1 && published[0] == SES_PUB_RECORDING_REJECTED);
 
     reset();
+    CHECK(SessionControl_RequestStart(30u, true));
+    pass();
+    prepare(false);
+    CHECK(discard_calls == 1 && capture_calls == 0 && finalize_calls == 0);
+    CHECK(published_count == 2 && published[1] == SES_PUB_RECORDING_REJECTED);
+    CHECK(Session_GetState() == SES_STATE_IDLE && !recorder_active);
+
+    reset();
     capture_ok = false;
     CHECK(SessionControl_RequestStart(30u, true));
     pass();
+    prepare(true);
     CHECK(capture_calls == 1 && finalize_calls == 1);
-    CHECK(published_count == 1 && published[0] == SES_PUB_RECORDING_ABORTED);
+    CHECK(published_count == 2 && published[1] == SES_PUB_RECORDING_ABORTED);
     CHECK(Session_GetState() == SES_STATE_IDLE && !recorder_active);
+    CHECK(mismatch_records == 0);
+}
+
+static void stop_while_preparing_discards_the_file(void)
+{
+    reset();
+    CHECK(SessionControl_RequestStart(0u, true));
+    pass();
+    CHECK(Session_GetState() == SES_STATE_PREPARING && recorder_active);
+    CHECK(SessionControl_RequestStop());
+    pass();
+    CHECK(Session_GetState() == SES_STATE_IDLE && !recorder_active);
+    CHECK(discard_calls == 1 && request_stop_calls == 0 && finalize_calls == 0);
+    CHECK(published[published_count - 1] == SES_PUB_RECORDING_CANCELLED);
+    CHECK(mismatch_records == 0);
 }
 
 static void stop_waits_for_the_next_matched_block_then_finalizes(void)
@@ -271,6 +316,7 @@ int main(void)
     RUN(an_external_start_drives_the_recorder_through_the_machine);
     RUN(an_open_ended_start_reaches_the_recorder_as_zero);
     RUN(each_start_failure_has_one_explicit_outcome);
+    RUN(stop_while_preparing_discards_the_file);
     RUN(stop_waits_for_the_next_matched_block_then_finalizes);
     RUN(reaching_the_target_and_capture_faults_are_authoritative);
     RUN(storage_limit_outcomes_cross_the_authoritative_queue);

@@ -52,6 +52,9 @@ static void every_policy_row_has_the_decision_0008_class(void)
               active[action]);
         CHECK(CommandPolicy_Evaluate((CommandAction)action, SES_STATE_FINALIZING) ==
               active[action]);
+        /* Preparing a recording file (jjy.9) follows the recording rules. */
+        CHECK(CommandPolicy_Evaluate((CommandAction)action, SES_STATE_PREPARING) ==
+              active[action]);
         CHECK(rule->recording == active[action]);
     }
 }

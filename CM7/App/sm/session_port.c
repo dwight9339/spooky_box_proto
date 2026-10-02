@@ -9,6 +9,7 @@ static SessionSm machine;
 static uint32_t start_seconds;
 static bool can_start;
 static bool file_opened;
+static bool prepare_ok;
 static bool capture_started;
 static bool target_reached;
 static bool finalize_ok;
@@ -26,6 +27,7 @@ void Session_Init(void)
     start_seconds = 0u;
     can_start = false;
     file_opened = false;
+    prepare_ok = false;
     capture_started = false;
     target_reached = false;
     finalize_ok = false;
@@ -39,6 +41,7 @@ void Session_OnStart(uint32_t seconds)
     start_seconds = seconds;
     can_start = ses_integration_can_start(seconds);
     file_opened = false;
+    prepare_ok = false;
     capture_started = false;
     ending = SES_ENDING_NORMAL;
     SessionSm_dispatch_event(&machine, SessionSm_EventId_START);
@@ -47,6 +50,12 @@ void Session_OnStart(uint32_t seconds)
 void Session_OnStop(void)
 {
     SessionSm_dispatch_event(&machine, SessionSm_EventId_STOP);
+}
+
+void Session_OnPrepared(bool ok)
+{
+    prepare_ok = ok;
+    SessionSm_dispatch_event(&machine, SessionSm_EventId_PREPARED);
 }
 
 void Session_OnBlockWritten(void)
@@ -76,6 +85,8 @@ void Session_OnCaptureFault(void)
 SesState Session_GetState(void)
 {
     switch (machine.state_id) {
+    case SessionSm_StateId_PREPARING:
+        return SES_STATE_PREPARING;
     case SessionSm_StateId_RECORDING:
         return SES_STATE_RECORDING;
     case SessionSm_StateId_FINALIZING:
@@ -94,6 +105,7 @@ bool Session_IsActive(void)
 
 bool ses_can_start(void) { return can_start; }
 bool ses_file_opened(void) { return file_opened; }
+bool ses_prepare_ok(void) { return prepare_ok; }
 bool ses_capture_started(void) { return capture_started; }
 bool ses_target_reached(void) { return target_reached; }
 bool ses_finalize_ok(void) { return finalize_ok; }
@@ -106,6 +118,11 @@ void ses_open_file(void)
 void ses_start_capture(void)
 {
     capture_started = ses_integration_start_capture();
+}
+
+void ses_discard_file(void)
+{
+    ses_integration_discard_file();
 }
 
 void ses_request_stop(void)

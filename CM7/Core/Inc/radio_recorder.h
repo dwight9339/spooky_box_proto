@@ -15,6 +15,8 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready);
 bool RadioRecorder_CanStart(uint32_t seconds, bool radio_ready);
 bool RadioRecorder_OpenFile(uint32_t seconds);
 bool RadioRecorder_StartCapture(void);
+/* Closes and deletes a prepared file that capture never used. */
+void RadioRecorder_DiscardFile(void);
 void RadioRecorder_RequestStop(void);
 bool RadioRecorder_TargetReached(void);
 void RadioRecorder_StopCapture(void);

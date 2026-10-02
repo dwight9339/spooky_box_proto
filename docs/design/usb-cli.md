@@ -107,7 +107,7 @@ nothing. Session actions then run through the authoritative Session machine.
 foreground service. The budget table and queue-headroom rationale are in
 [foreground latency](foreground-latency.md).
 
-While Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
+While Preparing, Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
 transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE` and `UI DISPLAY TEST`
 patterns, and radio tuning/band changes are rejected before their service handlers
 run. Status and diagnostic reads remain available. Every policy rejection is a
@@ -282,9 +282,44 @@ The file is standard PCM at 48 kHz, 16 bits, and three channels: 288,000 bytes/s
 about 17.3 MB/minute. Firmware combines both input streams into 4096-frame blocks and
 writes 24 KiB every 85.33 ms. Each input has an eight-block queue, providing about
 683 ms of write-stall tolerance. The initial block alignment of microphone and radio
-may differ by up to one 512-frame radio DMA half (about 10.7 ms). The first
-60 seconds are contiguously preallocated (or the whole requested duration when it
-is shorter).
+may differ by up to one 512-frame radio DMA half (about 10.7 ms).
+
+Capture starts only after the file is preallocated, so no allocation search runs while
+recording. `RECORD START` mounts and checks the card and replies
+`OK RECORD PREPARING prealloc-kib=...`; the Session state is then Preparing, which
+follows the recording command policy. The following foreground passes probe
+`REC###.WAV` names, create the file and search the FAT for one contiguous free run
+long enough for the preallocation. Each pass spends about `SPOOKY_RECORD_PREPARE_STEP_MS`
+(32 ms by default) and always makes progress (one name probe or one FAT sector).
+The preallocation is the first 60 seconds, or the whole requested duration when it is
+shorter, but never more than the free space above the card reserve. The search starts
+at the volume's next-free hint and wraps once around the volume. Once the run is
+found, the file is allocated and its header written; `OK RECORD PREPARED` reports the
+time spent in each step, and `OK RECORD START` follows when capture starts:
+
+```text
+OK RECORD PREPARED file=REC006.WAV prealloc-kib=16875 open=...ms name=...ms create=...ms search=...ms fat-sectors=... allocate=...ms steps=... step-max=...ms elapsed=...ms
+```
+
+When no contiguous run is long enough anywhere on the volume, the start is refused
+and the empty file deleted:
+`ERR RECORD free space too fragmented largest-run-kib=... need-kib=... fat-sectors=...`.
+Without a contiguous allocation the file would grow one cluster at a time, and FatFs
+would search the FAT inside a block write; on a nearly full, fragmented card one such
+write took 1.4 s and overran the queues
+([trial](../evidence/2026-10-01-prealloc-search-trial.md)). A recording longer than its
+preallocation still grows that way after the first 60 seconds
+(`full_spooky_proto-jjy.17`). `RECORD STOP` while preparing cancels the start and
+deletes the empty file (`OK RECORD STOP cancelled before capture; no file kept`).
+`RECORD STATUS` reports `OK RECORD PREPARING file=... fat-sectors=... elapsed=...ms`
+during preparation. Volumes other than FAT32 skip the stepped search and rely on
+FatFs `f_expand`, whose FAT12/16 tables are at most 256 sectors.
+
+The step budget bounds the FAT search but not a single directory call: each name
+probe, the file creation and the deletion of a discarded file scan the directory in
+one FatFs call. On a root of about 1,900 entries they took 60-116 ms, against 33 ms or
+less with 83 files ([evidence](../evidence/2026-10-02-stepped-preallocation.md);
+`full_spooky_proto-jjy.18`).
 
 At open, the recorder queries free space once and then subtracts each successful
 matched-block write from that cached budget. It does not run `f_getfree` on the
@@ -306,6 +341,8 @@ The requested duration is rounded up to the next 4096-frame block, so a 60-secon
 request produces about 60.075 seconds of audio:
 
 ```text
+OK RECORD PREPARING prealloc-kib=16875
+OK RECORD PREPARED file=REC000.WAV prealloc-kib=16875 ...
 OK RECORD START file=REC000.WAV duration=open format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]
 ...
 OK RECORD PASS file=REC000.WAV ... reason=stopped
@@ -473,7 +510,7 @@ Failures report `ERR SD FORMAT unsupported card TYPE=SDSC; SDHC/SDXC required` o
 ## Low-power charging monitor
 
 `SLEEP START` is a one-way low-power state entered from the CLI; it is rejected in IPC
-experiment builds and while the Session state is Recording or Finalizing. An active
+experiment builds and while the Session state is Preparing, Recording or Finalizing. An active
 session receives `ERR SLEEP unavailable while recording` and is unchanged. On entry,
 firmware prints one fuel-gauge update, mutes and stops
 the audio DMA, powers down and resets the radio, stops USB CDC/HSI48, makes

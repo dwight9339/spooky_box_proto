@@ -103,6 +103,7 @@ static void TestNotFoundAfterOnePass(void)
   reads = Run(&search, FAT_ENTRIES, 700U, 200U, 1000U);
   CHECK(search.state == FAT_RUN_NOT_FOUND);
   CHECK(search.examined == (FAT_ENTRIES - 2U));
+  CHECK(search.longest == 100U); /* Reported when the recorder refuses. */
   CHECK(reads == (FAT_SECTORS + 1U)); /* Start sector is visited twice: before and after the wrap. */
 }
 
@@ -112,7 +113,7 @@ static void TestBudgetStopsSearch(void)
 
   FillUsedExcept(0U, 0U);
   CHECK(Run(&search, FAT_ENTRIES, 2U, 10U, 3U) == 3U);
-  CHECK(search.state == FAT_RUN_SEARCHING); /* Caller gives up: no preallocation. */
+  CHECK(search.state == FAT_RUN_SEARCHING); /* Paused; the next pass continues. */
   CHECK(search.examined == ((3U * FAT_RUN_ENTRIES_PER_SECTOR) - 2U));
 }
 
@@ -127,6 +128,7 @@ static void TestRunDoesNotSpanWrap(void)
   for (uint32_t c = 2U; c < 32U; ++c) SetEntry(c, 0U);
   (void)Run(&search, n_fatent, n_fatent - 30U, 40U, 100U);
   CHECK(search.state == FAT_RUN_NOT_FOUND);
+  CHECK(search.longest == 30U);
   (void)Run(&search, n_fatent, n_fatent - 30U, 30U, 100U);
   CHECK((search.state == FAT_RUN_FOUND) && (search.run_start == (n_fatent - 30U)));
 }

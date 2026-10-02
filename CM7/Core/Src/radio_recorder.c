@@ -33,6 +33,7 @@
 #define RECORDER_QUEUE_DEPTH                  8U
 #define RECORDER_MAX_SECONDS               3600U
 #define RECORDER_PREALLOC_SECONDS            60U
+#define RECORDER_FILENAME_LIMIT            1000U
 #define RECORDER_PROGRESS_PERIOD_MS        5000U
 #define RECORDER_WRITE_HIST_BIN_MS           10U
 #define RECORDER_WRITE_HIST_BINS              8U
@@ -51,6 +52,12 @@
 #ifndef SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES
 #define SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES 0U
 #endif
+/* jjy.9: foreground time one preparation step may spend on filename probes or
+ * FAT reads (at least one each pass). Below the 70 ms recorder budget and the
+ * 50 ms loop-stall threshold; configurable until bench trials fix it. */
+#ifndef SPOOKY_RECORD_PREPARE_STEP_MS
+#define SPOOKY_RECORD_PREPARE_STEP_MS 32U
+#endif
 /* Decision 0014 item 5: half the eight-block (683 ms) queue headroom, until the
  * media survey fixes the thresholds. */
 #ifndef SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS
@@ -63,8 +70,26 @@
 typedef enum
 {
   RECORDER_IDLE = 0,
+  RECORDER_PREPARING, /* Card mounted; file being named, created, allocated. */
   RECORDER_ACTIVE
 } RecorderState;
+
+/* Preparation runs in bounded foreground steps before capture (jjy.9). */
+typedef enum
+{
+  PREPARE_NAME = 0,
+  PREPARE_CREATE,
+  PREPARE_SEARCH,
+  PREPARE_ALLOCATE,
+  PREPARE_REPORT /* Outcome known; waiting for the event queue to take it. */
+} PreparePhase;
+
+typedef enum
+{
+  PREPARE_CONTINUE = 0,
+  PREPARE_DONE,
+  PREPARE_FAILED
+} PrepareStep;
 
 static DFSDM_Filter_HandleTypeDef *pdm_filter;
 static FIL recorder_file;
@@ -121,6 +146,16 @@ static bool session_event_pending;
 static ReplyQueue recorder_usb_queue;
 static RecordingResult last_result;
 static StorageMargin storage_margin;
+static PreparePhase prepare_phase;
+static unsigned int prepare_name_index;
+static uint32_t prepare_bytes;
+static uint32_t prepare_started_ms;
+static uint32_t prepare_open_ms;
+static uint32_t prepare_phase_ms[PREPARE_REPORT];
+static bool prepare_ok;
+static uint32_t prepare_step_max_ms;
+static uint32_t prepare_steps;
+static StorageRunReport prepare_run;
 static const StorageMarginLimits storage_margin_limits = {
   SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS, SPOOKY_STORAGE_MARGIN_WRITE_MS
 };
@@ -234,16 +269,17 @@ static void RecorderDiscardFile(void)
   RecorderUnmount();
 }
 
+/* Mounts and checks the card and begins preparation; the rest runs in
+ * RecorderPrepareStep. */
 bool RadioRecorder_OpenFile(uint32_t requested_seconds)
 {
   FRESULT result;
-  FILINFO info;
   HAL_SD_CardInfoTypeDef card;
   uint64_t free_bytes;
+  uint64_t recordable;
   uint32_t prealloc_seconds = requested_seconds;
-  uint32_t prealloc_bytes;
-  unsigned int index;
 
+  prepare_started_ms = HAL_GetTick();
   if (!StorageService_CardPresent())
   {
     RecorderSend("ERR RECORD no SD card detected\r\n");
@@ -290,69 +326,235 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
     RecorderUnmount();
     return false;
   }
-  for (index = 0U; index < 1000U; ++index)
-  {
-    (void)snprintf(recorder_filename, sizeof(recorder_filename),
-                   "REC%03u.WAV", index);
-    result = f_stat(recorder_filename, &info);
-    if (result == FR_NO_FILE)
-    {
-      break;
-    }
-    if (result != FR_OK)
-    {
-      RecorderSend("ERR RECORD filename scan failed result=%s(%u)\r\n",
-                   StorageService_ResultName(result), (unsigned int)result);
-      RecorderUnmount();
-      return false;
-    }
-  }
-  if (index >= 1000U)
-  {
-    RecorderSend("ERR RECORD no free REC###.WAV filename\r\n");
-    RecorderUnmount();
-    return false;
-  }
 
-  result = f_open(&recorder_file, recorder_filename,
-                  FA_CREATE_NEW | FA_WRITE);
-  if (result != FR_OK)
-  {
-    RecorderSend("ERR RECORD create failed result=%s(%u)\r\n",
-                 StorageService_ResultName(result), (unsigned int)result);
-    RecorderUnmount();
-    return false;
-  }
-  recorder_file_open = true;
-
+  /* Preallocate the first minute, or the whole of a shorter timed recording,
+   * but never into the card reserve: the recording stops at the reserve. */
   if ((prealloc_seconds == 0U) ||
       (prealloc_seconds > RECORDER_PREALLOC_SECONDS))
   {
     prealloc_seconds = RECORDER_PREALLOC_SECONDS;
   }
-  prealloc_bytes = RECORDER_WAV_HEADER_BYTES +
+  prepare_bytes = RECORDER_WAV_HEADER_BYTES +
     prealloc_seconds * RECORDER_SAMPLE_RATE_HZ * RECORDER_BLOCK_ALIGN;
-  result = f_expand(&recorder_file, prealloc_bytes, 1U);
+  recordable = recording_limits.free_bytes_at_open - recording_limits.reserve_bytes;
+  if (recordable < prepare_bytes)
+  {
+    prepare_bytes = (uint32_t)recordable;
+  }
+
+  recorder_filename[0] = '\0';
+  prepare_phase = PREPARE_NAME;
+  prepare_name_index = 0U;
+  (void)memset(prepare_phase_ms, 0, sizeof(prepare_phase_ms));
+  (void)memset(&prepare_run, 0, sizeof(prepare_run));
+  prepare_step_max_ms = 0U;
+  prepare_steps = 0U;
+  prepare_open_ms = HAL_GetTick() - prepare_started_ms;
+  session_event_pending = false;
+  recorder_state = RECORDER_PREPARING;
+  return true;
+}
+
+static uint32_t RecorderClustersKib(uint32_t clusters)
+{
+  return (uint32_t)(((uint64_t)clusters * prepare_run.cluster_bytes) / 1024U);
+}
+
+/* Probes REC###.WAV names until one is free. Each probe scans the directory. */
+static PrepareStep RecorderPrepareName(uint32_t step_start)
+{
+  FILINFO info;
+  FRESULT result;
+
+  while (prepare_name_index < RECORDER_FILENAME_LIMIT)
+  {
+    (void)snprintf(recorder_filename, sizeof(recorder_filename),
+                   "REC%03u.WAV", prepare_name_index);
+    result = f_stat(recorder_filename, &info);
+    if (result == FR_NO_FILE)
+    {
+      prepare_phase = PREPARE_CREATE;
+      return PREPARE_CONTINUE;
+    }
+    if (result != FR_OK)
+    {
+      RecorderSend("ERR RECORD filename scan failed result=%s(%u)\r\n",
+                   StorageService_ResultName(result), (unsigned int)result);
+      return PREPARE_FAILED;
+    }
+    ++prepare_name_index;
+    if ((HAL_GetTick() - step_start) >= SPOOKY_RECORD_PREPARE_STEP_MS)
+    {
+      return PREPARE_CONTINUE;
+    }
+  }
+  RecorderSend("ERR RECORD no free REC###.WAV filename\r\n");
+  return PREPARE_FAILED;
+}
+
+static PrepareStep RecorderPrepareCreate(void)
+{
+  FRESULT result = f_open(&recorder_file, recorder_filename,
+                          FA_CREATE_NEW | FA_WRITE);
+
+  if (result != FR_OK)
+  {
+    RecorderSend("ERR RECORD create failed result=%s(%u)\r\n",
+                 StorageService_ResultName(result), (unsigned int)result);
+    return PREPARE_FAILED;
+  }
+  recorder_file_open = true;
+  switch (StorageService_BeginRunSearch(STORAGE_OWNER_RECORDER, prepare_bytes))
+  {
+    case STORAGE_RUN_SEARCHING:
+      prepare_phase = PREPARE_SEARCH;
+      return PREPARE_CONTINUE;
+    case STORAGE_RUN_UNSUPPORTED:
+      /* FAT12/16: the FAT is at most 256 sectors, so f_expand's own search
+       * stays short. */
+      prepare_phase = PREPARE_ALLOCATE;
+      return PREPARE_CONTINUE;
+    case STORAGE_RUN_NOT_FOUND:
+      RecorderSend("ERR RECORD free space below the preallocation need-kib=%lu\r\n",
+                   (unsigned long)(prepare_bytes / 1024U));
+      return PREPARE_FAILED;
+    default:
+      RecorderSend("ERR RECORD preallocation search failed\r\n");
+      return PREPARE_FAILED;
+  }
+}
+
+/* A file that grows cluster by cluster makes FatFs search the FAT inside
+ * f_write; on fragmented free space that stalled a write for 1.4 s and overran
+ * the queues. Without a contiguous run the recording is refused (jjy.9). */
+static PrepareStep RecorderPrepareSearch(void)
+{
+  switch (StorageService_StepRunSearch(STORAGE_OWNER_RECORDER,
+                                       SPOOKY_RECORD_PREPARE_STEP_MS,
+                                       &prepare_run))
+  {
+    case STORAGE_RUN_SEARCHING:
+      return PREPARE_CONTINUE;
+    case STORAGE_RUN_FOUND:
+      prepare_phase = PREPARE_ALLOCATE;
+      return PREPARE_CONTINUE;
+    case STORAGE_RUN_NOT_FOUND:
+      RecorderSend("ERR RECORD free space too fragmented largest-run-kib=%lu "
+                   "need-kib=%lu fat-sectors=%lu\r\n",
+                   (unsigned long)RecorderClustersKib(prepare_run.longest_clusters),
+                   (unsigned long)RecorderClustersKib(prepare_run.needed_clusters),
+                   (unsigned long)prepare_run.fat_sectors);
+      return PREPARE_FAILED;
+    default:
+      RecorderSend("ERR RECORD FAT read failed during preallocation search\r\n");
+      return PREPARE_FAILED;
+  }
+}
+
+static PrepareStep RecorderPrepareAllocate(void)
+{
+  FRESULT result = f_expand(&recorder_file, prepare_bytes, 1U);
+
   if (result == FR_DENIED)
   {
-    RecorderSend("WARN RECORD contiguous preallocation unavailable; "
-                 "using dynamic growth\r\n");
+    RecorderSend("ERR RECORD no contiguous free space need-kib=%lu\r\n",
+                 (unsigned long)(prepare_bytes / 1024U));
+    return PREPARE_FAILED;
   }
-  else if (result != FR_OK)
+  if (result != FR_OK)
   {
     RecorderSend("ERR RECORD preallocation failed result=%s(%u)\r\n",
                  StorageService_ResultName(result), (unsigned int)result);
-    RecorderDiscardFile();
-    return false;
+    return PREPARE_FAILED;
   }
-
   if (!RecorderWriteHeader(0U))
   {
     RecorderSend("ERR RECORD initial WAV header write failed\r\n");
-    RecorderDiscardFile();
-    return false;
+    return PREPARE_FAILED;
   }
-  return true;
+  return PREPARE_DONE;
+}
+
+/* One bounded preparation step per foreground pass. The outcome goes to the
+ * Session machine, which starts capture or discards the file. */
+static void RecorderPrepareStep(void)
+{
+  const uint32_t step_start = HAL_GetTick();
+  const PreparePhase phase = prepare_phase;
+  PrepareStep step;
+  uint32_t step_ms;
+
+  if (session_event_pending)
+  {
+    return;
+  }
+  if (phase == PREPARE_REPORT)
+  {
+    session_event_pending = SessionControl_ReportPrepared(prepare_ok);
+    return;
+  }
+  if (!StorageService_CardPresent())
+  {
+    RecorderSend("ERR RECORD SD card removed while preparing\r\n");
+    step = PREPARE_FAILED;
+  }
+  else
+  {
+    switch (phase)
+    {
+      case PREPARE_NAME:
+        step = RecorderPrepareName(step_start);
+        break;
+      case PREPARE_CREATE:
+        step = RecorderPrepareCreate();
+        break;
+      case PREPARE_SEARCH:
+        step = RecorderPrepareSearch();
+        break;
+      case PREPARE_ALLOCATE:
+      default:
+        step = RecorderPrepareAllocate();
+        break;
+    }
+  }
+  step_ms = HAL_GetTick() - step_start;
+  ++prepare_steps;
+  prepare_phase_ms[phase] += step_ms;
+  if (step_ms > prepare_step_max_ms)
+  {
+    prepare_step_max_ms = step_ms;
+  }
+  if (step == PREPARE_CONTINUE)
+  {
+    return;
+  }
+  if (step == PREPARE_DONE)
+  {
+    RecorderSend("OK RECORD PREPARED file=%s prealloc-kib=%lu open=%lums "
+                 "name=%lums create=%lums search=%lums fat-sectors=%lu "
+                 "allocate=%lums steps=%lu step-max=%lums elapsed=%lums\r\n",
+                 recorder_filename, (unsigned long)(prepare_bytes / 1024U),
+                 (unsigned long)prepare_open_ms,
+                 (unsigned long)prepare_phase_ms[PREPARE_NAME],
+                 (unsigned long)prepare_phase_ms[PREPARE_CREATE],
+                 (unsigned long)prepare_phase_ms[PREPARE_SEARCH],
+                 (unsigned long)prepare_run.fat_sectors,
+                 (unsigned long)prepare_phase_ms[PREPARE_ALLOCATE],
+                 (unsigned long)prepare_steps,
+                 (unsigned long)prepare_step_max_ms,
+                 (unsigned long)(HAL_GetTick() - prepare_started_ms));
+  }
+  prepare_ok = step == PREPARE_DONE;
+  prepare_phase = PREPARE_REPORT;
+  session_event_pending = SessionControl_ReportPrepared(prepare_ok);
+}
+
+void RadioRecorder_DiscardFile(void)
+{
+  RecorderDiscardFile();
+  recorder_filename[0] = '\0'; /* The file no longer exists. */
+  recorder_state = RECORDER_IDLE;
+  session_event_pending = false;
 }
 
 static bool RecorderFinalizeFile(void)
@@ -683,7 +885,7 @@ static bool RecorderFinish(bool aborted, const char *reason)
 
 bool RadioRecorder_CanStart(uint32_t seconds, bool radio_ready)
 {
-  if (recorder_state == RECORDER_ACTIVE)
+  if (recorder_state != RECORDER_IDLE)
   {
     RecorderSend("ERR RECORD already active\r\n");
     return false;
@@ -836,6 +1038,13 @@ void RadioRecorder_PublishSessionEvent(SesPublished event)
     case SES_PUB_STOP_IGNORED:
       RecorderSend("OK RECORD already idle\r\n");
       break;
+    case SES_PUB_RECORDING_PREPARING:
+      RecorderSend("OK RECORD PREPARING prealloc-kib=%lu\r\n",
+                   (unsigned long)(prepare_bytes / 1024U));
+      break;
+    case SES_PUB_RECORDING_CANCELLED:
+      RecorderSend("OK RECORD STOP cancelled before capture; no file kept\r\n");
+      break;
     case SES_PUB_RECORDING_STARTED:
     case SES_PUB_RECORDING_REJECTED:
     case SES_PUB_RECORDING_COMPLETED:
@@ -911,7 +1120,14 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
   if ((strcmp(command, "RECORD") == 0) ||
       (strcmp(command, "RECORD STATUS") == 0))
   {
-    if (recorder_state == RECORDER_ACTIVE)
+    if (recorder_state == RECORDER_PREPARING)
+    {
+      RecorderSend("OK RECORD PREPARING file=%s fat-sectors=%lu elapsed=%lums\r\n",
+                   (recorder_filename[0] != '\0') ? recorder_filename : "none",
+                   (unsigned long)prepare_run.fat_sectors,
+                   (unsigned long)(HAL_GetTick() - prepare_started_ms));
+    }
+    else if (recorder_state == RECORDER_ACTIVE)
     {
       RecorderSend("OK RECORD ACTIVE file=%s audio=%lu.%01lus "
                    "queues=%u/%u,%u/%u max-write=%lums margin=%s\r\n",
@@ -1003,6 +1219,11 @@ void RadioRecorder_Service(void)
   uint32_t now;
 
   RecorderFlushUsb();
+  if (recorder_state == RECORDER_PREPARING)
+  {
+    RecorderPrepareStep();
+    return;
+  }
   if (recorder_state != RECORDER_ACTIVE)
   {
     return;
@@ -1100,9 +1321,10 @@ void RadioRecorder_NotifyRadioError(void)
   }
 }
 
+/* Preparing counts as active: the card is held for the session. */
 bool RadioRecorder_IsActive(void)
 {
-  return recorder_state == RECORDER_ACTIVE;
+  return recorder_state != RECORDER_IDLE;
 }
 
 bool RadioRecorder_IsCapturing(void)
@@ -1112,7 +1334,11 @@ bool RadioRecorder_IsCapturing(void)
 
 void RadioRecorder_Stop(void)
 {
-  if (recorder_state == RECORDER_ACTIVE)
+  if (recorder_state == RECORDER_PREPARING)
+  {
+    RadioRecorder_DiscardFile();
+  }
+  else if (recorder_state == RECORDER_ACTIVE)
   {
     RecorderFinish(false, "stopped");
   }

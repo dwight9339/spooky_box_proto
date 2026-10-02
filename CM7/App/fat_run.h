@@ -3,13 +3,11 @@
 
 /* Bounded search for a run of free FAT32 clusters (jjy.9). FatFs f_expand scans
  * the whole FAT, one cluster at a time, when no run exists; on a nearly full
- * card that blocked RECORD START for seconds. A caller feeds this search one
- * 512-byte FAT sector at a time and stops at its own budget.
- *
- * Not yet linked into the firmware. Using it to skip preallocation at RECORD
- * START moved the allocation search into the recording and overran the queues
- * (docs/evidence/2026-10-01-prealloc-search-trial.md); the planned use is a
- * stepped search that finishes before capture starts (jjy.9). */
+ * card that blocked RECORD START for seconds. The storage service feeds this
+ * search one 512-byte FAT sector at a time, a few sectors per foreground pass,
+ * and the recorder starts capture only after it ends. Skipping the search
+ * instead moved FatFs's own search into the recording and overran the queues
+ * (docs/evidence/2026-10-01-prealloc-search-trial.md). */
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -32,6 +30,7 @@ typedef struct FatRunSearch
   uint32_t examined;   /* Clusters examined so far. */
   uint32_t run_start;
   uint32_t run_length;
+  uint32_t longest;    /* Longest free run seen so far, in clusters. */
   FatRunState state;
 } FatRunSearch;
 

@@ -23,6 +23,7 @@ void FatRun_Init(FatRunSearch *search, uint32_t n_fatent, uint32_t start_cluster
   search->examined = 0U;
   search->run_start = search->next;
   search->run_length = 0U;
+  search->longest = 0U;
   search->state = ((n_fatent <= 2U) || (needed == 0U) || (needed > (n_fatent - 2U)))
     ? FAT_RUN_NOT_FOUND : FAT_RUN_SEARCHING;
 }
@@ -50,7 +51,11 @@ FatRunState FatRun_Feed(FatRunSearch *search, const uint8_t *sector,
       {
         search->run_start = cluster;
       }
-      if (++search->run_length >= search->needed)
+      if (++search->run_length > search->longest)
+      {
+        search->longest = search->run_length;
+      }
+      if (search->run_length >= search->needed)
       {
         search->state = FAT_RUN_FOUND;
       }

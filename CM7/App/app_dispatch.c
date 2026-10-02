@@ -19,6 +19,7 @@ static void Route(void *context, const EvqEvent *event)
     case APP_EVENT_SESSION_CARD_FULL:
     case APP_EVENT_SESSION_FILE_LIMIT:
     case APP_EVENT_SESSION_CAPTURE_FAULT:
+    case APP_EVENT_SESSION_PREPARED:
       SessionControl_Dispatch(event);
       break;
     case APP_EVENT_RADIO_COMMAND:
