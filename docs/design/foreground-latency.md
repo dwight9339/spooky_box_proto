@@ -63,7 +63,9 @@ handler for such measurements.
   to outcome replies; losing a reply is a visible `USB_BACKPRESSURE` fault instead
   of a 250 ms foreground spin (see [USB CLI](usb-cli.md)).
 - Periodic fuel-gauge and magnetometer bus transactions pause during recording.
-  Battery/charge status uses the last successful fuel-gauge snapshot.
+  Battery/charge status then uses the last successful fuel-gauge snapshot and reports
+  its age; outside recording it reads the gauge on each request
+  (`full_spooky_proto-8lw.19`).
 - A matrix animation that was started before recording is disabled without I2C
   cleanup; new test patterns remain rejected by command policy.
 - SD maintenance and WAV transfer remain rejected while recording. The recorder

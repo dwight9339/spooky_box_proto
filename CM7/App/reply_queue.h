@@ -47,5 +47,7 @@ ReplyPushResult ReplyQueue_Push(ReplyQueue *queue, ReplyKind kind, const char *t
 /* Oldest queued line, or NULL when empty. */
 const char *ReplyQueue_Peek(const ReplyQueue *queue);
 void ReplyQueue_Pop(ReplyQueue *queue);
+/* Discards every queued line, keeping the counters; returns how many (8lw.20). */
+uint8_t ReplyQueue_Clear(ReplyQueue *queue);
 
 #endif /* SPOOKY_REPLY_QUEUE_H */

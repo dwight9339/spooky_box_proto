@@ -405,14 +405,14 @@ static void UsbCliCommand(const char *line)
       (strcmp(command, "BATTERY READ") == 0) ||
       (strcmp(command, "BATTERY STATUS") == 0))
   {
-    BoardDiagnostics_SendBatteryStatus(false);
+    BoardDiagnostics_SendBatteryStatus(false, !RadioRecorder_IsCapturing());
     return;
   }
   if ((strcmp(command, "CHARGE") == 0) ||
       (strcmp(command, "CHARGE READ") == 0) ||
       (strcmp(command, "CHARGE STATUS") == 0))
   {
-    BoardDiagnostics_SendBatteryStatus(true);
+    BoardDiagnostics_SendBatteryStatus(true, !RadioRecorder_IsCapturing());
     return;
   }
   if (!AudioPath_IsRunning())

@@ -140,8 +140,29 @@ static void TestTruncationAndNullInputs(void)
   CHECK(queue.count == 1U);
 }
 
+/* 8lw.20: lines queued while no host is attached are discarded, not sent late. */
+static void TestClearDiscardsAndKeepsCounters(void)
+{
+  ReplyQueue queue;
+
+  ReplyQueue_Init(&queue);
+  CHECK(ReplyQueue_Clear(&queue) == 0U);
+  (void)ReplyQueue_Push(&queue, REPLY_KIND_KEEP, "a");
+  (void)ReplyQueue_Push(&queue, REPLY_KIND_KEEP, "b");
+  (void)ReplyQueue_Push(&queue, REPLY_KIND_KEEP, "c");
+  (void)ReplyQueue_Push(&queue, REPLY_KIND_KEEP, "d");
+  (void)ReplyQueue_Push(&queue, REPLY_KIND_KEEP, "e"); /* evicts "a" */
+  CHECK(queue.replies_lost == 1U);
+  CHECK(ReplyQueue_Clear(&queue) == 4U);
+  CHECK(ReplyQueue_Peek(&queue) == NULL);
+  CHECK(queue.replies_lost == 1U);
+  (void)ReplyQueue_Push(&queue, REPLY_KIND_KEEP, "f");
+  CHECK((ReplyQueue_Peek(&queue) != NULL) && (strcmp(ReplyQueue_Peek(&queue), "f") == 0));
+}
+
 int main(void)
 {
+  TestClearDiscardsAndKeepsCounters();
   TestOutcomeSurvivesClosedPort();
   TestReplyEvictsProgressWhenFull();
   TestNewestReplyWinsWhenFullOfReplies();

@@ -156,6 +156,9 @@ static bool finish_aborted;
 static bool session_event_pending;
 /* Replies the CDC port did not accept; see reply_queue.h for the policy. */
 static ReplyQueue recorder_usb_queue;
+/* 8lw.20: lines not sent because no host had the port configured. They are
+ * not faults; the outcome stays available through RECORD RESULT. */
+static uint32_t recorder_usb_detached;
 static RecordingResult last_result;
 static StorageMargin storage_margin;
 static PreparePhase prepare_phase;
@@ -178,8 +181,15 @@ static const StorageMarginLimits storage_margin_limits = {
 
 static void RecorderFlushUsb(void)
 {
-  const char *line = ReplyQueue_Peek(&recorder_usb_queue);
+  const char *line;
 
+  if (!UsbTest_HostAttached())
+  {
+    /* Lines queued for a host that has gone would arrive stale. */
+    recorder_usb_detached += ReplyQueue_Clear(&recorder_usb_queue);
+    return;
+  }
+  line = ReplyQueue_Peek(&recorder_usb_queue);
   if ((line != NULL) && UsbTest_SendText(line))
   {
     ReplyQueue_Pop(&recorder_usb_queue);
@@ -197,7 +207,11 @@ static void RecorderSendKind(ReplyKind kind, const char *format, va_list args)
   }
   message[sizeof(message) - 1U] = '\0';
 
-  if ((ReplyQueue_Peek(&recorder_usb_queue) != NULL) || !UsbTest_SendText(message))
+  if (!UsbTest_HostAttached())
+  {
+    ++recorder_usb_detached;
+  }
+  else if ((ReplyQueue_Peek(&recorder_usb_queue) != NULL) || !UsbTest_SendText(message))
   {
     if (ReplyQueue_Push(&recorder_usb_queue, kind, message) ==
         REPLY_PUSH_EVICTED_REPLY)
@@ -1269,7 +1283,7 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
     RecorderSend("OK RECORD LATENCY writes=%lu write-max=%lums "
                  "convert-max=%lums "
                  "write-hist-10ms=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu "
-                 "usb-superseded=%lu usb-lost=%lu "
+                 "usb-superseded=%lu usb-lost=%lu usb-detached=%lu "
                  "runway=%s fat-ahead=%lu gap-max=%lu\r\n",
                  (unsigned long)write_count, (unsigned long)max_write_ms,
                  (unsigned long)max_convert_ms,
@@ -1279,6 +1293,7 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
                  (unsigned long)write_hist[6], (unsigned long)write_hist[7],
                  (unsigned long)recorder_usb_queue.progress_superseded,
                  (unsigned long)recorder_usb_queue.replies_lost,
+                 (unsigned long)recorder_usb_detached,
                  RecorderRunwayName(), (unsigned long)runway.fat_sectors,
                  (unsigned long)runway.longest_gap);
     return true;

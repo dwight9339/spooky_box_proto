@@ -52,6 +52,8 @@ spooky_test(sd_media_test sd_media_test.c ../CM7/App/sd_media.c)
 spooky_test(storage_margin_test storage_margin_test.c ../CM7/App/storage_margin.c)
 # Bounded contiguous-run search for recorder preallocation (jjy.9).
 spooky_test(fat_run_test fat_run_test.c ../CM7/App/fat_run.c)
+# USB CDC command receive flow control (8lw.24).
+spooky_test(cdc_rx_flow_test cdc_rx_flow_test.c ../CM7/App/cdc_rx_flow.c)
 spooky_test(recording_limits_test recording_limits_test.c
     ../CM7/App/recording_limits.c)
 spooky_test(session_test session_test.c ../CM7/App/sm/session_port.c)
