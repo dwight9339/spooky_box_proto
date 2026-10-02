@@ -6,6 +6,7 @@
 #include "ff.h"
 #include "recording_result.h"
 #include "reply_queue.h"
+#include "sd_media.h"
 #include "storage_service.h"
 #include "usb_test.h"
 
@@ -223,6 +224,7 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
 {
   FRESULT result;
   FILINFO info;
+  HAL_SD_CardInfoTypeDef card;
   uint64_t free_bytes;
   uint32_t prealloc_seconds = requested_seconds;
   uint32_t prealloc_bytes;
@@ -240,6 +242,21 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
     RecorderSend("ERR RECORD mount failed result=%s(%u) hal=0x%08lX\r\n",
                  StorageService_ResultName(result), (unsigned int)result,
                  (unsigned long)StorageService_HalError());
+    return false;
+  }
+  /* Decision 0014: only SDHC/SDXC cards record. */
+  if (!StorageService_GetCardInfo(STORAGE_OWNER_RECORDER, &card))
+  {
+    RecorderSend("ERR RECORD card information query failed hal=0x%08lX\r\n",
+                 (unsigned long)StorageService_HalError());
+    RecorderUnmount();
+    return false;
+  }
+  if (!SdMedia_RecordingSupported(card.CardType))
+  {
+    RecorderSend("ERR RECORD unsupported card TYPE=%s; SDHC/SDXC required\r\n",
+                 SdMedia_CardTypeName(card.CardType));
+    RecorderUnmount();
     return false;
   }
   if (!StorageService_GetFreeBytes(STORAGE_OWNER_RECORDER, &free_bytes))

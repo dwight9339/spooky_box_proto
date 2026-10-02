@@ -86,6 +86,7 @@ static void current_cli_commands_map_to_the_shared_actions(void)
           COMMAND_ACTION_WAV_TRANSFER);
     CHECK(CommandPolicy_ActionFromCli("SD STATUS") == COMMAND_ACTION_STATUS_READ);
     CHECK(CommandPolicy_ActionFromCli("SD REINIT") == COMMAND_ACTION_SD_MAINTENANCE);
+    CHECK(CommandPolicy_ActionFromCli("SD INFO") == COMMAND_ACTION_SD_MAINTENANCE);
     CHECK(CommandPolicy_ActionFromCli("SD FORMAT") == COMMAND_ACTION_SD_MAINTENANCE);
     CHECK(CommandPolicy_ActionFromCli("SD FORMAT CONFIRM") == COMMAND_ACTION_SD_MAINTENANCE);
     CHECK(CommandPolicy_ActionFromCli("UI LEDS") == COMMAND_ACTION_UI_TEST_PATTERN);

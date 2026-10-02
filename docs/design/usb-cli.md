@@ -48,6 +48,7 @@ RECORD LATENCY
 RECORD START 60
 RECORD STOP
 SD STATUS
+SD INFO
 SD REINIT
 SD STRESS 64 1
 SD STRESS STOP
@@ -400,6 +401,22 @@ verified before cancellation. Recording start and WAV transfer are rejected whil
 test owns the card. If a transfer, verification, or cleanup step fails, `SDTEST.BIN`
 is retained for inspection and the next stress command refuses to overwrite it.
 `SD CLEAN` removes only that fixed test file.
+
+`SD INFO` reads the card's identity and ratings without mounting a filesystem, so it
+also works on a card with no readable volume. It reports the card type, whether the
+recorder supports it (decision 0014: SDHC/SDXC only), capacity, the CID fields
+(manufacturer ID, OEM ID, product name and revision, serial number, manufacturing
+date) and the SD Status ratings (speed class, UHS speed grade, video speed class,
+allocation unit). Ratings are recorded as evidence; they do not bound write stalls.
+Command policy rejects it while recording.
+
+```text
+OK SD INFO TYPE=SDHC/SDXC SUPPORTED=1 CAPACITY=15193MiB MID=0x03 OID=SD PNM=SC16G PRV=8.0 PSN=0x934591FE MDT=2022-09 SPEED_CLASS=10 UHS_GRADE=0 VIDEO_CLASS=0 AU=4096KiB
+```
+
+`RECORD START` refuses an unsupported card before creating a file:
+`ERR RECORD unsupported card TYPE=SDSC; SDHC/SDXC required`. Reading, transfer and
+maintenance commands still work on such a card.
 
 `SD FORMAT` provides an optional in-device format; cards formatted elsewhere remain
 usable. It is two-step: `SD FORMAT` arms it, and `SD FORMAT CONFIRM` within 10 s

@@ -422,7 +422,7 @@ static void SdFormatConfirm(void)
   {
     (void)snprintf(response, sizeof(response),
                    "ERR SD FORMAT unsupported card TYPE=%s; SDHC/SDXC required\r\n",
-                   (report.card_type == CARD_SDSC) ? "SDSC" : "OTHER");
+                   SdMedia_CardTypeName(report.card_type));
   }
   else
   {
@@ -488,6 +488,26 @@ bool SdTest_HandleCommand(const char *command)
   if (strcmp(command, "SD CLEAN") == 0)
   {
     SdClean();
+    return true;
+  }
+  if (strcmp(command, "SD INFO") == 0)
+  {
+    SdMediaInfo info;
+    char response[256];
+    FRESULT result = StorageService_ReadMediaInfo(&info);
+
+    if (result == FR_OK)
+    {
+      (void)SdMedia_FormatInfo(&info, response, sizeof(response));
+    }
+    else
+    {
+      (void)snprintf(response, sizeof(response),
+                     "ERR SD INFO failed result=%s(%u) hal=0x%08lX\r\n",
+                     StorageService_ResultName(result), (unsigned int)result,
+                     (unsigned long)StorageService_HalError());
+    }
+    SdSend(response);
     return true;
   }
   if (strcmp(command, "SD FORMAT") == 0)

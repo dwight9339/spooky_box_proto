@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "ff.h"
+#include "sd_media.h"
 #include "stm32h7xx_hal.h"
 #include "storage_lease.h"
 
@@ -43,6 +44,9 @@ FRESULT StorageService_Release(StorageOwner owner);
  * unmounts. Needs no existing filesystem, only a free lease. SDHC/SDXC only.
  * Blocks for the whole format; callers must be idle maintenance paths. */
 bool StorageService_Format(StorageFormatReport *report);
+/* Reads card identity and ratings for SD INFO under the STATUS lease. Needs no
+ * filesystem; the card is deinitialized again afterwards. */
+FRESULT StorageService_ReadMediaInfo(SdMediaInfo *info);
 bool StorageService_GetFreeBytes(StorageOwner owner, uint64_t *free_bytes);
 bool StorageService_GetCardInfo(StorageOwner owner,
                                 HAL_SD_CardInfoTypeDef *info);

@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 
 #include "sd_media.h"
 
@@ -59,9 +60,69 @@ static void TestConfirmWindow(void)
   CHECK(!SdFormatArm_Confirm(NULL, 0U));
 }
 
+static void TestCardTypesAndRatings(void)
+{
+  CHECK(SdMedia_RecordingSupported(SD_MEDIA_CARD_SDHC_SDXC));
+  CHECK(!SdMedia_RecordingSupported(SD_MEDIA_CARD_SDSC));
+  CHECK(!SdMedia_RecordingSupported(3U)); /* HAL CARD_SECURED */
+  CHECK(strcmp(SdMedia_CardTypeName(SD_MEDIA_CARD_SDSC), "SDSC") == 0);
+  CHECK(strcmp(SdMedia_CardTypeName(SD_MEDIA_CARD_SDHC_SDXC), "SDHC/SDXC") == 0);
+  CHECK(strcmp(SdMedia_CardTypeName(7U), "OTHER") == 0);
+  CHECK(SdMedia_AuKib(0U) == 0U);
+  CHECK(SdMedia_AuKib(9U) == 4096U);
+  CHECK(SdMedia_AuKib(15U) == 65536U);
+  CHECK(SdMedia_AuKib(16U) == 0U);
+  CHECK(SdMedia_SpeedClass(0U) == 0U);
+  CHECK(SdMedia_SpeedClass(4U) == 10U);
+  CHECK(SdMedia_SpeedClass(5U) == 0U);
+}
+
+static void TestInfoLine(void)
+{
+  SdMediaInfo info;
+  char line[256];
+  char small[32];
+
+  (void)memset(&info, 0, sizeof(info));
+  info.card_type = SD_MEDIA_CARD_SDHC_SDXC;
+  info.sectors = 31116288U;
+  info.manufacturer_id = 0x03U;
+  info.oem_id = 0x5344U; /* "SD" */
+  info.product_name1 = 0x53433136U; /* "SC16" */
+  info.product_name2 = (uint8_t)'G';
+  info.product_revision = 0x80U;
+  info.serial = 0x12345678U;
+  info.manufacture_date = (uint16_t)((21U << 4) | 7U);
+  info.speed_class_code = 4U;
+  info.uhs_speed_grade = 1U;
+  info.video_speed_class = 10U;
+  info.au_size_code = 9U;
+  CHECK(SdMedia_FormatInfo(&info, line, sizeof(line)) == strlen(line));
+  CHECK(strcmp(line, "OK SD INFO TYPE=SDHC/SDXC SUPPORTED=1 CAPACITY=15193MiB MID=0x03 "
+                     "OID=SD PNM=SC16G PRV=8.0 PSN=0x12345678 MDT=2021-07 SPEED_CLASS=10 "
+                     "UHS_GRADE=1 VIDEO_CLASS=10 AU=4096KiB\r\n") == 0);
+
+  /* SDSC is reported as unsupported; unprintable identity bytes become '?'. */
+  info.card_type = SD_MEDIA_CARD_SDSC;
+  info.oem_id = 0x0020U;
+  info.product_name1 = 0x00FFFFFFU;
+  CHECK(SdMedia_FormatInfo(&info, line, sizeof(line)) != 0U);
+  CHECK(strstr(line, "TYPE=SDSC SUPPORTED=0 ") != NULL);
+  CHECK(strstr(line, " OID=?? PNM=????G ") != NULL);
+
+  /* Worst-case field widths still fit the 256-byte reply buffer. */
+  (void)memset(&info, 0xFF, sizeof(info));
+  CHECK(SdMedia_FormatInfo(&info, line, sizeof(line)) != 0U);
+  CHECK(SdMedia_FormatInfo(&info, small, sizeof(small)) == 0U);
+  CHECK(small[0] == '\0');
+  CHECK(SdMedia_FormatInfo(NULL, line, sizeof(line)) == 0U);
+}
+
 int main(void)
 {
   TestAlignment();
+  TestCardTypesAndRatings();
+  TestInfoLine();
   TestConfirmWindow();
   if (failures != 0)
   {

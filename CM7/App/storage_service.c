@@ -24,6 +24,10 @@ static bool storage_mounted;
 static FRESULT storage_last_result;
 static BYTE storage_format_work[STORAGE_FORMAT_WORK_BYTES];
 
+_Static_assert((SD_MEDIA_CARD_SDSC == CARD_SDSC) &&
+               (SD_MEDIA_CARD_SDHC_SDXC == CARD_SDHC_SDXC),
+               "sd_media card types must match the HAL");
+
 static FRESULT StorageUnmount(void)
 {
   FRESULT result = FR_OK;
@@ -144,7 +148,7 @@ bool StorageService_Format(StorageFormatReport *report)
     {
       report->card_type = info.CardType;
       report->sectors = info.LogBlockNbr;
-      if (info.CardType != CARD_SDHC_SDXC)
+      if (!SdMedia_RecordingSupported(info.CardType))
       {
         report->unsupported = true;
         report->result = FR_DENIED;
@@ -176,6 +180,58 @@ bool StorageService_Format(StorageFormatReport *report)
   report->duration_ms = HAL_GetTick() - start;
   storage_last_result = report->result;
   return report->result == FR_OK;
+}
+
+FRESULT StorageService_ReadMediaInfo(SdMediaInfo *info)
+{
+  HAL_SD_CardInfoTypeDef card;
+  HAL_SD_CardCIDTypeDef cid;
+  HAL_SD_CardStatusTypeDef status;
+  FRESULT result = FR_OK;
+
+  if (info == NULL)
+  {
+    return FR_INVALID_PARAMETER;
+  }
+  (void)memset(info, 0, sizeof(*info));
+  if ((storage_sd == NULL) || !StorageService_CardPresent())
+  {
+    return FR_NOT_READY;
+  }
+  if (!StorageLease_TryAcquire(&storage_lease, STORAGE_OWNER_STATUS))
+  {
+    return FR_LOCKED;
+  }
+  if ((disk_initialize(0U) & STA_NOINIT) != 0U)
+  {
+    result = FR_NOT_READY;
+  }
+  else if ((HAL_SD_GetCardInfo(storage_sd, &card) != HAL_OK) ||
+           (HAL_SD_GetCardCID(storage_sd, &cid) != HAL_OK) ||
+           (HAL_SD_GetCardStatus(storage_sd, &status) != HAL_OK))
+  {
+    result = FR_DISK_ERR;
+  }
+  else
+  {
+    info->card_type = card.CardType;
+    info->sectors = card.LogBlockNbr;
+    info->manufacturer_id = cid.ManufacturerID;
+    info->oem_id = cid.OEM_AppliID;
+    info->product_name1 = cid.ProdName1;
+    info->product_name2 = cid.ProdName2;
+    info->product_revision = cid.ProdRev;
+    info->serial = cid.ProdSN;
+    info->manufacture_date = cid.ManufactDate;
+    info->speed_class_code = status.SpeedClass;
+    info->uhs_speed_grade = status.UhsSpeedGrade;
+    info->video_speed_class = status.VideoSpeedClass;
+    info->au_size_code = status.AllocationUnitSize;
+  }
+  (void)StorageUnmount();
+  (void)StorageLease_Release(&storage_lease, STORAGE_OWNER_STATUS);
+  storage_last_result = result;
+  return result;
 }
 
 bool StorageService_GetFreeBytes(StorageOwner owner, uint64_t *free_bytes)
