@@ -27,6 +27,8 @@ static BYTE storage_format_work[STORAGE_FORMAT_WORK_BYTES];
 static FatRunSearch storage_run;
 static StorageRunReport storage_run_report;
 static BYTE storage_run_sector[FAT_RUN_SECTOR_BYTES];
+static FatRunway storage_runway;
+static StorageRunwayReport storage_runway_report;
 
 _Static_assert((SD_MEDIA_CARD_SDSC == CARD_SDSC) &&
                (SD_MEDIA_CARD_SDHC_SDXC == CARD_SDHC_SDXC),
@@ -266,10 +268,96 @@ StorageRunState StorageService_BeginRunSearch(StorageOwner owner, uint64_t bytes
     STORAGE_RUN_NOT_FOUND;
 }
 
+/* One FAT sector, relative to the FAT base. FatFs's window is used when it holds
+ * the sector, since it may be newer than the card. */
+static const BYTE *StorageReadFatSector(uint32_t index)
+{
+  FATFS *const fs = &storage_filesystem;
+  const DWORD sector = fs->fatbase + index;
+
+  if (sector == fs->winsect)
+  {
+    return fs->win;
+  }
+  return (disk_read(fs->drv, storage_run_sector, sector, 1U) == RES_OK)
+    ? storage_run_sector : NULL;
+}
+
+StorageRunState StorageService_BeginRunway(StorageOwner owner, uint32_t first_cluster,
+                                           uint64_t allocated_bytes,
+                                           uint32_t max_gap_sectors,
+                                           StorageRunwayReport *report)
+{
+  FATFS *const fs = &storage_filesystem;
+  StorageRunState state = STORAGE_RUN_SEARCHING;
+  uint32_t end;
+
+  (void)memset(&storage_runway_report, 0, sizeof(storage_runway_report));
+  storage_runway_report.barrier = true;
+  if (!storage_mounted || (storage_lease.owner != owner) || (allocated_bytes == 0U) ||
+      (first_cluster < 2U) || (first_cluster >= fs->n_fatent))
+  {
+    state = STORAGE_RUN_ERROR;
+  }
+  else if ((fs->fs_type != FS_FAT32) || (fs->csize == 0U))
+  {
+    state = STORAGE_RUN_UNSUPPORTED;
+  }
+  else
+  {
+    storage_runway_report.cluster_bytes = (uint32_t)fs->csize * FAT_RUN_SECTOR_BYTES;
+    storage_runway_report.file_clusters = (uint32_t)(
+      (allocated_bytes + storage_runway_report.cluster_bytes - 1U) /
+      storage_runway_report.cluster_bytes);
+    end = first_cluster + storage_runway_report.file_clusters;
+    FatRunway_Init(&storage_runway, fs->n_fatent, (end >= fs->n_fatent) ? 2U : end,
+                   max_gap_sectors * FAT_RUN_ENTRIES_PER_SECTOR);
+    storage_runway_report.barrier = storage_runway.state != FAT_RUNWAY_SCANNING;
+  }
+  if (report != NULL)
+  {
+    *report = storage_runway_report;
+  }
+  return state;
+}
+
+bool StorageService_StepRunway(StorageOwner owner, StorageRunwayReport *report)
+{
+  const BYTE *data;
+  uint32_t index;
+  bool ok = true;
+
+  if (!storage_mounted || (storage_lease.owner != owner))
+  {
+    ok = false;
+  }
+  else if (!storage_runway_report.barrier)
+  {
+    index = FatRunway_NextSector(&storage_runway);
+    data = StorageReadFatSector(index);
+    if (data == NULL)
+    {
+      ok = false;
+    }
+    else
+    {
+      ++storage_runway_report.fat_sectors;
+      storage_runway_report.barrier =
+        FatRunway_Feed(&storage_runway, data, index) != FAT_RUNWAY_SCANNING;
+      storage_runway_report.free_clusters = storage_runway.free;
+      storage_runway_report.longest_gap = storage_runway.longest_gap;
+    }
+  }
+  if (report != NULL)
+  {
+    *report = storage_runway_report;
+  }
+  return ok;
+}
+
 StorageRunState StorageService_StepRunSearch(StorageOwner owner, uint32_t budget_ms,
                                              StorageRunReport *report)
 {
-  FATFS *const fs = &storage_filesystem;
   const uint32_t start = HAL_GetTick();
   StorageRunState state = STORAGE_RUN_SEARCHING;
 
@@ -283,14 +371,9 @@ StorageRunState StorageService_StepRunSearch(StorageOwner owner, uint32_t budget
     while (storage_run.state == FAT_RUN_SEARCHING)
     {
       const uint32_t index = FatRun_NextSector(&storage_run);
-      const DWORD sector = fs->fatbase + index;
-      const BYTE *data = storage_run_sector;
+      const BYTE *data = StorageReadFatSector(index);
 
-      if (sector == fs->winsect)
-      {
-        data = fs->win; /* FatFs's window, possibly newer than the card. */
-      }
-      else if (disk_read(fs->drv, storage_run_sector, sector, 1U) != RES_OK)
+      if (data == NULL)
       {
         state = STORAGE_RUN_ERROR;
         break;
@@ -308,7 +391,7 @@ StorageRunState StorageService_StepRunSearch(StorageOwner owner, uint32_t budget
       if (storage_run.state == FAT_RUN_FOUND)
       {
         /* f_expand starts at last_clst, so the run is the first one it meets. */
-        fs->last_clst = storage_run.run_start - 1U;
+        storage_filesystem.last_clst = storage_run.run_start - 1U;
         state = STORAGE_RUN_FOUND;
       }
       else if (storage_run.state == FAT_RUN_NOT_FOUND)

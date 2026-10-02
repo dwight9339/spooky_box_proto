@@ -28,7 +28,8 @@ typedef enum RecordingLimitReason
   RECORDING_LIMIT_NONE = 0,
   RECORDING_LIMIT_DURATION,
   RECORDING_LIMIT_CARD_FULL,
-  RECORDING_LIMIT_FILE_SIZE
+  RECORDING_LIMIT_FILE_SIZE,
+  RECORDING_LIMIT_ALLOCATION /* The next block needs space not verified cheap to allocate. */
 } RecordingLimitReason;
 
 typedef struct RecordingLimits
@@ -36,6 +37,7 @@ typedef struct RecordingLimits
   uint64_t free_bytes_at_open;
   uint64_t reserve_bytes;
   uint32_t target_frames; /* zero means open-ended */
+  uint64_t allocation_bytes; /* file bytes safe to write (jjy.17); zero: no limit */
 } RecordingLimits;
 
 /* timed_seconds is zero for an open-ended session. The reserve is one configured
@@ -49,6 +51,13 @@ bool RecordingLimits_Init(RecordingLimits *limits, uint32_t timed_seconds,
  * the current matched boundary without issuing that write. */
 RecordingLimitReason RecordingLimits_BeforeBlock(
   const RecordingLimits *limits, uint32_t frames_written);
+
+/* Sets how many file bytes, header included, the recording may fill without an
+ * allocation search on the recording path (jjy.17). Init leaves it unlimited. */
+void RecordingLimits_SetAllocation(RecordingLimits *limits, uint64_t bytes);
+
+/* File bytes, header included, once frames_written frames are written. */
+uint64_t RecordingLimits_FileBytes(uint32_t frames_written);
 
 /* Check the duration after a successfully written matched block. */
 bool RecordingLimits_DurationReached(const RecordingLimits *limits,

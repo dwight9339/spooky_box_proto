@@ -45,4 +45,35 @@ uint32_t FatRun_NextSector(const FatRunSearch *search);
 FatRunState FatRun_Feed(FatRunSearch *search, const uint8_t *sector,
                         uint32_t sector_index);
 
+/* Runway ahead of a growing file (jjy.17). When a write needs a cluster past the
+ * file's allocation, FatFs scans forward from the file's last cluster, wrapping
+ * at the end of the FAT, and takes the first free cluster: a long used stretch
+ * makes that one f_write slow. Fed the FAT in that same order, the runway counts
+ * the free clusters the file can grow into, crossing used gaps of at most
+ * max_gap clusters, and stops at a longer gap or after one full lap. */
+typedef enum FatRunwayState
+{
+  FAT_RUNWAY_SCANNING = 0,
+  FAT_RUNWAY_BARRIER /* No further free cluster is reachable cheaply. */
+} FatRunwayState;
+
+typedef struct FatRunway
+{
+  uint32_t n_fatent;
+  uint32_t max_gap;     /* Longest used stretch one allocation may cross. */
+  uint32_t next;        /* Next cluster in FatFs allocation order. */
+  uint32_t examined;
+  uint32_t free;        /* Free clusters reachable before the barrier. */
+  uint32_t gap;         /* Used clusters since the last free one. */
+  uint32_t longest_gap; /* Longest gap followed by a free cluster. */
+  FatRunwayState state;
+} FatRunway;
+
+/* start_cluster is the cluster after the file's last one. */
+void FatRunway_Init(FatRunway *runway, uint32_t n_fatent, uint32_t start_cluster,
+                    uint32_t max_gap);
+uint32_t FatRunway_NextSector(const FatRunway *runway);
+FatRunwayState FatRunway_Feed(FatRunway *runway, const uint8_t *sector,
+                              uint32_t sector_index);
+
 #endif /* SPOOKY_FAT_RUN_H */

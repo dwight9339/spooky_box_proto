@@ -32,7 +32,7 @@
   (RECORDER_OUTPUT_SAMPLES * sizeof(int16_t))
 #define RECORDER_QUEUE_DEPTH                  8U
 #define RECORDER_MAX_SECONDS               3600U
-#define RECORDER_PREALLOC_SECONDS            60U
+#define RECORDER_RUNWAY_LOOKAHEAD_SECONDS    30U
 #define RECORDER_FILENAME_LIMIT            1000U
 #define RECORDER_PROGRESS_PERIOD_MS        5000U
 #define RECORDER_WRITE_HIST_BIN_MS           10U
@@ -51,6 +51,18 @@
 #endif
 #ifndef SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES
 #define SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES 0U
+#endif
+/* jjy.9: audio preallocated contiguously before capture; a longer recording
+ * grows past it only into free space verified ahead of time (jjy.17). */
+#ifndef SPOOKY_RECORDING_PREALLOC_SECONDS
+#define SPOOKY_RECORDING_PREALLOC_SECONDS 60U
+#endif
+/* jjy.17: longest used FAT stretch a growing recording may cross. FatFs reads it
+ * inside one f_write, about 1.5 ms per FAT sector, so 16 sectors (2048 clusters,
+ * 64 MiB at 32 KiB) add about 25 ms to that write. Configurable until the bench
+ * fixes it. */
+#ifndef SPOOKY_RECORDING_MAX_GAP_FAT_SECTORS
+#define SPOOKY_RECORDING_MAX_GAP_FAT_SECTORS 16U
 #endif
 /* jjy.9: foreground time one preparation step may spend on filename probes or
  * FAT reads (at least one each pass). Below the 70 ms recorder budget and the
@@ -156,6 +168,10 @@ static bool prepare_ok;
 static uint32_t prepare_step_max_ms;
 static uint32_t prepare_steps;
 static StorageRunReport prepare_run;
+/* jjy.17: free space verified ahead of the file's allocation. */
+static bool runway_active;
+static bool runway_failed;
+static StorageRunwayReport runway;
 static const StorageMarginLimits storage_margin_limits = {
   SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS, SPOOKY_STORAGE_MARGIN_WRITE_MS
 };
@@ -330,12 +346,14 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
   /* Preallocate the first minute, or the whole of a shorter timed recording,
    * but never into the card reserve: the recording stops at the reserve. */
   if ((prealloc_seconds == 0U) ||
-      (prealloc_seconds > RECORDER_PREALLOC_SECONDS))
+      (prealloc_seconds > SPOOKY_RECORDING_PREALLOC_SECONDS))
   {
-    prealloc_seconds = RECORDER_PREALLOC_SECONDS;
+    prealloc_seconds = SPOOKY_RECORDING_PREALLOC_SECONDS;
   }
-  prepare_bytes = RECORDER_WAV_HEADER_BYTES +
-    prealloc_seconds * RECORDER_SAMPLE_RATE_HZ * RECORDER_BLOCK_ALIGN;
+  /* A timed recording ends after the block that reaches its target. */
+  prepare_bytes = (uint32_t)RecordingLimits_FileBytes(
+    ((prealloc_seconds * RECORDER_SAMPLE_RATE_HZ + RECORDER_BLOCK_FRAMES - 1U) /
+     RECORDER_BLOCK_FRAMES) * RECORDER_BLOCK_FRAMES);
   recordable = recording_limits.free_bytes_at_open - recording_limits.reserve_bytes;
   if (recordable < prepare_bytes)
   {
@@ -353,6 +371,91 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
   session_event_pending = false;
   recorder_state = RECORDER_PREPARING;
   return true;
+}
+
+/* Bytes the whole recording needs, or UINT64_MAX when open-ended. */
+static uint64_t RecorderPlannedBytes(void)
+{
+  if (recording_limits.target_frames == 0U)
+  {
+    return UINT64_MAX;
+  }
+  return RecordingLimits_FileBytes(
+    ((recording_limits.target_frames + RECORDER_BLOCK_FRAMES - 1U) /
+     RECORDER_BLOCK_FRAMES) * RECORDER_BLOCK_FRAMES);
+}
+
+/* A recording longer than its preallocation may grow only into free space the
+ * runway has verified, so FatFs never searches far inside f_write (jjy.17). */
+static void RecorderBeginRunway(void)
+{
+  StorageRunState state;
+
+  runway_active = false;
+  runway_failed = false;
+  (void)memset(&runway, 0, sizeof(runway));
+  RecordingLimits_SetAllocation(&recording_limits, 0U);
+  if (RecorderPlannedBytes() <= prepare_bytes)
+  {
+    return; /* Fully preallocated. */
+  }
+  state = StorageService_BeginRunway(STORAGE_OWNER_RECORDER,
+                                     (uint32_t)recorder_file.obj.sclust,
+                                     prepare_bytes,
+                                     SPOOKY_RECORDING_MAX_GAP_FAT_SECTORS, &runway);
+  if (state == STORAGE_RUN_UNSUPPORTED)
+  {
+    return; /* FAT12/16: FatFs's search is at most 256 FAT sectors. */
+  }
+  if (state != STORAGE_RUN_SEARCHING)
+  {
+    runway_failed = true;
+    RecordingLimits_SetAllocation(&recording_limits, prepare_bytes);
+    return;
+  }
+  runway_active = true;
+  RecordingLimits_SetAllocation(&recording_limits,
+    (uint64_t)runway.file_clusters * runway.cluster_bytes);
+}
+
+/* Reads one FAT sector ahead when the verified allocation is less than the
+ * lookahead past the write position. One sector covers 128 clusters, 14.5 s of
+ * audio at 32 KiB, so this runs rarely and takes about 1 ms. */
+static void RecorderRunwayStep(void)
+{
+  uint64_t wanted;
+  const uint64_t planned = RecorderPlannedBytes();
+
+  if (!runway_active || runway.barrier)
+  {
+    return;
+  }
+  wanted = RecordingLimits_FileBytes(frames_written) +
+    ((uint64_t)RECORDER_RUNWAY_LOOKAHEAD_SECONDS * RECORDER_SAMPLE_RATE_HZ *
+     RECORDER_BLOCK_ALIGN);
+  if (wanted > planned)
+  {
+    wanted = planned;
+  }
+  if (recording_limits.allocation_bytes >= wanted)
+  {
+    return;
+  }
+  if (!StorageService_StepRunway(STORAGE_OWNER_RECORDER, &runway))
+  {
+    runway_active = false;
+    runway_failed = true; /* The allowance stops growing; the recording ends at it. */
+    return;
+  }
+  RecordingLimits_SetAllocation(&recording_limits,
+    (uint64_t)(runway.file_clusters + runway.free_clusters) * runway.cluster_bytes);
+}
+
+static const char *RecorderRunwayName(void)
+{
+  if (runway_failed) return "failed";
+  if (!runway_active) return "none";
+  return runway.barrier ? "end" : "open";
 }
 
 static uint32_t RecorderClustersKib(uint32_t clusters)
@@ -472,6 +575,7 @@ static PrepareStep RecorderPrepareAllocate(void)
     RecorderSend("ERR RECORD initial WAV header write failed\r\n");
     return PREPARE_FAILED;
   }
+  RecorderBeginRunway();
   return PREPARE_DONE;
 }
 
@@ -1165,7 +1269,8 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
     RecorderSend("OK RECORD LATENCY writes=%lu write-max=%lums "
                  "convert-max=%lums "
                  "write-hist-10ms=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu "
-                 "usb-superseded=%lu usb-lost=%lu\r\n",
+                 "usb-superseded=%lu usb-lost=%lu "
+                 "runway=%s fat-ahead=%lu gap-max=%lu\r\n",
                  (unsigned long)write_count, (unsigned long)max_write_ms,
                  (unsigned long)max_convert_ms,
                  (unsigned long)write_hist[0], (unsigned long)write_hist[1],
@@ -1173,7 +1278,9 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
                  (unsigned long)write_hist[4], (unsigned long)write_hist[5],
                  (unsigned long)write_hist[6], (unsigned long)write_hist[7],
                  (unsigned long)recorder_usb_queue.progress_superseded,
-                 (unsigned long)recorder_usb_queue.replies_lost);
+                 (unsigned long)recorder_usb_queue.replies_lost,
+                 RecorderRunwayName(), (unsigned long)runway.fat_sectors,
+                 (unsigned long)runway.longest_gap);
     return true;
   }
   if (strcmp(command, "RECORD STOP") == 0)
@@ -1283,6 +1390,18 @@ void RadioRecorder_Service(void)
       SessionControl_ReportCardFull();
       return;
     }
+    if ((limit == RECORDING_LIMIT_ALLOCATION) && !stop_requested &&
+        !RecordingLimits_DurationReached(&recording_limits, frames_written))
+    {
+      /* jjy.17: growing further would make FatFs search used space inside a
+       * block write. A fault, with the valid partial file finalized. */
+      finish_aborted = true;
+      finish_reason = runway.barrier ? "free space fragmented" :
+        runway_failed ? "FAT lookahead failed" : "FAT lookahead behind";
+      session_event_pending = true;
+      SessionControl_ReportCaptureFault();
+      return;
+    }
     if ((limit == RECORDING_LIMIT_FILE_SIZE) && !stop_requested &&
         !RecordingLimits_DurationReached(&recording_limits, frames_written))
     {
@@ -1296,6 +1415,10 @@ void RadioRecorder_Service(void)
     finish_reason = "complete";
     session_event_pending = true;
     SessionControl_ReportBlockWritten();
+  }
+  else
+  {
+    RecorderRunwayStep();
   }
 
   now = HAL_GetTick();

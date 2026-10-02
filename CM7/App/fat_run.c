@@ -82,3 +82,63 @@ FatRunState FatRun_Feed(FatRunSearch *search, const uint8_t *sector,
   }
   return search->state;
 }
+
+void FatRunway_Init(FatRunway *runway, uint32_t n_fatent, uint32_t start_cluster,
+                    uint32_t max_gap)
+{
+  if (runway == NULL)
+  {
+    return;
+  }
+  runway->n_fatent = n_fatent;
+  runway->max_gap = max_gap;
+  runway->next = ((start_cluster < 2U) || (start_cluster >= n_fatent)) ? 2U : start_cluster;
+  runway->examined = 0U;
+  runway->free = 0U;
+  runway->gap = 0U;
+  runway->longest_gap = 0U;
+  runway->state = (n_fatent <= 2U) ? FAT_RUNWAY_BARRIER : FAT_RUNWAY_SCANNING;
+}
+
+uint32_t FatRunway_NextSector(const FatRunway *runway)
+{
+  return (runway != NULL) ? (runway->next / FAT_RUN_ENTRIES_PER_SECTOR) : 0U;
+}
+
+FatRunwayState FatRunway_Feed(FatRunway *runway, const uint8_t *sector,
+                              uint32_t sector_index)
+{
+  if ((runway == NULL) || (sector == NULL))
+  {
+    return FAT_RUNWAY_BARRIER;
+  }
+  while ((runway->state == FAT_RUNWAY_SCANNING) &&
+         ((runway->next / FAT_RUN_ENTRIES_PER_SECTOR) == sector_index))
+  {
+    if (FatRunEntry(sector, runway->next % FAT_RUN_ENTRIES_PER_SECTOR) == 0U)
+    {
+      if (runway->gap > runway->longest_gap)
+      {
+        runway->longest_gap = runway->gap;
+      }
+      runway->gap = 0U;
+      ++runway->free;
+    }
+    else if (++runway->gap > runway->max_gap)
+    {
+      runway->state = FAT_RUNWAY_BARRIER;
+      break;
+    }
+    /* One lap: beyond it FatFs would find no new cluster. */
+    if (++runway->examined >= (runway->n_fatent - 2U))
+    {
+      runway->state = FAT_RUNWAY_BARRIER;
+      break;
+    }
+    if (++runway->next >= runway->n_fatent)
+    {
+      runway->next = 2U; /* FatFs wraps too; a gap continues across it. */
+    }
+  }
+  return runway->state;
+}

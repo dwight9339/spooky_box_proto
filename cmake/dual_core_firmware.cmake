@@ -20,6 +20,12 @@ set(SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES "0" CACHE STRING
     "Additional allocation bytes needed to finalize a recording")
 set(SPOOKY_RECORDING_WAV_MAX_FRAMES "715827876" CACHE STRING
     "Maximum WAV frames; override only for bounded storage-limit bench tests")
+set(SPOOKY_RECORDING_PREALLOC_SECONDS "60" CACHE STRING
+    "Seconds of audio preallocated contiguously before capture starts (jjy.9)")
+set(SPOOKY_RECORD_PREPARE_STEP_MS "32" CACHE STRING
+    "Foreground milliseconds per recording preparation step (jjy.9)")
+set(SPOOKY_RECORDING_MAX_GAP_FAT_SECTORS "16" CACHE STRING
+    "Longest used FAT stretch, in FAT sectors, a recording may grow across (jjy.17)")
 set(SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS "4" CACHE STRING
     "Audio queue high-water (of 8 blocks) that reports low storage margin (decision 0014)")
 set(SPOOKY_STORAGE_MARGIN_WRITE_MS "341" CACHE STRING
@@ -60,6 +66,9 @@ function(spooky_add_core core_name target_name)
             "-DSPOOKY_ROLLING_CAPTURE_RESERVE_BYTES:STRING=${SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES}"
             "-DSPOOKY_RECORDING_FINALIZE_RESERVE_BYTES:STRING=${SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES}"
             "-DSPOOKY_RECORDING_WAV_MAX_FRAMES:STRING=${SPOOKY_RECORDING_WAV_MAX_FRAMES}"
+            "-DSPOOKY_RECORDING_PREALLOC_SECONDS:STRING=${SPOOKY_RECORDING_PREALLOC_SECONDS}"
+            "-DSPOOKY_RECORD_PREPARE_STEP_MS:STRING=${SPOOKY_RECORD_PREPARE_STEP_MS}"
+            "-DSPOOKY_RECORDING_MAX_GAP_FAT_SECTORS:STRING=${SPOOKY_RECORDING_MAX_GAP_FAT_SECTORS}"
             "-DSPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS:STRING=${SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS}"
             "-DSPOOKY_STORAGE_MARGIN_WRITE_MS:STRING=${SPOOKY_STORAGE_MARGIN_WRITE_MS}"
             ${core_identity_arg}

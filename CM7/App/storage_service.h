@@ -55,6 +55,16 @@ typedef struct StorageRunReport
   uint32_t steps;
 } StorageRunReport;
 
+typedef struct StorageRunwayReport
+{
+  uint32_t cluster_bytes;
+  uint32_t file_clusters;   /* Clusters the file already holds. */
+  uint32_t free_clusters;   /* Verified free clusters the file can grow into. */
+  uint32_t longest_gap;     /* Longest used stretch an allocation will cross. */
+  uint32_t fat_sectors;     /* FAT sectors read ahead. */
+  bool barrier;             /* No further cluster is reachable cheaply. */
+} StorageRunwayReport;
+
 void StorageService_Init(SD_HandleTypeDef *sd);
 FRESULT StorageService_Acquire(StorageOwner owner);
 FRESULT StorageService_Release(StorageOwner owner);
@@ -74,6 +84,17 @@ FRESULT StorageService_ReadMediaInfo(SdMediaInfo *info);
 StorageRunState StorageService_BeginRunSearch(StorageOwner owner, uint64_t bytes);
 StorageRunState StorageService_StepRunSearch(StorageOwner owner, uint32_t budget_ms,
                                              StorageRunReport *report);
+/* Runway ahead of a growing file (jjy.17). The file holds the contiguous
+ * clusters from first_cluster for allocated_bytes; past them FatFs allocates by
+ * scanning forward. Each Step reads one FAT sector (128 clusters) in that order
+ * and counts the free clusters reachable across used gaps of at most
+ * max_gap_sectors FAT sectors. Step returns false when the lease is lost or a
+ * read fails. FAT32 only (STORAGE_RUN_UNSUPPORTED otherwise). */
+StorageRunState StorageService_BeginRunway(StorageOwner owner, uint32_t first_cluster,
+                                           uint64_t allocated_bytes,
+                                           uint32_t max_gap_sectors,
+                                           StorageRunwayReport *report);
+bool StorageService_StepRunway(StorageOwner owner, StorageRunwayReport *report);
 bool StorageService_GetFreeBytes(StorageOwner owner, uint64_t *free_bytes);
 bool StorageService_GetCardInfo(StorageOwner owner,
                                 HAL_SD_CardInfoTypeDef *info);

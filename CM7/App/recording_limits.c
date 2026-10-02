@@ -7,6 +7,19 @@ static uint64_t data_bytes(uint32_t frames)
   return (uint64_t)frames * RECORDING_LIMIT_BLOCK_ALIGN;
 }
 
+uint64_t RecordingLimits_FileBytes(uint32_t frames_written)
+{
+  return RECORDING_LIMIT_WAV_HEADER_BYTES + data_bytes(frames_written);
+}
+
+void RecordingLimits_SetAllocation(RecordingLimits *limits, uint64_t bytes)
+{
+  if (limits != NULL)
+  {
+    limits->allocation_bytes = bytes;
+  }
+}
+
 uint64_t RecordingLimits_FreeBytes(const RecordingLimits *limits,
                                    uint32_t frames_written)
 {
@@ -41,6 +54,12 @@ RecordingLimitReason RecordingLimits_BeforeBlock(
   {
     return RECORDING_LIMIT_CARD_FULL;
   }
+  if ((limits->allocation_bytes != 0U) &&
+      (RecordingLimits_FileBytes(frames_written + RECORDING_LIMIT_BLOCK_FRAMES) >
+       limits->allocation_bytes))
+  {
+    return RECORDING_LIMIT_ALLOCATION;
+  }
   return RECORDING_LIMIT_NONE;
 }
 
@@ -68,6 +87,7 @@ bool RecordingLimits_Init(RecordingLimits *limits, uint32_t timed_seconds,
   limits->reserve_bytes = session_reserve + rolling_reserve_bytes +
     finalize_reserve_bytes;
   limits->target_frames = timed_seconds * RECORDING_LIMIT_SAMPLE_RATE_HZ;
+  limits->allocation_bytes = 0U;
   return RecordingLimits_BeforeBlock(limits, 0U) == RECORDING_LIMIT_NONE;
 }
 

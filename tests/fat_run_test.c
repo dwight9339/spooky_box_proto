@@ -148,6 +148,76 @@ static void TestInitEdges(void)
   CHECK(FatRun_Feed(NULL, fat[0], 0U) == FAT_RUN_NOT_FOUND);
 }
 
+/* Feeds the runway in FatFs allocation order; returns sectors read. */
+static uint32_t Walk(FatRunway *runway, uint32_t n_fatent, uint32_t start,
+                     uint32_t max_gap, uint32_t budget)
+{
+  uint32_t reads = 0U;
+
+  FatRunway_Init(runway, n_fatent, start, max_gap);
+  while ((runway->state == FAT_RUNWAY_SCANNING) && (reads < budget))
+  {
+    uint32_t index = FatRunway_NextSector(runway);
+    (void)FatRunway_Feed(runway, fat[index], index);
+    ++reads;
+  }
+  return reads;
+}
+
+static void TestRunwayCountsFreeAcrossShortGaps(void)
+{
+  FatRunway runway;
+
+  /* Free 100..199, used 200..299 (100), free 300..349, then used to the end. */
+  FillUsedExcept(100U, 100U);
+  for (uint32_t c = 300U; c < 350U; ++c) SetEntry(c, 0U);
+  (void)Walk(&runway, FAT_ENTRIES, 100U, 100U, 64U);
+  CHECK(runway.state == FAT_RUNWAY_BARRIER);
+  CHECK(runway.free == 150U);
+  CHECK(runway.longest_gap == 100U);
+  /* A shorter allowed gap stops at the first used stretch. */
+  (void)Walk(&runway, FAT_ENTRIES, 100U, 99U, 64U);
+  CHECK((runway.state == FAT_RUNWAY_BARRIER) && (runway.free == 100U));
+  CHECK(runway.longest_gap == 0U);
+  /* No gap allowed: the file can only grow into adjacent free clusters. */
+  (void)Walk(&runway, FAT_ENTRIES, 100U, 0U, 64U);
+  CHECK((runway.state == FAT_RUNWAY_BARRIER) && (runway.free == 100U));
+}
+
+static void TestRunwayIsIncremental(void)
+{
+  FatRunway runway;
+
+  FillUsedExcept(0U, 0U);
+  for (uint32_t c = 2U; c < FAT_ENTRIES; ++c) SetEntry(c, 0U);
+  /* One sector per step: 128 more clusters each, as the recorder reads it. */
+  CHECK(Walk(&runway, FAT_ENTRIES, 128U, 4U, 1U) == 1U);
+  CHECK((runway.state == FAT_RUNWAY_SCANNING) && (runway.free == 128U));
+  (void)FatRunway_Feed(&runway, fat[2], 2U);
+  CHECK(runway.free == 256U);
+  /* A sector other than the next one changes nothing. */
+  (void)FatRunway_Feed(&runway, fat[5], 5U);
+  CHECK(runway.free == 256U);
+}
+
+static void TestRunwayWrapsAndStopsAfterOneLap(void)
+{
+  FatRunway runway;
+
+  /* Free only at both ends: FatFs wraps from the end of the FAT to cluster 2. */
+  FillUsedExcept(0U, 0U);
+  for (uint32_t c = FAT_ENTRIES - 10U; c < FAT_ENTRIES; ++c) SetEntry(c, 0U);
+  for (uint32_t c = 2U; c < 12U; ++c) SetEntry(c, 0U);
+  (void)Walk(&runway, FAT_ENTRIES, FAT_ENTRIES - 10U, 0U, 64U);
+  CHECK(runway.free == 20U); /* The wrap itself is not a used gap. */
+  CHECK(runway.state == FAT_RUNWAY_BARRIER);
+
+  /* Everything free: one lap counts each cluster once, then stops. */
+  for (uint32_t c = 2U; c < FAT_ENTRIES; ++c) SetEntry(c, 0U);
+  (void)Walk(&runway, FAT_ENTRIES, 500U, 0U, 64U);
+  CHECK((runway.state == FAT_RUNWAY_BARRIER) && (runway.free == (FAT_ENTRIES - 2U)));
+}
+
 int main(void)
 {
   TestFoundAtHint();
@@ -156,6 +226,9 @@ int main(void)
   TestBudgetStopsSearch();
   TestRunDoesNotSpanWrap();
   TestInitEdges();
+  TestRunwayCountsFreeAcrossShortGaps();
+  TestRunwayIsIncremental();
+  TestRunwayWrapsAndStopsAfterOneLap();
   if (failures != 0)
   {
     printf("fat_run_test: %d failure(s)\n", failures);

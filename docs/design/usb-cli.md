@@ -307,13 +307,29 @@ and the empty file deleted:
 Without a contiguous allocation the file would grow one cluster at a time, and FatFs
 would search the FAT inside a block write; on a nearly full, fragmented card one such
 write took 1.4 s and overran the queues
-([trial](../evidence/2026-10-01-prealloc-search-trial.md)). A recording longer than its
-preallocation still grows that way after the first 60 seconds
-(`full_spooky_proto-jjy.17`). `RECORD STOP` while preparing cancels the start and
+([trial](../evidence/2026-10-01-prealloc-search-trial.md)). `RECORD STOP` while preparing cancels the start and
 deletes the empty file (`OK RECORD STOP cancelled before capture; no file kept`).
 `RECORD STATUS` reports `OK RECORD PREPARING file=... fat-sectors=... elapsed=...ms`
 during preparation. Volumes other than FAT32 skip the stepped search and rely on
 FatFs `f_expand`, whose FAT12/16 tables are at most 256 sectors.
+
+A recording longer than its preallocation (open-ended, or timed beyond 60 s) grows
+past it one cluster at a time. FatFs then takes the first free cluster after the file,
+scanning forward through any used clusters inside that block write. To keep that scan
+short, the recorder reads the FAT ahead of the file during the recording, one sector
+(128 clusters, about 14.5 s of audio with 32 KiB clusters) at a time in idle
+foreground passes, keeping about 30 s ahead of the write position. It counts the free
+clusters the file can reach across used stretches of at most
+`SPOOKY_RECORDING_MAX_GAP_FAT_SECTORS` FAT sectors (16 by default: 2048 clusters, about
+25 ms of FatFs reading inside one write). The recording may fill only the space
+verified that way. When a longer used stretch, or the end of one lap around the FAT,
+leaves no further reachable cluster, the recording finalizes before the next block
+would need one and reports the fault:
+`ERR RECORD ABORT file=... reason=free space fragmented finalized=1`. `RECORD LATENCY`
+reports `runway=none|open|end|failed`, the FAT sectors read ahead (`fat-ahead`) and the
+longest used stretch crossed in clusters (`gap-max`). The preallocated length is the
+build setting `SPOOKY_RECORDING_PREALLOC_SECONDS`, and the step budget is
+`SPOOKY_RECORD_PREPARE_STEP_MS`.
 
 The step budget bounds the FAT search but not a single directory call: each name
 probe, the file creation and the deletion of a discarded file scan the directory in
