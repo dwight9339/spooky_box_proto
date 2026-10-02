@@ -77,6 +77,17 @@ most one direct-LED action or five matrix pixels; the SSD1309 test image is a fi
 still have exactly one M7 hardware owner until product IPC and the PF6 reconciliation
 gates in decision 0001 are complete.
 
+The matrix mapping of [decision 0013](../decisions/0013-matrix-emf-radio-and-status-mapping.md)
+is split the same way. Sensor interpretation stays on the M7: `emf_level` turns the
+magnetometer's change from baseline into a bucket, or an explicit unknown state (no
+sample, no baseline, stale, sensor fault), and `radio_activity` detects onsets in the
+radio audio from one mean absolute level per half-buffer, holding its averages while
+the radio is not measuring. The pixel decisions live in the portable
+`Common/matrix_feedback` renderer, which takes only those semantic facts and the
+recording state and composes a 9x9 frame. It can run on whichever core renders the
+matrix. Host tests cover all three; how the matrix looks and what the renderer costs
+under recording load need bench evidence.
+
 The external Pico debugprobe is development-bench infrastructure, not an
 application coprocessor. Spooky Bench provides a Windows-hosted command surface
 around flashing, UART capture and target USB diagnostics; see

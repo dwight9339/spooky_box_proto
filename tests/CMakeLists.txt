@@ -77,6 +77,10 @@ spooky_test(input_context_test input_context_test.c ../CM7/App/event_queue.c
 spooky_generated_sm(input_context_test InputResolutionSm.c ContextSm.c)
 spooky_test(ui_services_test ui_services_test.c
     ../CM7/App/ui_input_service.c ../CM7/App/ui_render_service.c)
+# Decision 0013 matrix feedback: EMF level, radio onsets and the renderer (54w.8).
+spooky_test(emf_level_test emf_level_test.c ../CM7/App/emf_level.c)
+spooky_test(radio_activity_test radio_activity_test.c ../CM7/App/radio_activity.c)
+spooky_test(matrix_feedback_test matrix_feedback_test.c ../Common/Src/matrix_feedback.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)
