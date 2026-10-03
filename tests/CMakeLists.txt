@@ -81,6 +81,8 @@ spooky_test(ui_services_test ui_services_test.c
 spooky_test(emf_level_test emf_level_test.c ../CM7/App/emf_level.c)
 spooky_test(radio_activity_test radio_activity_test.c ../CM7/App/radio_activity.c)
 spooky_test(matrix_feedback_test matrix_feedback_test.c ../Common/Src/matrix_feedback.c)
+# Classic scan engine core: landings, edges and the jump schedule (spec 001, 54w.7).
+spooky_test(classic_scan_test classic_scan_test.c ../CM7/App/classic_scan.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)
