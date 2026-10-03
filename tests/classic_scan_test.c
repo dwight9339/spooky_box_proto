@@ -208,9 +208,9 @@ static void startup_matches_decision_0016(void)
     CHECK(config.rate_per_min[14] == 400u);
     CHECK(config.rate_per_min[config.default_rate_index] == 120u);
     CHECK(config.band_max_rate_per_min[FM] == 400u);
-    CHECK(config.band_max_rate_per_min[AM] == 200u);
+    CHECK(config.band_max_rate_per_min[AM] == 180u); /* decision 0018 */
     CHECK(config.band_max_rate_per_min[SW] == 240u);
-    CHECK(config.band_max_rate_per_min[LW] == 200u);
+    CHECK(config.band_max_rate_per_min[LW] == 180u);
     CHECK(config.distance_count == 21u);
     CHECK(config.distance_channels[20] == 2000u);
     CHECK(config.start_running && config.start_up);
@@ -832,12 +832,12 @@ static void the_band_limit_caps_the_rate_but_keeps_the_setting(void)
     set_rate(400u);
     sim_start(&sim, AM, 0u);
     status = status_of(&sim);
-    CHECK(status.rate_setting_per_min == 400u && status.rate_per_min == 200u);
+    CHECK(status.rate_setting_per_min == 400u && status.rate_per_min == 180u);
     CHECK(status.rate_limited);
     one_jump(&sim, &jump);
     previous = sim.last_jump_ms;
     one_jump(&sim, &jump);
-    CHECK(sim.last_jump_ms - previous == 300u);
+    CHECK(sim.last_jump_ms - previous == 333u);
 
     /* Same setting on FM runs at 400 and is not limited. */
     CHECK(ClassicScan_GetStatus(FM, 99100u, &status));
@@ -1016,8 +1016,8 @@ static void navigation_round_trips_keep_classic(void)
                 const uint32_t back = sim.now;
 
                 one_jump(&sim, &jump);
-                /* AM limits 240 per minute to 200. */
-                CHECK(sim.last_jump_ms == back + ((retune == 2) ? 300u : 250u));
+                /* AM limits 240 per minute to 180. */
+                CHECK(sim.last_jump_ms == back + ((retune == 2) ? 333u : 250u));
             }
             if (retune == 0) {
                 CHECK(jump.channel_index == 90u);

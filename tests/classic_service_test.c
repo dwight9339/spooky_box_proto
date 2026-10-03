@@ -358,7 +358,7 @@ static void a_band_change_brings_the_band_parameters(void)
     world.frequency_khz = 1000u;
     run(5u);
     CHECK(events[CLASSIC_PUB_RATE] == 1u);
-    CHECK(event_state.rate_per_min == 200u && event_state.rate_limited);
+    CHECK(event_state.rate_per_min == 180u && event_state.rate_limited);
     CHECK(events[CLASSIC_PUB_DISTANCE] == 1u && event_state.distance_khz == 10u);
     CHECK(events[CLASSIC_PUB_RUN_STATE] == 0u);
     command(CTX_CMD_JUMP_DISTANCE, 2); /* AM only */
