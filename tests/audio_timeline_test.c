@@ -297,6 +297,67 @@ static void test_alignment_matches_both_tracks(void)
     }
 }
 
+/* The recorder sees whole halves in delivery order. With or without a
+ * completion pending at the snapshot, dropping skip frames from the next
+ * delivered half leaves the first kept frame at the origin. */
+static void test_delivery_skip(void)
+{
+    current_test = "delivery_skip";
+    for (uint32_t pending = 0u; pending < 2u; ++pending) {
+        for (uint32_t into = 0u; into < FPH; into += 53u) {
+            for (uint32_t latency = 0u; latency < 2u * FPH; latency += 211u) {
+                AudioTimelineStream stream = started(0u);
+                const uint32_t half_in_progress = 5u;
+                /* Halves completed and counted before the snapshot. */
+                const uint32_t counted = half_in_progress - pending;
+                AudioTimelinePosition mic_start;
+                AudioTimelineAlignment alignment;
+                uint64_t next_half;
+                uint64_t delivered;
+                uint32_t skip;
+
+                CHECK(AudioTimeline_StreamObserve(
+                          &stream, counted,
+                          ndtr_at(((half_in_progress % 2u) * FPH + into) * IPF),
+                          &mic_start) == AUDIO_TIMELINE_OK);
+                CHECK(mic_start.frame == (half_in_progress * FPH) + into);
+                CHECK(AudioTimeline_AlignStart(&stream, mic_start, latency, &alignment) ==
+                      AUDIO_TIMELINE_OK);
+                next_half = AudioTimeline_NextHalfFrame(&stream);
+                CHECK(next_half == (uint64_t)counted * FPH);
+                CHECK(AudioTimeline_DeliverySkip(&alignment, next_half, &skip) ==
+                      AUDIO_TIMELINE_OK);
+                /* Deliveries start at next_half; the first kept frame is
+                 * next_half + skip. */
+                delivered = next_half + skip;
+                CHECK(delivered == alignment.origin.frame);
+                CHECK(delivered == mic_start.frame + latency);
+                CHECK(skip < (2u * FPH) + latency);
+            }
+        }
+    }
+}
+
+static void test_delivery_skip_errors(void)
+{
+    AudioTimelineAlignment alignment;
+    uint32_t skip;
+
+    current_test = "delivery_skip_errors";
+    memset(&alignment, 0, sizeof(alignment));
+    alignment.origin.epoch = 1u;
+    alignment.origin.frame = 100u;
+    CHECK(AudioTimeline_DeliverySkip(NULL, 0u, &skip) == AUDIO_TIMELINE_ERR_ARGUMENT);
+    CHECK(AudioTimeline_DeliverySkip(&alignment, 0u, NULL) == AUDIO_TIMELINE_ERR_ARGUMENT);
+    CHECK(AudioTimeline_DeliverySkip(&alignment, 101u, &skip) ==
+          AUDIO_TIMELINE_ERR_BEFORE_ORIGIN);
+    CHECK(AudioTimeline_DeliverySkip(&alignment, 100u, &skip) == AUDIO_TIMELINE_OK);
+    CHECK(skip == 0u);
+    alignment.origin.frame = 0x100000000ull;
+    CHECK(AudioTimeline_DeliverySkip(&alignment, 0u, &skip) == AUDIO_TIMELINE_ERR_ARGUMENT);
+    CHECK(AudioTimeline_NextHalfFrame(NULL) == 0u);
+}
+
 static void test_offset(void)
 {
     AudioTimelinePosition origin = { 3u, 1000u };
@@ -360,6 +421,8 @@ int main(void)
     test_restart_epoch();
     test_align_start();
     test_alignment_matches_both_tracks();
+    test_delivery_skip();
+    test_delivery_skip_errors();
     test_offset();
     test_stamp_offset();
 

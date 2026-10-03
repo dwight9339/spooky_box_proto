@@ -1,6 +1,6 @@
 # 0012. Common audio sample timeline
 
-- **Status:** Accepted 2026-09-30
+- **Status:** Accepted 2026-09-30; items 4, 8 (start alignment) and 9 amended by [0017](0017-microphone-start-latency-uncompensated.md)
 - **Date:** 2026-09-30
 - **Supersedes:** none
 - **Beads:** `full_spooky_proto-hpq.1` (this decision and implementation);

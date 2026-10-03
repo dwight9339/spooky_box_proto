@@ -1,4 +1,5 @@
 #include "radio_recorder.h"
+#include "audio_path_service.h"
 #include "diagnostics.h"
 #include "recording_limits.h"
 #include "session_control.h"
@@ -70,6 +71,12 @@
 #ifndef SPOOKY_RECORD_PREPARE_STEP_MS
 #define SPOOKY_RECORD_PREPARE_STEP_MS 32U
 #endif
+/* Decision 0012 item 4: frames from the microphone DMA start to its first
+ * sample (C). Decision 0017 keeps it at 0: the acoustic loopback cannot
+ * separate it from the output-path delay, so the offset stays unmeasured. */
+#ifndef SPOOKY_RECORD_MIC_LATENCY_FRAMES
+#define SPOOKY_RECORD_MIC_LATENCY_FRAMES 0U
+#endif
 /* Decision 0014 item 5: half the eight-block (683 ms) queue headroom, until the
  * media survey fixes the thresholds. */
 #ifndef SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS
@@ -109,6 +116,10 @@ static RecorderState recorder_state;
 static bool recorder_file_open;
 static bool pdm_dma_running;
 static volatile bool capture_enabled;
+/* Radio samples still to drop before the first kept frame (decision 0012). */
+static volatile uint32_t radio_skip_samples;
+static AudioPathCaptureStart capture_start;
+static bool capture_start_valid;
 static volatile bool stop_requested;
 static volatile bool radio_error;
 static volatile bool pdm_error;
@@ -712,6 +723,25 @@ static bool RecorderFinalizeFile(void)
   return ok;
 }
 
+/* Decimal text of a 64-bit frame count; newlib-nano printf has no %llu. */
+static void FormatFrame(uint64_t frame, char text[21])
+{
+  char digits[21];
+  uint32_t count = 0U;
+  uint32_t index;
+
+  do
+  {
+    digits[count++] = (char)('0' + (frame % 10U));
+    frame /= 10U;
+  } while ((frame != 0U) && (count < 20U));
+  for (index = 0U; index < count; ++index)
+  {
+    text[index] = digits[count - 1U - index];
+  }
+  text[count] = '\0';
+}
+
 static void RecorderPrepareDmaBuffer(void *address, uint32_t bytes)
 {
 #if (__DCACHE_PRESENT == 1U)
@@ -779,6 +809,13 @@ void RadioRecorder_OnRadioSamples(const int16_t *samples,
   if (!capture_enabled || (samples == NULL))
   {
     return;
+  }
+  if (radio_skip_samples != 0U)
+  {
+    /* Radio frames before the capture origin are not part of the recording. */
+    copied = (radio_skip_samples < sample_count) ? radio_skip_samples
+                                                 : sample_count;
+    radio_skip_samples -= copied;
   }
 
   while (copied < sample_count)
@@ -1088,15 +1125,34 @@ bool RadioRecorder_StartCapture(void)
 
   RecorderPrepareDmaBuffer(pdm_dma_buffer, sizeof(pdm_dma_buffer));
   recorder_state = RECORDER_ACTIVE;
+  /* Decision 0012 item 4: the radio position snapshot, the radio capture
+   * enable and the microphone DMA start happen together with interrupts
+   * masked, so the delay between them is constant and folded into C. The
+   * section lasts a few microseconds, far below one 10.7 ms half period. */
+  capture_start_valid = false;
+  primask = __get_PRIMASK();
+  __disable_irq();
+  if (!AudioPath_AlignCaptureLocked(SPOOKY_RECORD_MIC_LATENCY_FRAMES,
+                                    &capture_start))
+  {
+    __set_PRIMASK(primask);
+    finish_aborted = true;
+    finish_reason = "radio timeline unavailable";
+    return false;
+  }
+  radio_skip_samples = capture_start.skip_frames * 2U; /* stereo */
   capture_enabled = true;
   if (HAL_DFSDM_FilterRegularStart_DMA(
         pdm_filter, pdm_dma_buffer,
         2U * RECORDER_PDM_BLOCK_SAMPLES) != HAL_OK)
   {
+    __set_PRIMASK(primask);
     finish_aborted = true;
     finish_reason = "PDM DMA did not start";
     return false;
   }
+  __set_PRIMASK(primask);
+  capture_start_valid = true;
   pdm_dma_running = true;
   recording_start_ms = HAL_GetTick();
   progress_last_ms = recording_start_ms;
@@ -1276,6 +1332,46 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
     {
       RecorderSend("%s", reply);
     }
+    return true;
+  }
+  if (strcmp(command, "RECORD TIMELINE") == 0)
+  {
+    AudioTimelinePosition now;
+    char now_text[21];
+    char origin_text[21];
+    char mic_text[21];
+    char phase_text[12];
+    const bool have_now = AudioPath_GetPosition(&now);
+
+    FormatFrame(have_now ? now.frame : 0U, now_text);
+    if (!capture_start_valid)
+    {
+      RecorderSend("OK RECORD TIMELINE NONE epoch=%lu now=%s\r\n",
+                   have_now ? (unsigned long)now.epoch : 0UL, now_text);
+      return true;
+    }
+    FormatFrame(capture_start.alignment.origin.frame, origin_text);
+    FormatFrame(capture_start.mic_start.frame, mic_text);
+    if (capture_start.monitor_phase_valid)
+    {
+      (void)snprintf(phase_text, sizeof(phase_text), "%lu",
+                     (unsigned long)capture_start.monitor_phase_frames);
+    }
+    else
+    {
+      (void)snprintf(phase_text, sizeof(phase_text), "none");
+    }
+    RecorderSend("OK RECORD TIMELINE file=%s epoch=%lu origin=%s "
+                 "mic-start=%s p=%lu skip=%lu c=%lu tx-rx-phase=%s "
+                 "now=%s\r\n",
+                 recorder_filename,
+                 (unsigned long)capture_start.alignment.origin.epoch,
+                 origin_text, mic_text,
+                 (unsigned long)(capture_start.mic_start.frame -
+                                 capture_start.alignment.first_half_frame),
+                 (unsigned long)capture_start.skip_frames,
+                 (unsigned long)SPOOKY_RECORD_MIC_LATENCY_FRAMES,
+                 phase_text, now_text);
     return true;
   }
   if (strcmp(command, "RECORD LATENCY") == 0)

@@ -89,10 +89,12 @@ The audio-timeline tests cover the portable arithmetic of decision 0012: 32-bit
 counter extension across wrap, DMA snapshots taken while a half-buffer completion is
 pending but not yet counted, a monotonic walk across many buffers, stream restart
 epochs and stale positions, backwards counts, start alignment of the radio and
-microphone tracks against a modelled common signal, and event-stamp uncertainty
-clipped at an origin. The firmware does not yet link this module, so these tests say
-nothing about DMA timing, the DFSDM start latency or recording alignment on the
-board.
+microphone tracks against a modelled common signal, the number of radio frames the
+recorder drops from the next delivered half with and without a completion pending at
+the snapshot, and event-stamp uncertainty clipped at an origin. The firmware links
+this module for the recorder start, but these tests say nothing about DMA timing, the
+DFSDM start latency or recording alignment on the board; those need the decision 0012
+item 9 loopback qualification.
 
 The matrix-feedback tests cover decision 0013. The EMF-level tests check each bucket
 boundary, unknown states for no sample, no baseline, a stale sample (more than

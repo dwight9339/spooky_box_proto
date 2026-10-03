@@ -26,6 +26,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0014](0014-sd-media-policy.md) | SD media policy for recording | Accepted |
 | [0015](0015-raw-radio-track-during-in-band-tunes.md) | Raw radio track during in-band tunes | Accepted |
 | [0016](0016-classic-scan-motion.md) | Classic scan motion, band edges and activity hold | Accepted |
+| [0017](0017-microphone-start-latency-uncompensated.md) | Microphone start latency stays uncompensated | Accepted |
 
 ## Template
 
