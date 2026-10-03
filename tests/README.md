@@ -14,6 +14,10 @@ cmake --build build/host
 ctest --test-dir build/host --output-on-failure
 ```
 
+Tests report failures with an always-on `CHECK` macro. `tests/CMakeLists.txt` also
+removes `NDEBUG` from every build type's flags, so an `assert()` in a test or stub still
+checks in this Release build.
+
 Tests of StateSmith machines add the generated C from `CM7/App/sm` with
 `spooky_generated_sm(<test> <Name>Sm.c)`. It suppresses unused-parameter warnings, and
 MSVC's unreachable-code warning, for those files only.
