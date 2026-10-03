@@ -183,9 +183,12 @@ bool AudioPath_StartCapture(void)
     return false;
   }
   __HAL_LINKDMA(sai, hdmarx, hdma_sai2_a);
-  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0U, 0U);
+  /* Just below SysTick (priority 0): a radio half takes about 1.2 ms in the
+   * Debug image while recording, and at SysTick's priority it lost ticks
+   * (full_spooky_proto-akw). It still preempts the microphone copy (4). */
+  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 1U, 0U);
   HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
-  HAL_NVIC_SetPriority(SAI2_IRQn, 0U, 0U);
+  HAL_NVIC_SetPriority(SAI2_IRQn, 1U, 0U);
   HAL_NVIC_EnableIRQ(SAI2_IRQn);
 
   memset(radio_rx_buffer, 0, sizeof(radio_rx_buffer));

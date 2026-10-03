@@ -49,11 +49,14 @@ the measured milliseconds in `B`, sets `HAS_FAULT=1`, and remains available via
 Service and loop timings include any interrupt work that preempts them. While
 recording, the largest interrupt work on the M7 is the per-block copy in the audio
 DMA interrupts: the DFSDM microphone interrupt (priority 4) copies one 16 KiB block
-every 85.33 ms, and the radio receive interrupt (priority 0) copies 1024 samples
+every 85.33 ms, and the radio receive interrupt (priority 1) copies 1024 samples
 every 10.7 ms. At the current 64 MHz, cache-off configuration these hold the
 foreground for up to about 4.3 ms per microphone block, well inside the budgets
 above; see [M7 interrupt cost](../evidence/2026-10-01-isr-timing.md) for the
-measured bound. The opt-in `SPOOKY_ISR_TIMING_QUALIFICATION` build times every
+measured bound. The radio interrupt sits just below SysTick (priority 0): with the
+decision 0012 timeline and onset-level work it takes about 1.2 ms per half-buffer in
+the Debug image, and at SysTick's own priority it lost about 3% of the millisecond
+ticks while recording ([evidence](../evidence/2026-10-03-radio-isr-tick-loss.md)). The opt-in `SPOOKY_ISR_TIMING_QUALIFICATION` build times every
 handler for such measurements.
 
 ## Recording-aware behavior
