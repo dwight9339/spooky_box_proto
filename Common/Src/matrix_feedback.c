@@ -95,12 +95,16 @@ void MatrixFeedback_DefaultConfig(MatrixFeedbackConfig *config)
     config->emf_colour[index] = emf_colours[index];
     config->emf_step_ms[index] = emf_steps[index];
   }
-  config->unknown_colour.red = 55U;
-  config->unknown_colour.green = 58U;
-  config->unknown_colour.blue = 62U;
-  config->recording_colour.red = 230U;
-  config->recording_colour.green = 200U;
-  config->recording_colour.blue = 40U;
+  /* Dim grey as it looks on the IS31FL3741: red reads strongest, so it is
+   * driven lowest (bench, 2026-10-03). Too faint for a visible trail. */
+  config->unknown_colour.red = 1U;
+  config->unknown_colour.green = 2U;
+  config->unknown_colour.blue = 2U;
+  /* Yellow as it looks on the IS31FL3741, clearly apart from the amber
+   * bucket (bench, 2026-10-03). */
+  config->recording_colour.red = 120U;
+  config->recording_colour.green = 240U;
+  config->recording_colour.blue = 10U;
   config->fault_colour.red = 255U;
   config->fault_colour.green = 30U;
   config->fault_colour.blue = 20U;

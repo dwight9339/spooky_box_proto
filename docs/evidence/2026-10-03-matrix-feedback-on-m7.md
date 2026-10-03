@@ -179,6 +179,36 @@ recordings landed on quiet channels because Classic had moved on before the capt
 6 ms per pass, the loop at most 33 ms and the recorder at most 25 ms, with no failed
 writes, no dropped steps and no budget violations.
 
+## Unknown grey and recording yellow (after merge)
+
+Watching recordings on the qualification image, the user saw the unknown-EMF grey
+(drive 55, 58, 62) as pale orange and the recording border (230, 200, 40) as orange
+rather than yellow. These images were built from `main` at
+`b3603e9166f3ed04506d4ea7d9b1a8e2a170a437` (after #100 to #102) plus the change. Two
+temporary test patterns, not committed, lit one candidate per matrix row:
+
+- **Grey, three rounds (`54w8-greys-ipcsmoke-20261003a` to `c`).** Candidates from
+  (55, 58, 62) to (15, 30, 60) ran from orange-ish to purple-ish, and even the dimmest
+  looked too bright. Lower red with green and blue near equal, at 100% down to 20%,
+  all looked grey; the user picked (20, 45, 35) as closest. Dimmed from 40% to the
+  faintest step, the user kept the colour and chose the faintest, **(1, 2, 2)**. At
+  that level the 35% trail rounds to off.
+- **Yellow (`54w8-swatch-ipcsmoke-20261003a`).** Nine candidates beside the amber
+  bucket colour (255, 165, 0). The user chose **(120, 240, 10)** as yellow and clearly
+  apart from amber.
+
+| Build ID | Contents | CM7 SHA-256 | Source patch SHA-256 |
+| --- | --- | --- | --- |
+| `54w8-matrix-qual-ipcsmoke-20261003l` | grey (1, 2, 2), qualification build | `23b2c30060144b13d38174457bd8587d8cd7e0a6edd35bee14df5f2fb14220a8` | `6a5e996bb91c075d2df3634fb658f4eec58a51c454b4e9be1bf60651de26ee64` |
+| `54w8-matrix-qual-ipcsmoke-20261003m` | plus yellow (120, 240, 10), qualification build | `821faa461253a93f7b27d9960895eaf47e812dc7979b8798a95aaa5687497861` | `35b88afb965d1e8c3c160497c832def577a7e96bd6be087f3ba63ed903320f39` |
+| `54w8-matrix-ipcsmoke-20261003n` | the same source as a normal image; left on the board | `cf97136f06e902a20e31fe2403c39300178351ab91adfe1b7b9308ff93be2d0c` | `35b88afb965d1e8c3c160497c832def577a7e96bd6be087f3ba63ed903320f39` |
+
+On build l a 20 s recording (`REC133`, 20,053 ms of audio in 20,104 ms) showed the
+square in the new grey while the EMF reading was `STALE`; the user judged it "perfect".
+On build m a 20 s recording on 99.1 MHz (`REC134`, 20,053 ms in 20,103 ms) showed the
+new yellow border blinking with onsets around the grey square; the user judged it
+"much better". No failed writes or dropped steps. Host tests passed 30/30.
+
 ## Not covered
 
 - The 60 s regression ran on build i (3 ms per pass); build j's 2 ms change was checked
