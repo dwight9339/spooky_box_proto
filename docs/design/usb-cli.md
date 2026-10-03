@@ -312,12 +312,15 @@ The start follows decision 0012. Immediately before the microphone DMA starts, w
 interrupts masked for a few microseconds, the firmware reads the radio DMA position,
 enables radio capture and starts the microphone DMA. The recorder then drops the radio
 frames received before that position plus the microphone start latency *C*
-(`SPOOKY_RECORD_MIC_LATENCY_FRAMES`), so radio frame 0 and microphone sample 0 are
-meant to be the same instant. *C* is 0 until the decision 0012 item 9 loopback
-qualification measures it, and that qualification is also what establishes the
-alignment tolerance; until then, start alignment is a design target, not a proven
-property. Before this change the radio track could start up to one 512-frame radio DMA
-half (about 10.7 ms) before the microphone.
+(`SPOOKY_RECORD_MIC_LATENCY_FRAMES`). Decision 0017 keeps *C* at 0: radio frame 0 is
+the radio frame in progress when the microphone DMA starts. Microphone sample 0
+represents sound from a constant, unmeasured interval after that, estimated by
+arithmetic at about 2 to 4 frames plus the microphone's own delay. The alignment is
+qualified as repeatable: loopback recordings agreed within 0.3 frames in one boot and
+1.4 frames across a reset, with no drift over ten minutes
+([evidence](../evidence/2026-10-02-recording-start-alignment.md)). Before this change
+the radio track could start up to one 512-frame radio DMA half (about 10.7 ms) before
+the microphone.
 
 Capture starts only after the file is preallocated, so no allocation search runs while
 recording. `RECORD START` mounts and checks the card and replies

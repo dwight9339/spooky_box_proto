@@ -72,7 +72,8 @@
 #define SPOOKY_RECORD_PREPARE_STEP_MS 32U
 #endif
 /* Decision 0012 item 4: frames from the microphone DMA start to its first
- * sample (C). Measured by the item 9 loopback qualification; 0 until then. */
+ * sample (C). Decision 0017 keeps it at 0: the acoustic loopback cannot
+ * separate it from the output-path delay, so the offset stays unmeasured. */
 #ifndef SPOOKY_RECORD_MIC_LATENCY_FRAMES
 #define SPOOKY_RECORD_MIC_LATENCY_FRAMES 0U
 #endif
