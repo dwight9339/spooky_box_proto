@@ -1,5 +1,6 @@
 #include "fake_hal.h"
-#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 TestSysTick test_systick = {SysTick_CTRL_TICKINT_Msk};
 uint32_t test_tick, test_primask, test_ipsr;
@@ -46,7 +47,12 @@ void TestComplete(void)
 {
   uint32_t previous = test_ipsr;
   if (test_tx_length == 0U) return;
-  assert(test_output_length + test_tx_length <= sizeof(test_output));
+  /* Always on, unlike assert(): the copy below must never overrun. */
+  if (test_output_length + test_tx_length > sizeof(test_output))
+  {
+    fprintf(stderr, "fake_hal: test_output overflow\n");
+    abort();
+  }
   memcpy(test_output + test_output_length, test_tx_bytes, test_tx_length);
   test_output_length += test_tx_length;
   test_tx_length = 0U;

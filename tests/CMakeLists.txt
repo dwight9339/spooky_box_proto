@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 project(spooky_host_tests LANGUAGES C)
 enable_testing()
+
+# Host tests must check everything in every build type. The documented build is
+# Release, where CMake defines NDEBUG and assert() would compile to nothing, so
+# strip it from every build type's flags (full_spooky_proto-hqc).
+foreach(config RELEASE RELWITHDEBINFO MINSIZEREL)
+    string(REGEX REPLACE "[/-]D *NDEBUG" "" CMAKE_C_FLAGS_${config} "${CMAKE_C_FLAGS_${config}}")
+endforeach()
 function(spooky_test name)
     add_executable(${name} ${ARGN})
     target_include_directories(${name} PRIVATE stubs ../Common/Inc ../CM7/App)
