@@ -28,6 +28,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0016](0016-classic-scan-motion.md) | Classic scan motion, band edges and activity hold | Accepted |
 | [0017](0017-microphone-start-latency-uncompensated.md) | Microphone start latency stays uncompensated | Accepted |
 | [0018](0018-classic-am-lw-maximum-rate.md) | Classic maximum rate on AM and LW | Accepted |
+| [0019](0019-matrix-emf-four-buckets-and-quiet-baseline.md) | Four matrix EMF buckets, a quiet-field baseline and no trail by default | Accepted |
 
 ## Template
 

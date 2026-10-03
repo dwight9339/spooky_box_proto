@@ -96,6 +96,15 @@ static void current_cli_commands_map_to_the_shared_actions(void)
     CHECK(CommandPolicy_ActionFromCli("UI LEDS") == COMMAND_ACTION_UI_TEST_PATTERN);
     CHECK(CommandPolicy_ActionFromCli("UI MATRIX ANIMATE") ==
           COMMAND_ACTION_UI_TEST_PATTERN);
+    CHECK(CommandPolicy_ActionFromCli("UI MATRIX ORIENT") ==
+          COMMAND_ACTION_UI_TEST_PATTERN);
+    /* Starting the matrix feedback needs I2C2; stopping, the trail setting and
+     * the status do not (54w.8). */
+    CHECK(CommandPolicy_ActionFromCli("UI MATRIX FEEDBACK ON") ==
+          COMMAND_ACTION_UI_TEST_PATTERN);
+    CHECK(CommandPolicy_ActionFromCli("UI MATRIX FEEDBACK OFF") == COMMAND_ACTION_NONE);
+    CHECK(CommandPolicy_ActionFromCli("UI MATRIX TRAIL OFF") == COMMAND_ACTION_NONE);
+    CHECK(CommandPolicy_ActionFromCli("UI MATRIX FEEDBACK") == COMMAND_ACTION_NONE);
     CHECK(CommandPolicy_ActionFromCli("UI DISPLAY TEST 2") ==
           COMMAND_ACTION_UI_TEST_PATTERN);
     CHECK(CommandPolicy_ActionFromCli("UI STATUS") == COMMAND_ACTION_NONE);

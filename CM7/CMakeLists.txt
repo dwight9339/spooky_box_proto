@@ -68,6 +68,12 @@ if(SPOOKY_ISR_TIMING_QUALIFICATION)
     target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/App/isr_timing.c)
 endif()
 
+option(SPOOKY_MATRIX_RECORDING_QUALIFICATION
+    "Keep the decision 0013 matrix running during capture for bench qualification (54w.8)" OFF)
+if(SPOOKY_MATRIX_RECORDING_QUALIFICATION)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_MATRIX_RECORDING_QUALIFICATION=1)
+endif()
+
 set(SPOOKY_RECORDING_CARD_RESERVE_SECONDS "60" CACHE STRING
     "Seconds of three-channel audio retained before reporting card full")
 set(SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES "0" CACHE STRING
@@ -168,6 +174,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/emf_level.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/radio_activity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/radio_activity_feed.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/matrix_writer.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/matrix_service.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/matrix_adapter.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/classic_scan.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/classic_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/classic_adapter.c

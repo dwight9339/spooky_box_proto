@@ -1,6 +1,7 @@
 #include "radio_activity_feed.h"
 
 #include <stddef.h>
+#include <string.h>
 
 _Static_assert((RADIO_ACTIVITY_FEED_CAPACITY & (RADIO_ACTIVITY_FEED_CAPACITY - 1U)) == 0U,
                "the ring index wraps by masking");
@@ -26,7 +27,7 @@ static bool retune_open;
 static uint32_t retune_from;       /* first unmeasured block of the open interval */
 static bool closed_known;
 static uint32_t closed_through;    /* last unmeasured block of closed intervals */
-static uint8_t onset_max;
+static uint8_t onset_max[RADIO_ACTIVITY_READER_COUNT];
 static bool have_last;
 static bool last_measured;
 static uint32_t last_block_ms;
@@ -54,7 +55,7 @@ bool RadioActivityFeed_Init(void)
   retune_from = 0U;
   closed_known = false;
   closed_through = 0U;
-  onset_max = 0U;
+  (void)memset(onset_max, 0, sizeof(onset_max));
   have_last = false;
   last_measured = false;
   last_block_ms = 0U;
@@ -102,6 +103,7 @@ static void Drain(void)
 {
   const uint32_t head = ring_head;
   uint32_t tail = ring_tail;
+  uint32_t reader;
 
   if ((head - tail) > high_water)
   {
@@ -113,9 +115,12 @@ static void Drain(void)
     const bool measuring = Measured(entry->block);
     const RadioOnset onset = RadioActivity_OnBlock(entry->mean_abs, measuring);
 
-    if ((uint8_t)onset > onset_max)
+    for (reader = 0U; reader < (uint32_t)RADIO_ACTIVITY_READER_COUNT; ++reader)
     {
-      onset_max = (uint8_t)onset;
+      if ((uint8_t)onset > onset_max[reader])
+      {
+        onset_max[reader] = (uint8_t)onset;
+      }
     }
     ++blocks_fed;
     if (measuring)
@@ -163,11 +168,16 @@ void RadioActivityFeed_Service(uint32_t now_ms, bool radio_running, bool radio_t
   }
 }
 
-uint8_t RadioActivityFeed_TakeOnset(void)
+uint8_t RadioActivityFeed_TakeOnset(RadioActivityReader reader)
 {
-  const uint8_t onset = onset_max;
+  uint8_t onset;
 
-  onset_max = 0U;
+  if ((uint32_t)reader >= (uint32_t)RADIO_ACTIVITY_READER_COUNT)
+  {
+    return 0U;
+  }
+  onset = onset_max[reader];
+  onset_max[reader] = 0U;
   return onset;
 }
 

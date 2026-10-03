@@ -77,14 +77,13 @@ static MatrixFeedbackRgb Scale(MatrixFeedbackRgb colour, uint8_t percent)
 void MatrixFeedback_DefaultConfig(MatrixFeedbackConfig *config)
 {
   static const MatrixFeedbackRgb emf_colours[MATRIX_FEEDBACK_EMF_BUCKETS] = {
-    {70U, 50U, 220U},   /* indigo */
     {0U, 175U, 230U},   /* cyan */
-    {40U, 225U, 95U},   /* green */
+    {0U, 255U, 0U},     /* green */
     {255U, 165U, 0U},   /* amber */
     {255U, 30U, 20U}    /* red */
   };
   static const uint16_t emf_steps[MATRIX_FEEDBACK_EMF_BUCKETS] =
-    {160U, 130U, 105U, 85U, 70U};
+    {160U, 125U, 95U, 70U};
   uint32_t index;
 
   if (config == NULL)

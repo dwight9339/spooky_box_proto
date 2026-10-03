@@ -80,11 +80,11 @@ static void a_rise_fires_one_onset(void)
 {
     start();
     settled(1000, 50u);
-    CHECK(RadioActivityFeed_TakeOnset() == RADIO_ONSET_NONE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_NONE);
     CHECK(RadioActivityFeed_Valid(now_ms));
     settled(10000, 10u);
-    CHECK(RadioActivityFeed_TakeOnset() == RADIO_ONSET_LARGE);
-    CHECK(RadioActivityFeed_TakeOnset() == RADIO_ONSET_NONE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_LARGE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_NONE);
     CHECK(status_now().blocks == 60u && status_now().measured == 60u);
 }
 
@@ -107,7 +107,7 @@ static void a_retune_interval_is_not_measured(void)
     service(true, false);
     CHECK(status_now().blocks == 111u && status_now().measured == 101u);
     CHECK(RadioActivityFeed_Valid(now_ms));
-    CHECK(RadioActivityFeed_TakeOnset() == RADIO_ONSET_NONE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_NONE);
 
     /* A block delivered before the stamp but drained only by the pass that
      * closes the interval is still measured. */
@@ -130,7 +130,7 @@ static void the_mute_end_is_not_an_onset(void)
     post(1000, 1u);
     service(true, false);
     settled(1000, 40u);
-    CHECK(RadioActivityFeed_TakeOnset() == RADIO_ONSET_NONE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_NONE);
 
     retune();
     post(0, 6u);
@@ -140,7 +140,7 @@ static void the_mute_end_is_not_an_onset(void)
     post(1000, 1u);
     post(5000, 10u);                  /* a louder station */
     service(true, false);
-    CHECK(RadioActivityFeed_TakeOnset() >= RADIO_ONSET_MEDIUM);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) >= RADIO_ONSET_MEDIUM);
 }
 
 /* Decision 0015 item 8: back-to-back tunes give adjoining intervals. */
@@ -187,7 +187,7 @@ static void nothing_is_measured_while_the_radio_is_not_running(void)
     CHECK(status_now().measured == 0u && !RadioActivityFeed_Valid(now_ms));
     post(20000, 5u);
     service(false, false);
-    CHECK(RadioActivityFeed_TakeOnset() == RADIO_ONSET_NONE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_NONE);
     /* The radio starts: the first measured block seeds the averages. */
     post(1000, 1u);
     service(true, false);
@@ -230,7 +230,19 @@ static void a_band_switch_reseeds_the_averages(void)
     RadioActivityFeed_ResetAverages();
     post(10000, 10u);
     service(true, false);
-    CHECK(RadioActivityFeed_TakeOnset() == RADIO_ONSET_NONE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_NONE);
+}
+
+/* Each reader sees every onset once, independently of the other. */
+static void each_reader_takes_its_own_onsets(void)
+{
+    start();
+    settled(1000, 100u);
+    settled(10000, 10u);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_MATRIX) == RADIO_ONSET_LARGE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_MATRIX) == RADIO_ONSET_NONE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_LARGE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_COUNT) == RADIO_ONSET_NONE);
 }
 
 static void the_largest_onset_is_kept_until_taken(void)
@@ -241,7 +253,7 @@ static void the_largest_onset_is_kept_until_taken(void)
     settled(100, 300u);               /* falls and re-arms */
     post(200, 10u);                   /* a smaller rise */
     service(true, false);
-    CHECK(RadioActivityFeed_TakeOnset() == RADIO_ONSET_LARGE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_LARGE);
 }
 
 int main(void)
@@ -256,6 +268,7 @@ int main(void)
     a_full_ring_drops_the_newest();
     a_band_switch_reseeds_the_averages();
     the_largest_onset_is_kept_until_taken();
+    each_reader_takes_its_own_onsets();
     RadioActivityFeed_GetStatus(0u, NULL);
 
     if (failures != 0u) {
