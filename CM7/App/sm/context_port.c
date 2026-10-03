@@ -63,6 +63,8 @@ static bool event_for(Gesture gesture, ContextSm_EventId *event)
         switch (gesture.encoder) {
         case 0: *event = ContextSm_EventId_E0_TURN; return true;
         case 1: *event = ContextSm_EventId_E1_TURN; return true;
+        case 2: *event = ContextSm_EventId_E2_TURN; return true;
+        case 3: *event = ContextSm_EventId_E3_TURN; return true;
         default: return false;
         }
     case GESTURE_BUTTON1_DOWN:

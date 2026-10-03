@@ -61,6 +61,10 @@ static void CLASSIC_e1_click(ContextSm* sm);
 
 static void CLASSIC_e1_turn(ContextSm* sm);
 
+static void CLASSIC_e2_turn(ContextSm* sm);
+
+static void CLASSIC_e3_turn(ContextSm* sm);
+
 static void CLASSIC_shift_e1(ContextSm* sm);
 
 static void MANUAL_enter(ContextSm* sm);
@@ -258,6 +262,8 @@ void ContextSm_dispatch_event(ContextSm* sm, ContextSm_EventId event_id)
                 case ContextSm_EventId_E1_TURN: CLASSIC_e1_turn(sm); break;
                 case ContextSm_EventId_E0_CLICK: CLASSIC_e0_click(sm); break;
                 case ContextSm_EventId_E1_CLICK: CLASSIC_e1_click(sm); break;
+                case ContextSm_EventId_E2_TURN: CLASSIC_e2_turn(sm); break;
+                case ContextSm_EventId_E3_TURN: CLASSIC_e3_turn(sm); break;
                 case ContextSm_EventId_SHIFT_E1: CLASSIC_shift_e1(sm); break;
                 case ContextSm_EventId_PTT_OFF: RUNNING_ptt_off(sm); break; // First ancestor handler for this event
                 case ContextSm_EventId_RECONCILE: RUNNING_reconcile(sm); break; // First ancestor handler for this event
@@ -851,6 +857,30 @@ static void CLASSIC_e1_turn(ContextSm* sm)
     {
         // Step 1: execute action `ctx_command(CTX_CMD_JUMP_DISTANCE, ctx_detents());`
         ctx_command(CTX_CMD_JUMP_DISTANCE, ctx_detents());
+    } // end of behavior for Classic
+    
+    // No ancestor handles this event.
+}
+
+static void CLASSIC_e2_turn(ContextSm* sm)
+{
+    // Classic behavior
+    // uml: E2_TURN / { ctx_command(CTX_CMD_EDGE_BEHAVIOR, ctx_detents()); }
+    {
+        // Step 1: execute action `ctx_command(CTX_CMD_EDGE_BEHAVIOR, ctx_detents());`
+        ctx_command(CTX_CMD_EDGE_BEHAVIOR, ctx_detents());
+    } // end of behavior for Classic
+    
+    // No ancestor handles this event.
+}
+
+static void CLASSIC_e3_turn(ContextSm* sm)
+{
+    // Classic behavior
+    // uml: E3_TURN / { ctx_command(CTX_CMD_HOLD_TIME, ctx_detents()); }
+    {
+        // Step 1: execute action `ctx_command(CTX_CMD_HOLD_TIME, ctx_detents());`
+        ctx_command(CTX_CMD_HOLD_TIME, ctx_detents());
     } // end of behavior for Classic
     
     // No ancestor handles this event.
@@ -1453,8 +1483,10 @@ char const * ContextSm_event_id_to_string(ContextSm_EventId id)
         case ContextSm_EventId_E1_HOLD: return "E1_HOLD";
         case ContextSm_EventId_E1_TURN: return "E1_TURN";
         case ContextSm_EventId_E2_HOLD: return "E2_HOLD";
+        case ContextSm_EventId_E2_TURN: return "E2_TURN";
         case ContextSm_EventId_E3_CLICK: return "E3_CLICK";
         case ContextSm_EventId_E3_HOLD: return "E3_HOLD";
+        case ContextSm_EventId_E3_TURN: return "E3_TURN";
         case ContextSm_EventId_MENU_TIMEOUT: return "MENU_TIMEOUT";
         case ContextSm_EventId_PTT_OFF: return "PTT_OFF";
         case ContextSm_EventId_PTT_ON: return "PTT_ON";
