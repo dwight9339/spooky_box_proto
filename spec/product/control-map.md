@@ -147,6 +147,8 @@ One row per contextual binding. Filter by mode, workspace, layer, control, or st
 | C-107 | Field | Manual engine page | Any | Normal | Encoder 0 | Turn | Tune | Frequency changes | Defined | Decision 0009 item 13 | Only tuning control for now. |
 | C-108 | Field | Manual engine page | Any | Normal | Encoder 0 button | Click | Toggle wrap at band edges | Wrap toggles | Defined | Decision 0009 item 14 |  |
 | C-109 | Field | Field engine page | Any | Shift | Encoder 0 button | Press | Open global utility root | Global utility menu | Defined | Decision 0009 item 31 | Fires on press and ends the Shift layer (decision 0009 items 27 and 34). Allowed during a session: opening the root changes nothing; each entry inside it keeps its own class (decision 0008 item 6). |
+| C-110 | Field | Classic engine page | Any | Normal | Encoder 2 | Turn | Set edge behavior | Edge behavior steps through wrap, bounce and stop | Defined | Decision 0016 item 11 | Stops at the first and last choice. Wrap is the default. |
+| C-111 | Field | Classic engine page | Any | Normal | Encoder 3 | Turn | Set activity hold time | Hold time changes; zero turns the hold off | Defined | Decision 0016 item 16 | The activity threshold is internal. |
 
 ## Workspace index
 
