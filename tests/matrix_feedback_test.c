@@ -16,11 +16,13 @@ static MatrixFeedbackConfig config;
 static MatrixFeedbackFrame frame;
 
 static const MatrixFeedbackRgb black = {0u, 0u, 0u};
+/* A visible stand-in for the unknown colour, so the trail and geometry
+ * checks can tell it apart; the default drive value is checked separately. */
 static const MatrixFeedbackRgb grey = {55u, 58u, 62u};
 static const MatrixFeedbackRgb cyan = {0u, 175u, 230u};
 static const MatrixFeedbackRgb green = {0u, 255u, 0u};
 static const MatrixFeedbackRgb red = {255u, 30u, 20u};
-static const MatrixFeedbackRgb yellow = {230u, 200u, 40u};
+static const MatrixFeedbackRgb yellow = {120u, 240u, 10u};
 
 static bool same(MatrixFeedbackRgb a, MatrixFeedbackRgb b)
 {
@@ -77,6 +79,7 @@ static MatrixFeedbackStatus status_now(void)
 static void start(uint32_t now)
 {
     MatrixFeedback_DefaultConfig(&config);
+    config.unknown_colour = grey;
     CHECK(MatrixFeedback_Init(&config, now));
 }
 
@@ -96,6 +99,10 @@ static uint32_t step_to(uint32_t now, uint8_t target)
 
 static void config_is_validated(void)
 {
+    static const MatrixFeedbackRgb bench_grey = {1u, 2u, 2u};
+
+    MatrixFeedback_DefaultConfig(&config);
+    CHECK(same(config.unknown_colour, bench_grey));
     CHECK(!MatrixFeedback_Init(NULL, 0u));
     MatrixFeedback_DefaultConfig(&config);
     config.emf_step_ms[3] = 0u;
