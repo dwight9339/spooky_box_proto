@@ -225,14 +225,15 @@ static void test_cli(void)
 
   cli_reset();
   CHECK(Diagnostics_HandleCommand("HELP"));
-  for (uint32_t i = 0; i < 10U; ++i) Diagnostics_Service();
-  CHECK(usb_count == 10U);
+  for (uint32_t i = 0; i < 11U; ++i) Diagnostics_Service();
+  CHECK(usb_count == 11U);
   CHECK(strstr(usb_lines[2], "DIAG IDENTITY") != NULL);
   CHECK(strstr(usb_lines[3], "LOG STATUS") != NULL);
   CHECK(strstr(usb_lines[7], "WAV FETCH") != NULL);
+  CHECK(strstr(usb_lines[10], "OK CLASSIC") != NULL);
   CHECK(Diagnostics_HandleCommand("LOG STATUS"));
   Diagnostics_Service();
-  CHECK(strstr(usb_lines[10], "TX_ERRORS=4") != NULL);
+  CHECK(strstr(usb_lines[11], "TX_ERRORS=4") != NULL);
   CHECK(test_primask == 0U);
 }
 
@@ -247,7 +248,7 @@ static void test_foreground_latency(void)
   CHECK(Diagnostics_HandleCommand("DIAG LATENCY"));
   for (uint32_t i = 0U; i < FOREGROUND_SERVICE_COUNT + 2U; ++i)
     Diagnostics_Service();
-  CHECK(strstr(usb_lines[0], "BLOCK_MS=86 SERVICES=14 recording-only=1") != NULL);
+  CHECK(strstr(usb_lines[0], "BLOCK_MS=86 SERVICES=15 recording-only=1") != NULL);
   CHECK(strstr(usb_lines[1], "SERVICE=LOOP BUDGET_MS=75 MAX_MS=76 VIOLATIONS=1") != NULL);
   CHECK(strstr(usb_lines[4], "SERVICE=RECORDER BUDGET_MS=70 MAX_MS=51 VIOLATIONS=0") != NULL);
   CHECK(strstr(usb_lines[6], "SERVICE=USB BUDGET_MS=10 MAX_MS=11 VIOLATIONS=1") != NULL);

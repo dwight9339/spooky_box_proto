@@ -43,7 +43,8 @@ static const char *const help_lines[] = {
   "OK WAV FETCH REC###.WAV|ABORT (binary protocol v1)\r\n",
   "OK SD STATUS|INFO|REINIT|STRESS [size-MiB] [passes]|STRESS STOP|CLEAN|FORMAT [CONFIRM]\r\n",
   "OK UI STATUS|WATCH START|WATCH STOP|LEDS|MATRIX PROBE|MATRIX ANIMATE|"
-    "DISPLAY TEST [0|2]|DISPLAY OFF|OFF\r\n"
+    "DISPLAY TEST [0|2]|DISPLAY OFF|OFF\r\n",
+  "OK CLASSIC [RUN|PAUSE|TOGGLE|DIR|RATE n|DIST n|EDGE n]\r\n"
 };
 
 void Diagnostics_Init(void)

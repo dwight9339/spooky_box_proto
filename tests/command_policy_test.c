@@ -42,7 +42,8 @@ static void every_policy_row_has_the_decision_0008_class(void)
 #else
         COMMAND_POLICY_REJECTED, /* in-band tuning: guard until 54w.6 qualifies it */
 #endif
-        COMMAND_POLICY_REJECTED  /* band change: guard until 54w.12 qualifies it */
+        COMMAND_POLICY_REJECTED, /* band change: guard until 54w.12 qualifies it */
+        COMMAND_POLICY_ALLOWED   /* Field engine parameters (C-103 to C-106, C-110) */
     };
     for (int action = COMMAND_ACTION_NONE; action < COMMAND_ACTION_COUNT; ++action) {
         const CommandPolicyRule *rule = CommandPolicy_GetRule((CommandAction)action);
@@ -106,6 +107,10 @@ static void current_cli_commands_map_to_the_shared_actions(void)
     CHECK(CommandPolicy_ActionFromCli("UP") == COMMAND_ACTION_RADIO_TUNE);
     CHECK(CommandPolicy_ActionFromCli("DOWN") == COMMAND_ACTION_RADIO_TUNE);
     CHECK(CommandPolicy_ActionFromCli("STATUS") == COMMAND_ACTION_NONE);
+    CHECK(CommandPolicy_ActionFromCli("CLASSIC") == COMMAND_ACTION_STATUS_READ);
+    CHECK(CommandPolicy_ActionFromCli("CLASSIC PAUSE") == COMMAND_ACTION_SCAN_PARAMETER);
+    CHECK(CommandPolicy_ActionFromCli("CLASSIC RATE -2") == COMMAND_ACTION_SCAN_PARAMETER);
+    CHECK(CommandPolicy_ActionFromCli("CLASSICAL") == COMMAND_ACTION_NONE);
 }
 
 #define RUN(test)              \

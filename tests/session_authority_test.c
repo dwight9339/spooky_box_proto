@@ -9,6 +9,7 @@
 
 #include "app_dispatch.h"
 #include "app_events.h"
+#include "classic_adapter.h"
 #include "diagnostics.h"
 #include "radio_adapter.h"
 #include "radio_recorder.h"
@@ -91,6 +92,11 @@ void RadioRecorder_PublishSessionEvent(SesPublished event)
 static unsigned radio_events;
 void RadioAdapter_Init(void) {}
 void RadioAdapter_Dispatch(const EvqEvent *event) { (void)event; ++radio_events; }
+
+/* So is the Classic engine; classic_service_test covers it. */
+static unsigned classic_events;
+void ClassicAdapter_Init(void) {}
+void ClassicAdapter_Dispatch(const EvqEvent *event) { (void)event; ++classic_events; }
 
 void Diagnostics_Record(DiagEventType type, uint32_t arg0, uint32_t arg1)
 {

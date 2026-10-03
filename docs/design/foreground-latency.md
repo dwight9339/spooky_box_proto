@@ -31,7 +31,7 @@ incremental or recording-aware.
 | --- | ---: |
 | Complete foreground pass, including the 5 ms yield | 75 ms |
 | Recorder: one block conversion or one FatFs write | 70 ms |
-| Each IPC, audio, fuel, USB, WAV, logger, diagnostics, UI, SD-test, power, magnetometer and event-dispatch service | 10 ms |
+| Each IPC, audio, fuel, USB, WAV, logger, diagnostics, UI, SD-test, power, magnetometer, Classic and event-dispatch service | 10 ms |
 
 The two eight-entry audio queues reject the newest block on overflow. With the
 measured recording high-water of one block, seven unused entries represented

@@ -18,6 +18,11 @@
 bool RadioAdapter_RequestTune(uint32_t frequency_khz);
 bool RadioAdapter_RequestStep(bool up);
 bool RadioAdapter_RequestBand(uint32_t band); /* radio_control_service RadioBand */
+/* Post a scan engine's in-band tune (RAD_SOURCE_INTERNAL). Its answer goes to
+ * ClassicAdapter_OnRadioAnswer, not to the CLI. False if the queue refused it. */
+bool RadioAdapter_RequestInternalTune(uint32_t frequency_khz);
+/* A CLI radio command was posted and the Radio machine has not answered it. */
+bool RadioAdapter_CliCommandPending(void);
 
 /* The boot sequence finished; called once after the dispatcher is initialized. */
 void RadioAdapter_ReportStarted(bool ok);
