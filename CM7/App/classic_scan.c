@@ -97,11 +97,12 @@ void ClassicScan_DefaultConfig(ClassicScanConfig *config)
   config->rate_count = (uint8_t)(sizeof(rates) / sizeof(rates[0]));
   config->default_rate_index = 9U; /* 120 per minute, one jump every 500 ms */
   /* FM, AM, SW, LW: period above the worst tune round trip measured while
-   * recording, with margin. LW takes AM's until it is measured. */
+   * recording, with margin (decision 0016 item 5). AM is 180 from the listening
+   * trial (decision 0018); LW takes AM's until it is measured. */
   config->band_max_rate_per_min[0] = 400U;
-  config->band_max_rate_per_min[1] = 200U;
+  config->band_max_rate_per_min[1] = 180U;
   config->band_max_rate_per_min[2] = 240U;
-  config->band_max_rate_per_min[3] = 200U;
+  config->band_max_rate_per_min[3] = 180U;
   for (index = 0U; index < (sizeof(distances) / sizeof(distances[0])); ++index)
   {
     config->distance_channels[index] = distances[index];

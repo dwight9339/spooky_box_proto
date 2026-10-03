@@ -21,7 +21,8 @@ typedef enum AppEventType {
   APP_EVENT_RADIO_STARTED,     /* arg0 1 if the radio started */
   APP_EVENT_RADIO_TUNE_DONE,
   APP_EVENT_RADIO_TUNE_FAILED,
-  APP_EVENT_RADIO_AUDIO_FAULT
+  APP_EVENT_RADIO_AUDIO_FAULT,
+  APP_EVENT_CLASSIC_COMMAND    /* arg0 CtxCommand | RadSource << 8; arg1 signed argument */
 } AppEventType;
 
 bool AppEvents_Post(EvqClass event_class, uint16_t type, uint32_t arg0, uint32_t arg1);

@@ -29,6 +29,7 @@
 #include "audio_path_service.h"
 #include "board_diagnostics.h"
 #include "build_identity.h"
+#include "classic_adapter.h"
 #include "codec_volume_service.h"
 #include "command_policy.h"
 #include "target_logger.h"
@@ -415,6 +416,10 @@ static void UsbCliCommand(const char *line)
     BoardDiagnostics_SendBatteryStatus(true, !RadioRecorder_IsCapturing());
     return;
   }
+  if (ClassicAdapter_HandleCommand(command))
+  {
+    return;
+  }
   if (!AudioPath_IsRunning())
   {
     (void)UsbTest_SendText("ERR RADIO audio path is not running\r\n");
@@ -789,6 +794,7 @@ Error_Handler();
       PrototypePower_Service(SleepStopRadioAudio));
     RUN_FOREGROUND(FOREGROUND_SERVICE_MAGNETOMETER,
       MagnetometerTest_Service(!RadioRecorder_IsCapturing()));
+    RUN_FOREGROUND(FOREGROUND_SERVICE_CLASSIC, ClassicAdapter_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_DISPATCH, AppDispatch_Service());
     HAL_Delay(5U);
   }

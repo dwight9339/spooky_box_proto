@@ -39,6 +39,10 @@ typedef enum CommandAction {
   COMMAND_ACTION_EMF_ZERO,
   COMMAND_ACTION_RADIO_TUNE, /* TUNE, UP, DOWN: in-band; keeps the former number */
   COMMAND_ACTION_RADIO_BAND, /* BAND <band>: receiver function change */
+  /* Field engine parameters: run/pause, direction, rate, distance, edge
+   * behavior (C-103 to C-106, C-110). The engine's tunes are checked separately
+   * as COMMAND_ACTION_RADIO_TUNE. */
+  COMMAND_ACTION_SCAN_PARAMETER,
   COMMAND_ACTION_COUNT
 } CommandAction;
 

@@ -27,6 +27,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0015](0015-raw-radio-track-during-in-band-tunes.md) | Raw radio track during in-band tunes | Accepted |
 | [0016](0016-classic-scan-motion.md) | Classic scan motion, band edges and activity hold | Accepted |
 | [0017](0017-microphone-start-latency-uncompensated.md) | Microphone start latency stays uncompensated | Accepted |
+| [0018](0018-classic-am-lw-maximum-rate.md) | Classic maximum rate on AM and LW | Accepted |
 
 ## Template
 

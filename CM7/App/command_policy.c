@@ -46,7 +46,8 @@ static const CommandPolicyRule rules[COMMAND_ACTION_COUNT] = {
 #endif
   /* Band changes stay rejected until 54w.12 qualifies them. */
   [COMMAND_ACTION_RADIO_BAND] = {
-    ALLOW, REJECT, REJECT, "ERR RADIO tuning disabled while recording\r\n"}
+    ALLOW, REJECT, REJECT, "ERR RADIO tuning disabled while recording\r\n"},
+  [COMMAND_ACTION_SCAN_PARAMETER] = {ALLOW, ALLOW, ALLOW, NULL}
 };
 
 _Static_assert((sizeof(rules) / sizeof(rules[0])) == COMMAND_ACTION_COUNT,
@@ -138,6 +139,14 @@ CommandAction CommandPolicy_ActionFromCli(const char *command)
   if (strcmp(command, "EMF ZERO") == 0)
   {
     return COMMAND_ACTION_EMF_ZERO;
+  }
+  if (strcmp(command, "CLASSIC") == 0)
+  {
+    return COMMAND_ACTION_STATUS_READ;
+  }
+  if (HasWordPrefix(command, "CLASSIC"))
+  {
+    return COMMAND_ACTION_SCAN_PARAMETER;
   }
   if (strcmp(command, "BAND") == 0)
   {

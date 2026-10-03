@@ -1,6 +1,7 @@
 # 0016. Classic scan motion, band edges and activity hold
 
-- **Status:** Accepted 2026-10-02
+- **Status:** Accepted 2026-10-02; item 5 superseded for the AM and LW maximum rate by
+  [0018](0018-classic-am-lw-maximum-rate.md)
 - **Date:** 2026-10-02
 - **Supersedes:** [0009](0009-first-slice-field-controls.md) item 11 for the Classic page
   only (the Encoder 2 and Encoder 3 turns). The rest of 0009 stands.

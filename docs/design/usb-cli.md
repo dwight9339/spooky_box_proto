@@ -32,6 +32,14 @@ BAND LW
 TUNE 99100
 UP
 DOWN
+CLASSIC
+CLASSIC RUN
+CLASSIC PAUSE
+CLASSIC TOGGLE
+CLASSIC DIR
+CLASSIC RATE +1
+CLASSIC DIST -2
+CLASSIC EDGE 1
 VOLUME READ
 MAG READ
 MAG STATUS
@@ -135,7 +143,7 @@ foreground service. The budget table and queue-headroom rationale are in
 While Preparing, Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
 transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE` and `UI DISPLAY TEST`
 patterns, and radio tuning/band changes are rejected before their service handlers
-run. Status and diagnostic reads remain available. Every policy rejection is a
+run. Status and diagnostic reads and `CLASSIC` parameter commands remain available. Every policy rejection is a
 numeric `COMMAND_REJECTED` diagnostic and returns one stable `ERR` line. No command
 is deferred until the recording ends.
 
@@ -178,6 +186,60 @@ radio is out of service. A band switch is still one synchronous step.
 Band and tuning changes are rejected while recording is active. The opt-in
 `RadioTuneQual` preset admits in-band tuning while recording, for the bench
 qualification in `full_spooky_proto-54w.6` only.
+
+The radio is also tuned by the Classic scan engine, which runs from power-on (next
+section). Band and frequency are shared: a CLI `TUNE`, `UP`, `DOWN` or `BAND` moves
+them, and a running Classic continues from wherever the CLI tuned. Classic waits for
+every CLI radio command to be answered before it computes its next jump. A bench step
+that needs a fixed frequency sends `CLASSIC PAUSE` first.
+
+## Classic scan engine
+
+The device boots with the Classic engine running on FM
+([spec 001](../../spec/specs/001-classic-scan-engine/spec.md),
+[decision 0016](../decisions/0016-classic-scan-motion.md)). Until physical controls
+are wired, the CLI issues the same Classic commands as the controls of the control
+map, through the bounded M7 event queue:
+
+| Command | Effect | Control |
+|---|---|---|
+| `CLASSIC` | Report the published state | |
+| `CLASSIC TOGGLE` | Run or pause | C-103 |
+| `CLASSIC RUN`, `CLASSIC PAUSE` | Run or pause; no change if already in that state | |
+| `CLASSIC DIR` | Toggle the scan direction | C-105 |
+| `CLASSIC RATE <n>` | Move the jump rate `n` detents (signed) | C-104 |
+| `CLASSIC DIST <n>` | Move the current band's jump distance `n` detents | C-106 |
+| `CLASSIC EDGE <n>` | Move the edge behavior `n` detents through wrap, bounce, stop | C-110 |
+
+Each command is answered after it is applied, with the state, and `CLASSIC` reports
+the same line:
+
+```text
+OK CLASSIC STATE=RUNNING REASON=NONE BAND=FM FREQ=99100 CH=116/206 DIR=UP RATE=120 SET=120 LIMITED=0 DIST=1 DIST_KHZ=100 EDGE=WRAP JUMPS=0 REFUSED=0 FAILED=0
+```
+
+`STATE` is `RUNNING`, `PAUSED`, `SWEEP_COMPLETE` or `UNABLE`. `UNABLE` replaces
+`RUNNING` while Classic cannot retune, and `REASON` says why: `RADIO_STOPPED`,
+`RADIO_FAULTED`, or `SESSION` while the command policy rejects tuning during a
+session. Classic then issues nothing and does not retry; it resumes one jump period
+after tuning is possible again. `RATE` is the rate in effect and `SET` the setting;
+`LIMITED=1` means the band's maximum rate applies. `FREQ` and `CH` are the last
+completed tune. `JUMPS` counts jumps, `REFUSED` tune commands the queue refused (the
+landing waits one period), and `FAILED` tunes answered as failed, rejected,
+superseded or abandoned. A full queue answers `ERR BUSY` and malformed arguments the
+usage line. The activity hold time (C-111) has no command until the activity hold
+exists (`full_spooky_proto-54w.32`). Classic commands are allowed during a session.
+
+Every change of run state (with its reason), direction (including a bounce reversal),
+rate, distance or edge behavior is published as one line on the AUX UART log, with the
+millisecond tick and the radio sample-timeline position as `epoch:frame`
+([decision 0012](../decisions/0012-common-audio-sample-timeline.md)):
+
+```text
+[classic] t=48211 pos=1:2312448 DIRECTION STATE=RUNNING REASON=NONE DIR=DOWN RATE=120/120 LIMITED=0 DIST=1 EDGE=BOUNCE BAND=FM FREQ=107900
+```
+
+Routine jumps are not events; each completed tune is logged by the radio as usual.
 
 ## Volume
 

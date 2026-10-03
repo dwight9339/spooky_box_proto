@@ -115,6 +115,32 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | PRES-CTX-05 | `CTX_PUB_ACTION_REJECTED` | Display only: the action and "unavailable while recording" briefly, then the current view. Lights and audio are unchanged ([decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 10). | None |
 | PRES-INP-01 | `INP_PUB_SHIFT_ENTERED`, `INP_PUB_SHIFT_LEFT` | Lights: while Shift is held, only the controls with an available Shift action are lit ([decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 8) | None |
 
+## Classic scan engine events
+
+Published by the Classic service (`CM7/App/classic_service.c`) under
+[spec 001](../../../spec/specs/001-classic-scan-engine/spec.md) and
+[decision 0016](../../decisions/0016-classic-scan-motion.md). Each event carries the
+state after the change. Routine jumps change only the frequency and are not events
+([decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 12).
+
+| ID | Domain event | Required acknowledgement | CLI and log today |
+|---|---|---|---|
+| PRES-CLS-01 | `CLASSIC_PUB_RUN_STATE` | Display: running, paused, sweep complete, or unable to scan with the reason. Unable to scan is never shown as running (spec FR-027). | `[classic] ... RUN_STATE` log line; `OK CLASSIC STATE=... REASON=...` to a CLI command |
+| PRES-CLS-02 | `CLASSIC_PUB_DIRECTION` | Display, including a bounce reversal | `[classic] ... DIRECTION` log line |
+| PRES-CLS-03 | `CLASSIC_PUB_RATE` | Display: the rate in effect, and that it is limited when the band's maximum applies | `[classic] ... RATE` log line |
+| PRES-CLS-04 | `CLASSIC_PUB_DISTANCE` | Display: channels and kHz | `[classic] ... DISTANCE` log line |
+| PRES-CLS-05 | `CLASSIC_PUB_EDGE` | Display | `[classic] ... EDGE` log line |
+
+## Published Classic state
+
+| Field | CLI today |
+|---|---|
+| Run state and unable reason | `CLASSIC` replies `OK CLASSIC STATE=... REASON=...` |
+| Band, frequency, channel index and count | `CLASSIC` (`BAND`, `FREQ`, `CH`) |
+| Direction, edge behavior | `CLASSIC` (`DIR`, `EDGE`) |
+| Rate in effect, setting, limited | `CLASSIC` (`RATE`, `SET`, `LIMITED`) |
+| Jump distance in channels and kHz | `CLASSIC` (`DIST`, `DIST_KHZ`) |
+
 ## Open behavior
 
 | Item | Question | Settled by |
@@ -122,6 +148,7 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | Session events on OLED, LEDs, matrix and audio | What does each surface show for each session event, and how are failures made visible? | `full_spooky_proto-54w.1` |
 | EMF, activity and warning expression | How do the matrix and LEDs express semantic EMF, radio activity and warnings? | `full_spooky_proto-54w.8` |
 | Utility entry and exit | What does the display show when a utility opens or closes? | `full_spooky_proto-54w.5` |
+| Classic view | How does the display show Classic's run state, rate, distance, edge behavior and hold time, and is scan position expressed on the matrix? | `full_spooky_proto-54w.5` |
 | Band change during a session | How are band changes and radio faults acknowledged on display, lights and audio while recording? | `full_spooky_proto-54w.1`, [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
 | Swallowed presses | Does a button that is pressed while its gesture is swallowed or dismissed still light at 100%? | `full_spooky_proto-54w.18` |
 | Prompt audio | Is opening, confirming or cancelling the prompt acknowledged with sound? | `full_spooky_proto-54w.1` |
@@ -161,3 +188,4 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | PRES-DEV-03 | Target | Product intent. Published by the Context machine and host tested; not wired to firmware or any surface. |
 | PRES-CTX-01 to PRES-CTX-05 | Target | [Decision 0009](../../decisions/0009-first-slice-field-controls.md) and [decision 0008](../../decisions/0008-recording-safe-command-policy.md). Published by the Context machine and host tested; not wired to firmware or any surface. |
 | PRES-INP-01 | Target | [Decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 8. Published by the InputResolution machine and host tested; not wired to firmware or any surface. |
+| PRES-CLS-01 to PRES-CLS-05 | Target | Published by the Classic service and host tested; the CLI reply and log line are implemented; no bench evidence yet (`full_spooky_proto-54w.33`). No display surface (`full_spooky_proto-54w.5`). |

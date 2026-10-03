@@ -134,9 +134,20 @@ frequency, whether a tune is in flight) and whether Classic may move. When a jum
 due, the core answers with the target channel and frequency, and the caller issues the
 tune. Sweep complete is derived from position and direction, not stored. All decision
 0016 values are in one `ClassicScanConfig`. Host tests cover the landings, the edges
-and the jump schedule. The firmware does not link the core yet: the M7 wiring through
-the command policy and RadioSm, published state and events, and the unable-to-scan
-reason belong to `full_spooky_proto-54w.33`, and the activity hold to
+and the jump schedule.
+
+On the M7, `classic_service` runs the core each foreground pass against the shared
+radio and session state and issues each jump as an internal tune command to the Radio
+machine through the event queue. It issues a jump only when the shared command policy
+allows in-band tuning in the current session state and the radio is running;
+otherwise it publishes "unable to scan" with the reason and does not retry. It waits
+while the radio is tuning, while its own command is unanswered, and while a CLI radio
+command is unanswered. It publishes one event per change of run state, direction,
+rate, distance or edge behavior ([presentation](behavior/presentation.md)), and
+`classic_adapter` logs each event with the radio sample-timeline position. Until
+Context is wired, Classic is always the active engine and the CLI issues its commands
+([USB CLI](usb-cli.md#classic-scan-engine)). Host tests cover the service; bench
+evidence is pending (`full_spooky_proto-54w.33`). The activity hold is
 `full_spooky_proto-54w.32`.
 
 The USB CLI ([contract](usb-cli.md)) and recorder are bring-up implementations of
