@@ -17,15 +17,13 @@ static void buckets_follow_decision_0013_boundaries(void)
 
     EmfLevel_DefaultConfig(&config);
     CHECK(EmfLevel_Bucket(&config, 0u) == 0u);
-    CHECK(EmfLevel_Bucket(&config, 31u) == 0u);
-    CHECK(EmfLevel_Bucket(&config, 32u) == 1u);
-    CHECK(EmfLevel_Bucket(&config, 127u) == 1u);
-    CHECK(EmfLevel_Bucket(&config, 128u) == 2u);
-    CHECK(EmfLevel_Bucket(&config, 511u) == 2u);
-    CHECK(EmfLevel_Bucket(&config, 512u) == 3u);
-    CHECK(EmfLevel_Bucket(&config, 2047u) == 3u);
-    CHECK(EmfLevel_Bucket(&config, 2048u) == 4u);
-    CHECK(EmfLevel_Bucket(&config, 0xFFFFFFFFu) == 4u);
+    CHECK(EmfLevel_Bucket(&config, 149u) == 0u);
+    CHECK(EmfLevel_Bucket(&config, 150u) == 1u);
+    CHECK(EmfLevel_Bucket(&config, 399u) == 1u);
+    CHECK(EmfLevel_Bucket(&config, 400u) == 2u);
+    CHECK(EmfLevel_Bucket(&config, 1199u) == 2u);
+    CHECK(EmfLevel_Bucket(&config, 1200u) == 3u);
+    CHECK(EmfLevel_Bucket(&config, 0xFFFFFFFFu) == 3u);
 }
 
 static void config_is_validated(void)
@@ -66,7 +64,7 @@ static void unknown_until_measured_with_a_baseline(void)
     EmfLevel_OnSample(1100u, 300u, true);
     CHECK(EmfLevel_Get(1100u, &reading));
     CHECK(reading.state == EMF_LEVEL_VALID);
-    CHECK(reading.bucket == 2u);
+    CHECK(reading.bucket == 1u);
 }
 
 static void stale_and_faulted_samples_are_not_shown_as_measured(void)
@@ -76,7 +74,7 @@ static void stale_and_faulted_samples_are_not_shown_as_measured(void)
 
     EmfLevel_DefaultConfig(&config);
     CHECK(EmfLevel_Init(&config));
-    EmfLevel_OnSample(0xFFFFFF00u, 40u, true); /* across tick wrap */
+    EmfLevel_OnSample(0xFFFFFF00u, 200u, true); /* across tick wrap */
     CHECK(EmfLevel_Get(0xFFFFFF00u + 500u, &reading));
     CHECK(reading.state == EMF_LEVEL_VALID);
     CHECK(reading.age_ms == 500u);
@@ -85,15 +83,15 @@ static void stale_and_faulted_samples_are_not_shown_as_measured(void)
     CHECK(reading.state == EMF_LEVEL_STALE);
     CHECK(reading.bucket == 0u);
 
-    EmfLevel_OnSample(1000u, 3000u, true);
+    EmfLevel_OnSample(1000u, 5000u, true);
     EmfLevel_OnSensorFault();
     CHECK(EmfLevel_Get(1000u, &reading));
     CHECK(reading.state == EMF_LEVEL_SENSOR_FAULT);
     CHECK(reading.bucket == 0u);
-    EmfLevel_OnSample(1050u, 3000u, true);
+    EmfLevel_OnSample(1050u, 5000u, true);
     CHECK(EmfLevel_Get(1050u, &reading));
     CHECK(reading.state == EMF_LEVEL_VALID);
-    CHECK(reading.bucket == 4u);
+    CHECK(reading.bucket == 3u);
 }
 
 int main(void)

@@ -8,13 +8,13 @@
  * feeds it the magnetometer's change from baseline; it answers with a bucket
  * only while that measurement is current, and says why when it is not. */
 
-#define EMF_LEVEL_BUCKET_COUNT 5U
+#define EMF_LEVEL_BUCKET_COUNT 4U
 #define EMF_LEVEL_BOUNDARY_COUNT (EMF_LEVEL_BUCKET_COUNT - 1U)
 
 typedef struct
 {
-  /* Lower bound of buckets 1..4 in uT, strictly increasing. Starting values
-   * 32/128/512/2048 until bench trials fix them. */
+  /* Lower bound of buckets 1..3 in uT, strictly increasing. Bench trial
+   * values 150/400/1200 until bench trials fix them. */
   uint32_t boundary_uT[EMF_LEVEL_BOUNDARY_COUNT];
   /* A sample older than this is stale (500 ms). */
   uint32_t stale_ms;

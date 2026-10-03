@@ -11,6 +11,7 @@
 #include "app_events.h"
 #include "classic_adapter.h"
 #include "diagnostics.h"
+#include "matrix_adapter.h"
 #include "radio_adapter.h"
 #include "radio_recorder.h"
 #include "session_control.h"
@@ -88,6 +89,15 @@ void RadioRecorder_PublishSessionEvent(SesPublished event)
     }
 }
 
+/* The matrix border takes the same events (54w.8). */
+static unsigned matrix_events;
+
+void MatrixAdapter_OnSessionEvent(SesPublished event)
+{
+    (void)event;
+    ++matrix_events;
+}
+
 /* The Radio machine is routed by the same dispatcher; radio_test covers it. */
 static unsigned radio_events;
 void RadioAdapter_Init(void) {}
@@ -129,6 +139,7 @@ static void reset(void)
     last_seconds = 0;
     last_radio_ready = false;
     published_count = 0;
+    matrix_events = 0;
     mismatch_records = 0;
     AppDispatch_Init();
     AppDispatch_Service();
@@ -214,6 +225,8 @@ static void each_start_failure_has_one_explicit_outcome(void)
     CHECK(published_count == 2 && published[1] == SES_PUB_RECORDING_ABORTED);
     CHECK(Session_GetState() == SES_STATE_IDLE && !recorder_active);
     CHECK(mismatch_records == 0);
+    /* The matrix border receives every published event too. */
+    CHECK(matrix_events == published_count);
 }
 
 static void stop_while_preparing_discards_the_file(void)

@@ -72,6 +72,12 @@ UI WATCH STOP
 UI LEDS
 UI MATRIX PROBE
 UI MATRIX ANIMATE
+UI MATRIX ORIENT
+UI MATRIX FEEDBACK
+UI MATRIX FEEDBACK ON
+UI MATRIX FEEDBACK OFF
+UI MATRIX TRAIL ON
+UI MATRIX TRAIL OFF
 UI DISPLAY TEST
 UI DISPLAY TEST 0
 UI DISPLAY TEST 2
@@ -141,8 +147,8 @@ foreground service. The budget table and queue-headroom rationale are in
 [foreground latency](foreground-latency.md).
 
 While Preparing, Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
-transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE` and `UI DISPLAY TEST`
-patterns, and radio tuning/band changes are rejected before their service handlers
+transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE`, `UI MATRIX ORIENT`,
+`UI MATRIX FEEDBACK ON` and `UI DISPLAY TEST` patterns, and radio tuning/band changes are rejected before their service handlers
 run. Status and diagnostic reads and `CLASSIC` parameter commands remain available. Every policy rejection is a
 numeric `COMMAND_REJECTED` diagnostic and returns one stable `ERR` line. No command
 is deferred until the recording ends.
@@ -308,8 +314,12 @@ EMF = abs(sqrt(X*X + Y*Y + Z*Z) - baseline)
 
 The initial boot sample seeds the baseline. A low-duty background reading
 updates it every five seconds by 1/16 of the difference, giving an effective
-time constant of roughly 80 seconds. This follows slow ambient drift while
-preserving shorter magnetic disturbances. `EMF READ` returns only the single
+time constant of roughly 80 seconds, but only while the field is quiet: when
+the change from baseline is 100 µT or more the update is skipped
+([decision 0019](../decisions/0019-matrix-emf-four-buckets-and-quiet-baseline.md)).
+This follows slow ambient drift, and a magnet held near the sensor cannot drag
+the baseline and leave a false reading once it is taken away. A lasting change
+of 100 µT or more stays shown until `EMF ZERO`. `EMF READ` returns only the single
 metric, `EMF STATUS` also shows the current magnitude and baseline, and
 `EMF ZERO` immediately resets the baseline to the current field. The EMF
 stream accepts the same optional 50..60000 ms output period as the raw
@@ -370,6 +380,63 @@ enable pin.
 OK UI MATRIX ANIMATE START logical=9x9 physical-cols=2..10 step=70-ms current=0x40
 OK UI MATRIX ANIMATE PASS pixels=81 logical=9x9 blanked=1 EN=0
 ```
+
+`UI MATRIX ORIENT` initializes the controller and lights three logical corners: red
+at top-left (0,0), green at top-right (8,0) and blue at bottom-left (0,8). It shows
+how the matrix is mounted; `UI OFF` clears it. The matrix on the bench UI board is
+mounted rotated 180 degrees from the original panel mapping, and the M7 matrix writer
+corrects for it, so every logical coordinate appears the right way up.
+
+```text
+OK UI MATRIX ORIENT red=(0,0) green=(8,0) blue=(0,8); UI OFF clears
+```
+
+### Matrix feedback
+
+`UI MATRIX FEEDBACK ON` starts the M7 matrix feedback of
+[decision 0013](../decisions/0013-matrix-emf-radio-and-status-mapping.md), with the
+EMF buckets, baseline and trail default of
+[decision 0019](../decisions/0019-matrix-emf-four-buckets-and-quiet-baseline.md):
+the expanding square coloured by the EMF bucket, row kicks on radio onsets, and the
+recording border. Feedback is off at boot. It holds the matrix, so `UI MATRIX PROBE`,
+`ANIMATE` and `ORIENT` answer `ERR UI MATRIX busy ... feedback=1` until
+`UI MATRIX FEEDBACK OFF` or `UI OFF` releases it. While it runs, the magnetometer
+samples every 100 ms for the EMF level.
+
+The writer compares each frame with what the matrix shows and sends only the rows
+that changed, as I2C2 register runs (24 bytes for columns 0 to 7 and 3 bytes for
+column 8 of a row). A foreground pass keeps sending runs until 2 ms have been spent,
+so one pass can send several. I2C2 runs in fast mode (about 360 kHz) for this; see the
+[CubeMX register](cubemx-reconciliation.md).
+
+On normal images the matrix goes dark while the recorder captures: the adapter turns
+it off through the enable pin, with no I2C2 traffic, and writes the whole frame again
+when the capture ends. The opt-in qualification build
+(`-DSPOOKY_MATRIX_RECORDING_QUALIFICATION=ON`) keeps the matrix writing during a
+capture, so the recording border shows, and starts the feedback at boot so a
+`test recording-regression` run exercises it. The magnetometer is still not read
+during a capture, so in that build the outline turns dim grey while recording.
+
+`UI MATRIX FEEDBACK` alone reports the status. The `ON`, `OFF` and `TRAIL` commands
+answer with the same line:
+
+```text
+OK UI MATRIX FEEDBACK=1 TRAIL=0 SUSPENDED=0 EMF=VALID BUCKET=0 EMF_UT=21 FRAMES=132 RUNS=1261 FAILED=0 SUPERSEDED=0 DROPPED_STEPS=0 PENDING=0 RUN_US_MAX=1756 SUSPENSIONS=0
+```
+
+| Field | Meaning |
+| --- | --- |
+| `FEEDBACK`, `TRAIL` | Feedback running; trail on (seven-step loop) or off (six steps) |
+| `SUSPENDED`, `SUSPENSIONS` | Matrix dark for a capture now; captures since feedback started |
+| `EMF`, `BUCKET`, `EMF_UT` | EMF level state (`VALID`, `NO_SAMPLE`, `NO_BASELINE`, `STALE`, `SENSOR_FAULT`), its bucket, and the newest change from baseline |
+| `FRAMES`, `SUPERSEDED` | Frames composed; frames replaced before all their runs were written |
+| `RUNS`, `FAILED`, `PENDING` | Register runs written, failed, and still to write for the current frame |
+| `DROPPED_STEPS` | Animation steps skipped to keep the tempo, including the catch-up after a capture |
+| `RUN_US_MAX` | Longest single run, timed with the cycle counter |
+
+`UI MATRIX TRAIL ON` and `OFF` choose the trail, which is off by default; the setting is
+kept while feedback stops and starts. Three consecutive failed runs stop the feedback
+with `[matrix] feedback off: I2C2 writes failed`.
 
 `UI DISPLAY TEST` draws a static test image with the confirmed zero-column mapping
 and reports:

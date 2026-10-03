@@ -106,9 +106,20 @@ radio is not measuring, reseeding after reset, and the near-silence floor. The
 renderer tests check the loop geometry with and without the trail, EMF colour latched
 at step 0 with unknown shown at once, step dropping under late service, kick shift,
 clipping, decay and alternation, the recording border going dark during kicks, and
-the three-blink fault border. The firmware does not yet drive the EMF level or the
-renderer, so the tests say nothing about how the matrix looks or render cost under
-recording load.
+the three-blink fault border.
+
+The matrix-writer tests (`full_spooky_proto-54w.8`) check every logical pixel against
+the per-pixel arithmetic proven on the bench before the writer existed, with the
+180-degree mounting rotation applied, that a frame written as row runs leaves the
+registers exactly as 81 single-pixel writes would, that only changed runs are
+written, that a failed run stays pending, and that a new frame replaces the old one
+without writing its stale runs. The matrix-service tests check that nothing is written
+until feedback is enabled, that the first frame is written in full and a steady frame
+writes nothing, that an onset and the recording border change the frame, that a failed
+run is retried, that invalidating or re-enabling rewrites every run while keeping the
+session state, and that the trail is off by default and keeps its setting. They are
+host results: how the matrix looks and what the writes cost on I2C2 are bench
+evidence.
 
 The radio-activity-feed tests drive the onset detector the way the radio capture
 callback and the foreground do (`full_spooky_proto-54w.32`). They check that blocks

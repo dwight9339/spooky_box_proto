@@ -17,8 +17,8 @@ static MatrixFeedbackFrame frame;
 
 static const MatrixFeedbackRgb black = {0u, 0u, 0u};
 static const MatrixFeedbackRgb grey = {55u, 58u, 62u};
-static const MatrixFeedbackRgb indigo = {70u, 50u, 220u};
-static const MatrixFeedbackRgb green = {40u, 225u, 95u};
+static const MatrixFeedbackRgb cyan = {0u, 175u, 230u};
+static const MatrixFeedbackRgb green = {0u, 255u, 0u};
 static const MatrixFeedbackRgb red = {255u, 30u, 20u};
 static const MatrixFeedbackRgb yellow = {230u, 200u, 40u};
 
@@ -152,7 +152,7 @@ static void loop_geometry_with_and_without_trail(void)
     now = step_to(now, 0u);
     CHECK(status_now().emf_known);
     CHECK(MatrixFeedback_Compose(&frame));
-    CHECK(same(frame.pixels[4][4], indigo));
+    CHECK(same(frame.pixels[4][4], cyan));
 
     /* Trail off: six steps, restarted at step 0. Step 4 lights radii 4
      * and 3; step 5 only the edge ring at radius 4. */
@@ -163,10 +163,10 @@ static void loop_geometry_with_and_without_trail(void)
     CHECK(status.loop_steps == 6u);
     now = step_to(now, 4u);
     CHECK(MatrixFeedback_Compose(&frame));
-    CHECK(count(indigo) == 32u + 24u);
+    CHECK(count(cyan) == 32u + 24u);
     now = step_to(now, 5u);
     CHECK(MatrixFeedback_Compose(&frame));
-    CHECK(count(indigo) == 32u);
+    CHECK(count(cyan) == 32u);
     CHECK(count(black) == 49u);
     now = step_to(now, 0u);
     CHECK(status_now().step == 0u);
@@ -177,7 +177,7 @@ static void emf_colour_latches_at_step_zero_and_unknown_is_immediate(void)
     uint32_t now = 0u;
 
     start(now);
-    MatrixFeedback_SetEmf(true, 2u);
+    MatrixFeedback_SetEmf(true, 1u);
     now = step_to(now, 1u);
     now = step_to(now, 0u);
     CHECK(MatrixFeedback_Compose(&frame));
@@ -185,14 +185,14 @@ static void emf_colour_latches_at_step_zero_and_unknown_is_immediate(void)
 
     /* A new bucket mid-sweep waits for the next loop. */
     now = step_to(now, 2u);
-    MatrixFeedback_SetEmf(true, 4u);
+    MatrixFeedback_SetEmf(true, 3u);
     CHECK(MatrixFeedback_Compose(&frame));
     CHECK(count(green) == 24u);
     CHECK(count(red) == 0u);
     now = step_to(now, 0u);
-    CHECK(status_now().emf_bucket == 4u);
+    CHECK(status_now().emf_bucket == 3u);
 
-    /* Bucket 4 runs at 70 ms per step. */
+    /* Bucket 3 runs at 70 ms per step. */
     CHECK(!MatrixFeedback_Advance(now + 69u));
     CHECK(MatrixFeedback_Advance(now + 70u));
     CHECK(status_now().step == 1u);

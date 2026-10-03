@@ -15,10 +15,9 @@ void EmfLevel_DefaultConfig(EmfLevelConfig *config)
   {
     return;
   }
-  config->boundary_uT[0] = 32U;
-  config->boundary_uT[1] = 128U;
-  config->boundary_uT[2] = 512U;
-  config->boundary_uT[3] = 2048U;
+  config->boundary_uT[0] = 150U;
+  config->boundary_uT[1] = 400U;
+  config->boundary_uT[2] = 1200U;
   config->stale_ms = 500U;
 }
 

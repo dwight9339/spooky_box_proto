@@ -75,7 +75,7 @@ void ClassicAdapter_Service(void)
   ClassicWorld world;
 
   ReadWorld(&world);
-  world.onset = RadioActivityFeed_TakeOnset();
+  world.onset = RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC);
   if (world.onset != 0U)
   {
     /* One line per onset, so a bench trial can see where onsets fall

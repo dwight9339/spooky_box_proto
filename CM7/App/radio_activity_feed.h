@@ -67,8 +67,17 @@ void RadioActivityFeed_ResetAverages(void);
  * Tuning. */
 void RadioActivityFeed_Service(uint32_t now_ms, bool radio_running, bool radio_tuning,
                                bool block_known, uint32_t block_in_progress);
-/* The largest onset (RadioOnset) since the previous call, then none. */
-uint8_t RadioActivityFeed_TakeOnset(void);
+/* Readers of the onsets; each sees every onset once. */
+typedef enum
+{
+  RADIO_ACTIVITY_READER_CLASSIC = 0,  /* activity hold */
+  RADIO_ACTIVITY_READER_MATRIX,       /* decision 0013 kicks */
+  RADIO_ACTIVITY_READER_COUNT
+} RadioActivityReader;
+
+/* The largest onset (RadioOnset) since this reader's previous call, then
+ * none. An unknown reader gets none. */
+uint8_t RadioActivityFeed_TakeOnset(RadioActivityReader reader);
 /* The latest block was measured and arrived within the stale bound. */
 bool RadioActivityFeed_Valid(uint32_t now_ms);
 void RadioActivityFeed_GetStatus(uint32_t now_ms, RadioActivityFeedStatus *status);

@@ -4,6 +4,7 @@
 
 #include "app_events.h"
 #include "diagnostics.h"
+#include "matrix_adapter.h"
 #include "radio_recorder.h"
 #include "sm/session_port.h"
 
@@ -157,6 +158,7 @@ bool ses_integration_finalize_file(void)
 void ses_integration_publish(SesPublished event)
 {
   RadioRecorder_PublishSessionEvent(event);
+  MatrixAdapter_OnSessionEvent(event);
 }
 
 void ses_integration_state_changed(SesState state)

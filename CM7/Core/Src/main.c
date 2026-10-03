@@ -30,6 +30,7 @@
 #include "board_diagnostics.h"
 #include "build_identity.h"
 #include "classic_adapter.h"
+#include "matrix_adapter.h"
 #include "codec_volume_service.h"
 #include "command_policy.h"
 #include "target_logger.h"
@@ -367,6 +368,10 @@ static void UsbCliCommand(const char *line)
     return;
   }
   if (MagnetometerTest_HandleCommand(command))
+  {
+    return;
+  }
+  if (MatrixAdapter_HandleCommand(command))
   {
     return;
   }
@@ -745,6 +750,7 @@ Error_Handler();
   {
     BSP_LED_On(LED_RED);
   }
+  MatrixAdapter_Init();
   UsbTest_SetLineHandler(UsbCliCommand);
   if (!UsbTest_Start())
   {
@@ -789,6 +795,7 @@ Error_Handler();
     RUN_FOREGROUND(FOREGROUND_SERVICE_DIAGNOSTICS, Diagnostics_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_UI,
       UiBoardTest_Service(RadioRecorder_IsCapturing()));
+    RUN_FOREGROUND(FOREGROUND_SERVICE_MATRIX, MatrixAdapter_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_SD_TEST, SdTest_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_POWER,
       PrototypePower_Service(SleepStopRadioAudio));
@@ -1108,7 +1115,13 @@ static void MX_I2C2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN I2C2_Init 2 */
-
+  /* Fast mode for the matrix writer (54w.8): about 360 kHz from the 36 MHz
+   * D2PCLK1 kernel clock, PRESC 0, SCLDEL 15, SDADEL 6, SCLH 31, SCLL 55.
+   * The .ioc keeps the generated 100 kHz value; see the CubeMX register. */
+  __HAL_I2C_DISABLE(&hi2c2);
+  hi2c2.Init.Timing = 0x00F61F37U;
+  hi2c2.Instance->TIMINGR = hi2c2.Init.Timing;
+  __HAL_I2C_ENABLE(&hi2c2);
   /* USER CODE END I2C2_Init 2 */
 
 }

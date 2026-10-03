@@ -91,8 +91,23 @@ adapter stamps each interval's start before a tune or band switch is written to 
 receiver; the feed closes it one half-buffer after the radio is seen settled. The
 pixel decisions live in the portable `Common/matrix_feedback` renderer, which takes
 only those semantic facts and the recording state and composes a 9x9 frame. It can run on whichever core renders the
-matrix. Host tests cover all three; how the matrix looks and what the renderer costs
-under recording load need bench evidence.
+matrix. [Decision 0019](../decisions/0019-matrix-emf-four-buckets-and-quiet-baseline.md)
+sets the four EMF buckets, the quiet-field baseline and the trail default.
+
+While I2C2 stays on the M7, three M7 modules put the frame on the matrix
+(`full_spooky_proto-54w.8`). `matrix_writer` compares each frame with what the matrix
+shows and hands out only the changed rows as IS31FL3741 register runs, correcting for
+the matrix being mounted rotated 180 degrees. `matrix_service` feeds the renderer its
+inputs and the session events and hands the adapter one run at a time.
+`matrix_adapter` gathers the EMF level and the onsets, writes runs over I2C2 for up to
+2 ms per foreground pass (the `MATRIX` latency slot), and stops after three failed
+writes. On normal images it turns the matrix off through its enable pin while the
+recorder captures, so there is no I2C2 traffic during a capture, and writes the whole
+frame again afterwards; the opt-in `SPOOKY_MATRIX_RECORDING_QUALIFICATION` build keeps
+it writing. Feedback is off at boot and is started from the CLI
+([USB CLI](usb-cli.md#matrix-feedback)). The
+[bench evidence](../evidence/2026-10-03-matrix-feedback-on-m7.md) covers how it looks,
+its write cost and a recording regression with the matrix running.
 
 The external Pico debugprobe is development-bench infrastructure, not an
 application coprocessor. Spooky Bench provides a Windows-hosted command surface

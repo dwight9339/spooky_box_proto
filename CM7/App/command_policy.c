@@ -131,6 +131,8 @@ CommandAction CommandPolicy_ActionFromCli(const char *command)
       (strcmp(command, "UI LEDS START") == 0) ||
       (strcmp(command, "UI MATRIX ANIMATE") == 0) ||
       (strcmp(command, "UI MATRIX DEMO") == 0) ||
+      (strcmp(command, "UI MATRIX ORIENT") == 0) ||
+      (strcmp(command, "UI MATRIX FEEDBACK ON") == 0) ||
       (strcmp(command, "UI DISPLAY") == 0) ||
       HasWordPrefix(command, "UI DISPLAY TEST"))
   {
