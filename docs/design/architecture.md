@@ -124,6 +124,21 @@ bounded M7 event queue, fed from the foreground and dispatched run-to-completion
 territories; the radio controller decides whether each target needs an
 in-band tune or an expensive band/RF-path transition.
 
+The Classic engine core, `classic_scan`, follows this shape
+([spec 001](../../spec/specs/001-classic-scan-engine/spec.md),
+[decision 0016](../decisions/0016-classic-scan-motion.md)). It is portable code
+that keeps only Classic's own parameters and run state: direction, jump rate, edge
+behavior, a jump distance per band, and running or paused. Band and frequency stay
+with the radio. Each service pass passes in the shared tuning (band, last completed
+frequency, whether a tune is in flight) and whether Classic may move. When a jump is
+due, the core answers with the target channel and frequency, and the caller issues the
+tune. Sweep complete is derived from position and direction, not stored. All decision
+0016 values are in one `ClassicScanConfig`. Host tests cover the landings, the edges
+and the jump schedule. The firmware does not link the core yet: the M7 wiring through
+the command policy and RadioSm, published state and events, and the unable-to-scan
+reason belong to `full_spooky_proto-54w.33`, and the activity hold to
+`full_spooky_proto-54w.32`.
+
 The USB CLI ([contract](usb-cli.md)) and recorder are bring-up implementations of
 this model, not the final command router or `SessionManager`.
 
