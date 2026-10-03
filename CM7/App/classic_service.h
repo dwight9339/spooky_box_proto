@@ -2,7 +2,8 @@
 #define SPOOKY_CLASSIC_SERVICE_H
 
 /*
- * Classic on the M7 (spec 001, decision 0016 items 3, 8 and 21; full_spooky_proto-54w.33).
+ * Classic on the M7 (spec 001, decision 0016 items 3, 8 and 16 to 21;
+ * full_spooky_proto-54w.33, 54w.32).
  * Portable: it runs the classic_scan core against the shared radio and session
  * state that the caller reads each pass, and calls out through the integration
  * functions below. CM7/App/classic_adapter.c provides them in firmware; host
@@ -12,10 +13,13 @@
  *   allows in-band tuning in the current session state and the radio is running.
  *   Otherwise Classic publishes the run state "unable to scan" with the reason
  *   and issues nothing until tuning is possible again.
- * - Classic commands are the Context commands of C-103 to C-106 and C-110; the
- *   CLI issues the same ones (Principle III).
- * - Every change to the run state (with its reason), direction, rate, distance or
- *   edge behavior is published as one event, with the state after the change.
+ * - Classic commands are the Context commands of C-103 to C-106, C-110 and C-111;
+ *   the CLI issues the same ones (Principle III).
+ * - The activity hold runs on the radio onsets the caller passes in the world
+ *   (decision 0013), only while their measurement is valid.
+ * - Every change to the run state (with its reason), direction, rate, distance,
+ *   edge behavior or hold time is published as one event, with the state after
+ *   the change.
  *   Routine jumps change only the frequency and are not events (FR-029, FR-030).
  *
  * Not reentrant: call from the foreground loop and the dispatcher only.
@@ -27,15 +31,15 @@
 #include "classic_scan.h"
 #include "sm/context_port.h"
 
-/* Published run state (FR-028). Unable to scan replaces running while Classic
- * cannot retune; a paused Classic stays paused. Holding comes with the activity
- * hold (full_spooky_proto-54w.32). */
+/* Published run state (FR-028). Unable to scan replaces running and holding
+ * while Classic cannot retune; a paused Classic stays paused. */
 typedef enum
 {
   CLASSIC_STATE_RUNNING = 0,
   CLASSIC_STATE_PAUSED,
   CLASSIC_STATE_SWEEP_COMPLETE,
-  CLASSIC_STATE_UNABLE
+  CLASSIC_STATE_UNABLE,
+  CLASSIC_STATE_HOLDING           /* running, staying on activity (FR-020) */
 } ClassicPublishedRun;
 
 typedef enum
@@ -58,6 +62,12 @@ typedef struct
   bool radio_command_pending;
   uint8_t session_state;     /* SesState */
   bool active;               /* Classic is the active Field engine and Manual is not tuning */
+  /* The radio onset detector measured the latest radio block: the radio runs
+   * and the block is outside a retune interval (decision 0015). */
+  bool activity_valid;
+  /* Largest onset (RadioOnset) since the previous service pass; 0 outside
+   * ClassicService_Service, which is the only call that takes onsets. */
+  uint8_t onset;
 } ClassicWorld;
 
 typedef struct
@@ -75,6 +85,7 @@ typedef struct
   uint16_t channel_count;
   uint32_t frequency_khz;
   uint32_t distance_khz;
+  uint16_t hold_seconds;     /* 0: the hold is off */
 } ClassicState;
 
 /* Domain events (presentation.md PRES-CLS-*). */
@@ -85,6 +96,7 @@ typedef enum
   CLASSIC_PUB_RATE,
   CLASSIC_PUB_DISTANCE,
   CLASSIC_PUB_EDGE,
+  CLASSIC_PUB_HOLD_TIME,
   CLASSIC_PUB_COUNT
 } ClassicPublished;
 
@@ -101,13 +113,13 @@ typedef struct
   uint32_t tunes_refused;    /* tune commands the queue refused; the landing waits a period */
   uint32_t tunes_failed;     /* answered failed, rejected, superseded or abandoned */
   uint32_t events;
+  uint32_t holds;            /* holds started */
   bool tune_outstanding;     /* a tune command has not been answered yet */
 } ClassicServiceStats;
 
 /* Starts Classic in the decision 0016 startup state over the receiver's bands. */
 bool ClassicService_Init(const ClassicTerritory territories[CLASSIC_SCAN_BAND_COUNT]);
-/* Applies a Classic command. Returns false for a command Classic does not take,
- * including CTX_CMD_HOLD_TIME until the activity hold exists. */
+/* Applies a Classic command. Returns false for a command Classic does not take. */
 bool ClassicService_OnCommand(CtxCommand command, int32_t arg, uint32_t now_ms,
                               const ClassicWorld *world);
 /* The radio answered Classic's tune command; tuned is false for every answer

@@ -106,9 +106,29 @@ radio is not measuring, reseeding after reset, and the near-silence floor. The
 renderer tests check the loop geometry with and without the trail, EMF colour latched
 at step 0 with unknown shown at once, step dropping under late service, kick shift,
 clipping, decay and alternation, the recording border going dark during kicks, and
-the three-blink fault border. The firmware does not yet drive these modules, so the
-tests say nothing about how the matrix looks, the onset detector on real radio audio
-or render cost under recording load.
+the three-blink fault border. The firmware does not yet drive the EMF level or the
+renderer, so the tests say nothing about how the matrix looks or render cost under
+recording load.
+
+The radio-activity-feed tests drive the onset detector the way the radio capture
+callback and the foreground do (`full_spooky_proto-54w.32`). They check that blocks
+from the start stamp of a decision 0015 retune interval through one block after the
+radio is seen settled are not measured, that a block delivered before the stamp but
+drained later still is, that a receiver mute and its end fire no onset while a louder
+landing after the interval does, back-to-back tunes, an unreadable stream position,
+the radio not running, the 100 ms stale bound, a full ring dropping and counting the
+newest block, reseeding after a band switch, and the largest onset kept until taken.
+The Classic hold tests (decision 0016 items 16 to 20) feed onset sequences through
+the scan core and the Classic service: no hold at hold time zero or below the
+trigger size, start, extension by onsets up to the release time, release with the
+jump at once and the schedule restarted from it, the hold-time cap, one hold per
+landing (including after a failed tune), no hold without a valid measurement or
+during a tune, the hold ending when the measurement is lost, Classic cannot move or
+the frequency changes elsewhere, pause during a hold, a resume that jumps rather than
+holds, a hold-time change mid-hold, the published `HOLDING` state and its count, and
+unable to scan replacing it. These are host results: they say nothing about the
+detector on real radio audio, the half-buffer timing or where the receiver's mute
+actually falls.
 
 The IPC tests compile the same portable protocol code as both cores. They
 exercise invalid headers, version/size mismatches, first handshake, missing

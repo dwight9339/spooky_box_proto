@@ -82,9 +82,15 @@ is split the same way. Sensor interpretation stays on the M7: `emf_level` turns 
 magnetometer's change from baseline into a bucket, or an explicit unknown state (no
 sample, no baseline, stale, sensor fault), and `radio_activity` detects onsets in the
 radio audio from one mean absolute level per half-buffer, holding its averages while
-the radio is not measuring. The pixel decisions live in the portable
-`Common/matrix_feedback` renderer, which takes only those semantic facts and the
-recording state and composes a 9x9 frame. It can run on whichever core renders the
+the radio is not measuring. `radio_activity_feed` drives it from the live stream: the
+radio capture callback posts each half-buffer's level, with its index on the decision
+0012 timeline, into a 32-entry ring that drops and counts on overflow, and the
+foreground gives the blocks to the detector, marking those inside a decision 0015
+retune interval, or taken while the radio is not running, as not measuring. The radio
+adapter stamps each interval's start before a tune or band switch is written to the
+receiver; the feed closes it one half-buffer after the radio is seen settled. The
+pixel decisions live in the portable `Common/matrix_feedback` renderer, which takes
+only those semantic facts and the recording state and composes a 9x9 frame. It can run on whichever core renders the
 matrix. Host tests cover all three; how the matrix looks and what the renderer costs
 under recording load need bench evidence.
 
@@ -128,13 +134,16 @@ The Classic engine core, `classic_scan`, follows this shape
 ([spec 001](../../spec/specs/001-classic-scan-engine/spec.md),
 [decision 0016](../decisions/0016-classic-scan-motion.md)). It is portable code
 that keeps only Classic's own parameters and run state: direction, jump rate, edge
-behavior, a jump distance per band, and running or paused. Band and frequency stay
-with the radio. Each service pass passes in the shared tuning (band, last completed
-frequency, whether a tune is in flight) and whether Classic may move. When a jump is
-due, the core answers with the target channel and frequency, and the caller issues the
-tune. Sweep complete is derived from position and direction, not stored. All decision
-0016 values are in one `ClassicScanConfig`. Host tests cover the landings, the edges
-and the jump schedule.
+behavior, a jump distance per band, hold time, and running, holding or paused. Band
+and frequency stay with the radio. Each service pass passes in the shared tuning
+(band, last completed frequency, whether a tune is in flight), whether Classic may
+move, and the radio onsets since the last pass with whether their measurement is
+valid. When a jump is due, the core answers with the target channel and frequency,
+and the caller issues the tune. An onset of the trigger size starts the activity
+hold, once per landing, and jumps wait while it lasts. Sweep complete is derived from
+position and direction, not stored. All decision 0016 values are in one
+`ClassicScanConfig`. Host tests cover the landings, the edges, the jump schedule and
+the hold.
 
 On the M7, `classic_service` runs the core each foreground pass against the shared
 radio and session state and issues each jump as an internal tune command to the Radio
@@ -143,12 +152,15 @@ allows in-band tuning in the current session state and the radio is running;
 otherwise it publishes "unable to scan" with the reason and does not retry. It waits
 while the radio is tuning, while its own command is unanswered, and while a CLI radio
 command is unanswered. It publishes one event per change of run state, direction,
-rate, distance or edge behavior ([presentation](behavior/presentation.md)), and
-`classic_adapter` logs each event with the radio sample-timeline position. Until
-Context is wired, Classic is always the active engine and the CLI issues its commands
-([USB CLI](usb-cli.md#classic-scan-engine)). Host tests cover the service; bench
-evidence is pending (`full_spooky_proto-54w.33`). The activity hold is
-`full_spooky_proto-54w.32`.
+rate, distance, edge behavior or hold time ([presentation](behavior/presentation.md)),
+and `classic_adapter` logs each event with the radio sample-timeline position; it
+takes the onsets from `radio_activity_feed` once per pass. Until Context is wired,
+Classic is always the active engine and the CLI issues its commands
+([USB CLI](usb-cli.md#classic-scan-engine)). Host tests cover the service; the
+[Classic bench evidence](../evidence/2026-10-02-classic-on-m7.md) covers everything
+but the activity hold. The [hold's bench trial](../evidence/2026-10-03-classic-activity-hold.md)
+shows the mechanism working but did not meet spec SC-008: at weak reception, radio
+onsets did not separate stations from static (`full_spooky_proto-54w.32`).
 
 The USB CLI ([contract](usb-cli.md)) and recorder are bring-up implementations of
 this model, not the final command router or `SessionManager`.

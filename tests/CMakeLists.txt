@@ -83,6 +83,9 @@ spooky_test(radio_activity_test radio_activity_test.c ../CM7/App/radio_activity.
 spooky_test(matrix_feedback_test matrix_feedback_test.c ../Common/Src/matrix_feedback.c)
 # Classic scan engine core: landings, edges and the jump schedule (spec 001, 54w.7).
 spooky_test(classic_scan_test classic_scan_test.c ../CM7/App/classic_scan.c)
+# Radio onsets from the live stream, with retune intervals unmeasured (54w.32).
+spooky_test(radio_activity_feed_test radio_activity_feed_test.c
+    ../CM7/App/radio_activity_feed.c ../CM7/App/radio_activity.c)
 # Classic on the M7: radio commands, the session guard and published events (54w.33).
 spooky_test(classic_service_test classic_service_test.c ../CM7/App/classic_service.c
     ../CM7/App/classic_scan.c ../CM7/App/command_policy.c)

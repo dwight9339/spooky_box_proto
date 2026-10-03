@@ -4,20 +4,24 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Classic scan engine core (spec 001, decision 0016 items 1 to 15 and 22).
+/* Classic scan engine core (spec 001, decision 0016 items 1 to 20 and 22).
  * Portable: no HAL, no radio calls. Band and frequency are shared tuning
  * state owned by the radio, so every call that needs them takes them as
  * arguments and the engine never stores a frequency (FR-022). The engine keeps
  * only its own parameters and run state, which survive navigation, Manual and
  * engine switches while the device stays powered. The caller issues the tunes
  * the engine asks for through the shared command policy, and publishes state
- * and change events (full_spooky_proto-54w.33). The activity hold is
- * full_spooky_proto-54w.32. */
+ * and change events (full_spooky_proto-54w.33). The caller also passes the
+ * radio onsets of decision 0013 that drive the activity hold
+ * (full_spooky_proto-54w.32). */
 
 /* Bands are indexed like RadioBand: FM, AM, SW, LW. */
 #define CLASSIC_SCAN_BAND_COUNT 4U
 #define CLASSIC_SCAN_RATE_STEPS_MAX 16U
 #define CLASSIC_SCAN_DISTANCE_STEPS_MAX 24U
+#define CLASSIC_SCAN_HOLD_STEPS_MAX 12U
+/* Onset sizes as RadioOnset reports them: small, medium, large. */
+#define CLASSIC_SCAN_ONSET_SIZES 3U
 
 typedef enum
 {
@@ -34,7 +38,10 @@ typedef enum
   /* Paused on an edge with the direction pointing out of the band: resuming
    * starts a new sweep from the opposite edge (decision 0016 items 14, 15).
    * Derived from position and direction, never stored. */
-  CLASSIC_RUN_SWEEP_COMPLETE
+  CLASSIC_RUN_SWEEP_COMPLETE,
+  /* Running and staying on the landing while radio onsets continue
+   * (decision 0016 items 18, 19). */
+  CLASSIC_RUN_HOLDING
 } ClassicRunState;
 
 /* A band's channels: minimum_khz + i * step_khz, up to maximum_khz. */
@@ -61,6 +68,15 @@ typedef struct
   uint8_t distance_count;
   /* Each band's starting distance, a value of that band's sequence (item 10). */
   uint16_t default_distance[CLASSIC_SCAN_BAND_COUNT];
+  /* Hold time in seconds for Encoder 3 detents: 0 (off) first, then
+   * strictly increasing (item 16). */
+  uint16_t hold_seconds[CLASSIC_SCAN_HOLD_STEPS_MAX];
+  uint8_t hold_count;
+  uint8_t default_hold_index;
+  /* Smallest onset size that starts a hold, 1 (small) to 3 (large) (item 18). */
+  uint8_t hold_trigger_size;
+  /* A hold lasts while onsets fire no more than this far apart (item 19). */
+  uint16_t hold_release_ms;
   /* Startup (item 22). */
   bool start_running;
   bool start_up;
@@ -82,6 +98,12 @@ typedef struct
   /* The receiver can retune and the command policy allows tuning now
    * (item 21). Reporting why not is the caller's. */
   bool can_tune;
+  /* The radio activity measurement is valid and current: the radio is
+   * running and outside a retune interval (item 17, decision 0015). */
+  bool activity_valid;
+  /* Largest radio onset reported since the previous pass: 0 for none, 1 to 3
+   * for small to large (decision 0013). */
+  uint8_t onset;
 } ClassicScanInput;
 
 typedef struct
@@ -107,6 +129,7 @@ typedef struct
   uint32_t distance_khz;
   uint16_t channel_index;   /* nearest channel to the frequency */
   uint16_t channel_count;
+  uint16_t hold_seconds;    /* 0: the hold is off */
 } ClassicScanStatus;
 
 void ClassicScan_DefaultConfig(ClassicScanConfig *config);
@@ -131,13 +154,26 @@ void ClassicScan_ToggleDirection(void);
 bool ClassicScan_StepRate(int32_t detents);
 bool ClassicScan_StepDistance(uint8_t band, int32_t detents);
 bool ClassicScan_StepEdge(int32_t detents);
+/* C-111: signed detents through the hold-time table, stopping at both ends.
+ * Applies at once, including to a hold in progress; zero ends it. */
+bool ClassicScan_StepHoldTime(int32_t detents);
 
 /* One pass of the foreground loop. Returns true with *jump filled when a jump
  * is due now; the caller then issues jump->frequency_khz if jump->tune and
  * reports tune_in_flight from then until the tune ends. While the engine
  * cannot move (inactive, unable to tune, no valid tuning) nothing is issued
  * and nothing is retried; once it can move again the next jump is due one
- * period later (item 21). */
+ * period later (item 21).
+ *
+ * Activity hold (items 17 to 20): while running with a hold time above zero,
+ * an onset of at least the trigger size on a valid measurement, with no tune
+ * in flight, starts a hold, at most once per landing. A landing ends with the
+ * next jump or when the band or frequency changes. The hold lasts while onsets
+ * keep firing no more than the release time apart, up to the hold time; it
+ * ends early when the measurement becomes invalid or Classic stops moving.
+ * Jumps wait while it lasts. A hold only ever lengthens a dwell: when it ends
+ * after the next jump was due, that jump is issued at once and the schedule
+ * starts again from it; when it ends earlier, the jump keeps its due time. */
 bool ClassicScan_Service(uint32_t now_ms, const ClassicScanInput *input,
                          ClassicScanJump *jump);
 

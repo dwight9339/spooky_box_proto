@@ -7,6 +7,7 @@
 #include "audio_path_service.h"
 #include "classic_service.h"
 #include "main.h"
+#include "radio_activity_feed.h"
 #include "radio_adapter.h"
 #include "radio_control_service.h"
 #include "sm/session_port.h"
@@ -18,6 +19,15 @@ _Static_assert((uint32_t)RADIO_BAND_COUNT == CLASSIC_SCAN_BAND_COUNT,
 /* arg0 of APP_EVENT_CLASSIC_COMMAND: CtxCommand in bits 0-7, RadSource in 8-15. */
 #define CLASSIC_COMMAND_MASK 0xFFU
 #define CLASSIC_SOURCE_SHIFT 8U
+
+static const char *BandName(uint8_t band);
+
+static const char *OnsetName(uint8_t onset)
+{
+  static const char *const names[] = {"NONE", "SMALL", "MEDIUM", "LARGE"};
+
+  return (onset < (sizeof(names) / sizeof(names[0]))) ? names[onset] : "UNKNOWN";
+}
 
 static void ReadWorld(ClassicWorld *world)
 {
@@ -37,6 +47,8 @@ static void ReadWorld(ClassicWorld *world)
   /* Classic is the only Field engine in firmware until Context is wired
    * (full_spooky_proto-54w.4, 54w.5; p04.3 for the demo). */
   world->active = true;
+  world->activity_valid = RadioActivityFeed_Valid(HAL_GetTick());
+  world->onset = 0U; /* onsets go to the service pass only */
 }
 
 void ClassicAdapter_Init(void)
@@ -63,6 +75,15 @@ void ClassicAdapter_Service(void)
   ClassicWorld world;
 
   ReadWorld(&world);
+  world.onset = RadioActivityFeed_TakeOnset();
+  if (world.onset != 0U)
+  {
+    /* One line per onset, so a bench trial can see where onsets fall
+     * (decision 0016 item 23). */
+    printf("[activity] t=%lu ONSET=%s BAND=%s FREQ=%lu\r\n", (unsigned long)HAL_GetTick(),
+           OnsetName(world.onset), BandName(world.band),
+           (unsigned long)world.frequency_khz);
+  }
   ClassicService_Service(HAL_GetTick(), &world);
 }
 
@@ -123,6 +144,30 @@ void ClassicAdapter_OnRadioAnswer(RadPublished event, const RadCommand *command)
   }
 }
 
+/* `OK CLASSIC ACTIVITY ...`: the radio onset measurement behind the hold.
+ * RATIO_X100 is the detector's fast/slow ratio times 100; ONSETS counts small,
+ * medium and large onsets since boot. */
+static void SendActivity(void)
+{
+  RadioActivityFeedStatus feed;
+  RadioActivityStatus detector;
+  char response[224];
+
+  RadioActivityFeed_GetStatus(HAL_GetTick(), &feed);
+  (void)RadioActivity_GetStatus(&detector);
+  (void)snprintf(response, sizeof(response),
+                 "OK CLASSIC ACTIVITY VALID=%u RETUNING=%u RATIO_X100=%lu "
+                 "ONSETS=%lu/%lu/%lu BLOCKS=%lu MEASURED=%lu DROPPED=%lu HIGH=%lu "
+                 "RETUNES=%lu\r\n",
+                 feed.valid ? 1U : 0U, feed.retuning ? 1U : 0U,
+                 (unsigned long)((detector.ratio_q8 * 100U) / 256U),
+                 (unsigned long)detector.onsets[0], (unsigned long)detector.onsets[1],
+                 (unsigned long)detector.onsets[2], (unsigned long)feed.blocks,
+                 (unsigned long)feed.measured, (unsigned long)feed.dropped,
+                 (unsigned long)feed.high_water, (unsigned long)feed.retunes);
+  (void)UsbTest_SendText(response);
+}
+
 /* A signed decimal detent count of at most four digits, alone on the line. */
 static bool ParseDetents(const char *text, int32_t *detents)
 {
@@ -165,7 +210,8 @@ bool ClassicAdapter_HandleCommand(const char *command)
     {"DIR", CTX_CMD_TOGGLE_DIRECTION, 0, false},                /* C-105 */
     {"RATE ", CTX_CMD_JUMP_RATE, 0, true},                      /* C-104 */
     {"DIST ", CTX_CMD_JUMP_DISTANCE, 0, true},                  /* C-106 */
-    {"EDGE ", CTX_CMD_EDGE_BEHAVIOR, 0, true}                   /* C-110 */
+    {"EDGE ", CTX_CMD_EDGE_BEHAVIOR, 0, true},                  /* C-110 */
+    {"HOLD ", CTX_CMD_HOLD_TIME, 0, true}                       /* C-111 */
   };
   const char *rest;
   uint32_t index;
@@ -184,6 +230,11 @@ bool ClassicAdapter_HandleCommand(const char *command)
     return false;
   }
   rest = &command[8];
+  if (strcmp(rest, "ACTIVITY") == 0)
+  {
+    SendActivity();
+    return true;
+  }
   for (index = 0U; index < (sizeof(commands) / sizeof(commands[0])); ++index)
   {
     const size_t length = strlen(commands[index].word);
@@ -203,7 +254,7 @@ bool ClassicAdapter_HandleCommand(const char *command)
     return true;
   }
   (void)UsbTest_SendText(
-    "ERR usage: CLASSIC [RUN|PAUSE|TOGGLE|DIR|RATE n|DIST n|EDGE n]\r\n");
+    "ERR usage: CLASSIC [RUN|PAUSE|TOGGLE|DIR|RATE n|DIST n|EDGE n|HOLD n|ACTIVITY]\r\n");
   return true;
 }
 
@@ -230,8 +281,8 @@ void ClassicAdapter_SendStatus(void)
   ClassicService_GetStats(&stats);
   (void)snprintf(response, sizeof(response),
                  "OK CLASSIC STATE=%s REASON=%s BAND=%s FREQ=%lu CH=%u/%u DIR=%s "
-                 "RATE=%u SET=%u LIMITED=%u DIST=%u DIST_KHZ=%lu EDGE=%s "
-                 "JUMPS=%lu REFUSED=%lu FAILED=%lu\r\n",
+                 "RATE=%u SET=%u LIMITED=%u DIST=%u DIST_KHZ=%lu EDGE=%s HOLD=%u "
+                 "JUMPS=%lu REFUSED=%lu FAILED=%lu HOLDS=%lu\r\n",
                  ClassicService_RunName(state.run_state),
                  ClassicService_ReasonName(state.unable_reason),
                  BandName(state.band), (unsigned long)state.frequency_khz,
@@ -240,9 +291,9 @@ void ClassicAdapter_SendStatus(void)
                  (unsigned)state.rate_per_min, (unsigned)state.rate_setting_per_min,
                  state.rate_limited ? 1U : 0U, (unsigned)state.distance_channels,
                  (unsigned long)state.distance_khz,
-                 ClassicService_EdgeName(state.edge),
+                 ClassicService_EdgeName(state.edge), (unsigned)state.hold_seconds,
                  (unsigned long)stats.jumps, (unsigned long)stats.tunes_refused,
-                 (unsigned long)stats.tunes_failed);
+                 (unsigned long)stats.tunes_failed, (unsigned long)stats.holds);
   (void)UsbTest_SendText(response);
 }
 
@@ -289,12 +340,13 @@ void classic_integration_publish(ClassicPublished event, uint32_t now_ms,
     FormatFrame(position.frame, frame);
   }
   printf("[classic] t=%lu pos=%lu:%s %s STATE=%s REASON=%s DIR=%s RATE=%u/%u "
-         "LIMITED=%u DIST=%u EDGE=%s BAND=%s FREQ=%lu\r\n",
+         "LIMITED=%u DIST=%u EDGE=%s HOLD=%u BAND=%s FREQ=%lu\r\n",
          (unsigned long)now_ms, epoch, frame, ClassicService_EventName(event),
          ClassicService_RunName(state->run_state),
          ClassicService_ReasonName(state->unable_reason),
          state->direction_up ? "UP" : "DOWN", (unsigned)state->rate_per_min,
          (unsigned)state->rate_setting_per_min, state->rate_limited ? 1U : 0U,
          (unsigned)state->distance_channels, ClassicService_EdgeName(state->edge),
-         BandName(state->band), (unsigned long)state->frequency_khz);
+         (unsigned)state->hold_seconds, BandName(state->band),
+         (unsigned long)state->frequency_khz);
 }

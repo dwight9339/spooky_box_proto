@@ -125,11 +125,12 @@ state after the change. Routine jumps change only the frequency and are not even
 
 | ID | Domain event | Required acknowledgement | CLI and log today |
 |---|---|---|---|
-| PRES-CLS-01 | `CLASSIC_PUB_RUN_STATE` | Display: running, paused, sweep complete, or unable to scan with the reason. Unable to scan is never shown as running (spec FR-027). | `[classic] ... RUN_STATE` log line; `OK CLASSIC STATE=... REASON=...` to a CLI command |
+| PRES-CLS-01 | `CLASSIC_PUB_RUN_STATE` | Display: running, holding, paused, sweep complete, or unable to scan with the reason. Unable to scan is never shown as running or holding (spec FR-027); holding is distinct from paused (FR-020). | `[classic] ... RUN_STATE` log line; `OK CLASSIC STATE=... REASON=...` to a CLI command |
 | PRES-CLS-02 | `CLASSIC_PUB_DIRECTION` | Display, including a bounce reversal | `[classic] ... DIRECTION` log line |
 | PRES-CLS-03 | `CLASSIC_PUB_RATE` | Display: the rate in effect, and that it is limited when the band's maximum applies | `[classic] ... RATE` log line |
 | PRES-CLS-04 | `CLASSIC_PUB_DISTANCE` | Display: channels and kHz | `[classic] ... DISTANCE` log line |
 | PRES-CLS-05 | `CLASSIC_PUB_EDGE` | Display | `[classic] ... EDGE` log line |
+| PRES-CLS-06 | `CLASSIC_PUB_HOLD_TIME` | Display: the hold time, or that the hold is off | `[classic] ... HOLD_TIME` log line |
 
 ## Published Classic state
 
@@ -140,6 +141,7 @@ state after the change. Routine jumps change only the frequency and are not even
 | Direction, edge behavior | `CLASSIC` (`DIR`, `EDGE`) |
 | Rate in effect, setting, limited | `CLASSIC` (`RATE`, `SET`, `LIMITED`) |
 | Jump distance in channels and kHz | `CLASSIC` (`DIST`, `DIST_KHZ`) |
+| Hold time | `CLASSIC` (`HOLD`) |
 
 ## Open behavior
 
@@ -188,4 +190,5 @@ state after the change. Routine jumps change only the frequency and are not even
 | PRES-DEV-03 | Target | Product intent. Published by the Context machine and host tested; not wired to firmware or any surface. |
 | PRES-CTX-01 to PRES-CTX-05 | Target | [Decision 0009](../../decisions/0009-first-slice-field-controls.md) and [decision 0008](../../decisions/0008-recording-safe-command-policy.md). Published by the Context machine and host tested; not wired to firmware or any surface. |
 | PRES-INP-01 | Target | [Decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 8. Published by the InputResolution machine and host tested; not wired to firmware or any surface. |
-| PRES-CLS-01 to PRES-CLS-05 | Target | Published by the Classic service and host tested; the CLI reply and log line are implemented; no bench evidence yet (`full_spooky_proto-54w.33`). No display surface (`full_spooky_proto-54w.5`). |
+| PRES-CLS-01 to PRES-CLS-05 | Proven for the CLI reply and log line | [Classic on the M7](../../evidence/2026-10-02-classic-on-m7.md), without the holding run state. No display surface (`full_spooky_proto-54w.5`). |
+| PRES-CLS-01 holding, PRES-CLS-06 | Proven for the CLI reply and log line | [Classic activity hold](../../evidence/2026-10-03-classic-activity-hold.md). When the hold triggers is not settled (spec SC-008 failed; `full_spooky_proto-54w.32`). No display surface (`full_spooky_proto-54w.5`). |

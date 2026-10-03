@@ -55,6 +55,11 @@ typedef struct
  * few instructions. False before the stream starts or if the completed-half
  * count moved backwards (the stream must restart). */
 bool AudioPath_GetPosition(AudioTimelinePosition *position);
+/* Foreground only: the index of the radio half-buffer being captured now,
+ * position.frame / 512, the same index the capture callback gives each
+ * delivered half-buffer. Readable while the stream is gated. False when
+ * AudioPath_GetPosition is. */
+bool AudioPath_GetBlockInProgress(uint32_t *block);
 /* Foreground only, with interrupts already masked by the caller, immediately
  * before the microphone DMA starts (decision 0012 item 4). False if the stream
  * is not running or gated, since gated halves are not delivered yet. */

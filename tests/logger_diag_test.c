@@ -248,10 +248,12 @@ static void test_foreground_latency(void)
   CHECK(Diagnostics_HandleCommand("DIAG LATENCY"));
   for (uint32_t i = 0U; i < FOREGROUND_SERVICE_COUNT + 2U; ++i)
     Diagnostics_Service();
-  CHECK(strstr(usb_lines[0], "BLOCK_MS=86 SERVICES=15 recording-only=1") != NULL);
+  CHECK(strstr(usb_lines[0], "BLOCK_MS=86 SERVICES=16 recording-only=1") != NULL);
   CHECK(strstr(usb_lines[1], "SERVICE=LOOP BUDGET_MS=75 MAX_MS=76 VIOLATIONS=1") != NULL);
   CHECK(strstr(usb_lines[4], "SERVICE=RECORDER BUDGET_MS=70 MAX_MS=51 VIOLATIONS=0") != NULL);
   CHECK(strstr(usb_lines[6], "SERVICE=USB BUDGET_MS=10 MAX_MS=11 VIOLATIONS=1") != NULL);
+  CHECK(strstr(usb_lines[FOREGROUND_SERVICE_ACTIVITY + 1U],
+               "SERVICE=ACTIVITY BUDGET_MS=10") != NULL);
   CHECK(strcmp(usb_lines[FOREGROUND_SERVICE_COUNT + 1U],
                "OK DIAG LATENCY END\r\n") == 0);
   CHECK(Diagnostics_HandleCommand("DIAG LAST"));

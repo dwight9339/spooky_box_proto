@@ -2,8 +2,9 @@
 #define SPOOKY_CLASSIC_ADAPTER_H
 
 /*
- * Firmware wiring of the Classic service (full_spooky_proto-54w.33). It reads the
- * shared radio and session state, issues Classic's tunes to the Radio machine
+ * Firmware wiring of the Classic service (full_spooky_proto-54w.33, 54w.32). It
+ * reads the shared radio and session state and the radio onsets of
+ * radio_activity_feed.c, issues Classic's tunes to the Radio machine
  * through the M7 event queue, takes Classic commands from the queue, and
  * publishes Classic's events on the log stamped with the integration clock and
  * the radio sample timeline (decision 0012). Foreground only.
@@ -18,7 +19,8 @@
 
 /* After RadioAdapter_Init: Classic starts running on FM (decision 0016 item 22). */
 void ClassicAdapter_Init(void);
-/* One pass: may issue Classic's next jump. Call once per foreground pass. */
+/* One pass: takes the radio onsets since the last pass and may issue Classic's
+ * next jump. Call once per foreground pass, after RadioAdapter_ServiceActivity. */
 void ClassicAdapter_Service(void);
 
 /* Post a CLI Classic command; the reply follows when it is dispatched. False if

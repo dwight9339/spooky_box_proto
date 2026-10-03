@@ -210,36 +210,68 @@ map, through the bounded M7 event queue:
 | `CLASSIC RATE <n>` | Move the jump rate `n` detents (signed) | C-104 |
 | `CLASSIC DIST <n>` | Move the current band's jump distance `n` detents | C-106 |
 | `CLASSIC EDGE <n>` | Move the edge behavior `n` detents through wrap, bounce, stop | C-110 |
+| `CLASSIC HOLD <n>` | Move the activity hold time `n` detents through 0 (off), 1, 2, 3, 5, 8, 10, 15, 20 and 30 s | C-111 |
+| `CLASSIC ACTIVITY` | Report the radio onset measurement behind the hold (bench diagnostic) | |
 
 Each command is answered after it is applied, with the state, and `CLASSIC` reports
 the same line:
 
 ```text
-OK CLASSIC STATE=RUNNING REASON=NONE BAND=FM FREQ=99100 CH=116/206 DIR=UP RATE=120 SET=120 LIMITED=0 DIST=1 DIST_KHZ=100 EDGE=WRAP JUMPS=0 REFUSED=0 FAILED=0
+OK CLASSIC STATE=RUNNING REASON=NONE BAND=FM FREQ=99100 CH=116/206 DIR=UP RATE=120 SET=120 LIMITED=0 DIST=1 DIST_KHZ=100 EDGE=WRAP HOLD=0 JUMPS=0 REFUSED=0 FAILED=0 HOLDS=0
 ```
 
-`STATE` is `RUNNING`, `PAUSED`, `SWEEP_COMPLETE` or `UNABLE`. `UNABLE` replaces
-`RUNNING` while Classic cannot retune, and `REASON` says why: `RADIO_STOPPED`,
-`RADIO_FAULTED`, or `SESSION` while the command policy rejects tuning during a
-session. Classic then issues nothing and does not retry; it resumes one jump period
-after tuning is possible again. `RATE` is the rate in effect and `SET` the setting;
-`LIMITED=1` means the band's maximum rate applies. `FREQ` and `CH` are the last
-completed tune. `JUMPS` counts jumps, `REFUSED` tune commands the queue refused (the
-landing waits one period), and `FAILED` tunes answered as failed, rejected,
-superseded or abandoned. A full queue answers `ERR BUSY` and malformed arguments the
-usage line. The activity hold time (C-111) has no command until the activity hold
-exists (`full_spooky_proto-54w.32`). Classic commands are allowed during a session.
+`STATE` is `RUNNING`, `HOLDING`, `PAUSED`, `SWEEP_COMPLETE` or `UNABLE`. `UNABLE`
+replaces `RUNNING` and `HOLDING` while Classic cannot retune, and `REASON` says why:
+`RADIO_STOPPED`, `RADIO_FAULTED`, or `SESSION` while the command policy rejects tuning
+during a session. Classic then issues nothing and does not retry; it resumes one jump
+period after tuning is possible again. `RATE` is the rate in effect and `SET` the
+setting; `LIMITED=1` means the band's maximum rate applies. `FREQ` and `CH` are the
+last completed tune. `HOLD` is the hold time in seconds, 0 when off. `JUMPS` counts
+jumps, `REFUSED` tune commands the queue refused (the landing waits one period),
+`FAILED` tunes answered as failed, rejected, superseded or abandoned, and `HOLDS`
+holds started. A full queue answers `ERR BUSY` and malformed arguments the usage
+line. Classic commands are allowed during a session.
+
+`HOLDING` means Classic is staying on its landing because the radio audio has onsets
+(decision 0016 items 17 to 20): a hold starts on an onset of at least medium size,
+lasts while onsets of any size follow within 1.5 s, ends at the hold time at most,
+and happens at most once per landing. A hold never shortens a dwell: when it ends
+before the next jump is due, the jump keeps its time. Onsets come from the decision
+0013 detector, fed one level per radio half-buffer; from each tune or band switch
+until one half-buffer after the radio is seen settled, blocks are not measured
+([decision 0015](../decisions/0015-raw-radio-track-during-in-band-tunes.md)), so no
+hold starts there. `CLASSIC ACTIVITY` replies:
+
+```text
+OK CLASSIC ACTIVITY VALID=1 RETUNING=0 RATIO_X100=104 ONSETS=12/3/1 BLOCKS=56230 MEASURED=55120 DROPPED=0 HIGH=5 RETUNES=310
+```
+
+`VALID=1` means the latest radio block was measured and arrived within 100 ms.
+`RETUNING=1` while a retune interval is open. `RATIO_X100` is the detector's
+fast/slow level ratio times 100. `ONSETS` counts small, medium and large onsets since
+boot. `BLOCKS` and `MEASURED` count half-buffers given to the detector and those
+measured. `DROPPED` counts half-buffers the 32-entry feed refused because the
+foreground had not drained it, and `HIGH` is the most waiting at once. `RETUNES`
+counts retune intervals started.
 
 Every change of run state (with its reason), direction (including a bounce reversal),
-rate, distance or edge behavior is published as one line on the AUX UART log, with the
-millisecond tick and the radio sample-timeline position as `epoch:frame`
+rate, distance, edge behavior or hold time is published as one line on the AUX UART
+log, with the millisecond tick and the radio sample-timeline position as `epoch:frame`
 ([decision 0012](../decisions/0012-common-audio-sample-timeline.md)):
 
 ```text
-[classic] t=48211 pos=1:2312448 DIRECTION STATE=RUNNING REASON=NONE DIR=DOWN RATE=120/120 LIMITED=0 DIST=1 EDGE=BOUNCE BAND=FM FREQ=107900
+[classic] t=48211 pos=1:2312448 DIRECTION STATE=RUNNING REASON=NONE DIR=DOWN RATE=120/120 LIMITED=0 DIST=1 EDGE=BOUNCE HOLD=0 BAND=FM FREQ=107900
 ```
 
-Routine jumps are not events; each completed tune is logged by the radio as usual.
+Routine jumps are not events; each completed tune is logged by the radio as usual. A
+hold is two `RUN_STATE` lines, `STATE=HOLDING` and then `STATE=RUNNING` (or
+`PAUSED`), whose ticks give its length. Each radio onset the Classic service receives
+is also logged, with the frequency of the last completed tune, whether or not the
+hold is on, so a bench trial can see where onsets fall (decision 0016 item 23):
+
+```text
+[activity] t=27347 ONSET=SMALL BAND=FM FREQ=89200
+```
 
 ## Volume
 

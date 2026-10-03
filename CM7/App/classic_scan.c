@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #define CLASSIC_MS_PER_MINUTE 60000U
+#define CLASSIC_MS_PER_SECOND 1000U
 /* Larger turns clamp at the table ends anyway; this keeps index sums small. */
 #define CLASSIC_DETENT_LIMIT 255
 
@@ -16,6 +17,18 @@ static bool scan_up;
 static ClassicEdge scan_edge;
 static uint8_t scan_rate_index;
 static uint16_t scan_distance[CLASSIC_SCAN_BAND_COUNT];
+static uint8_t scan_hold_index;
+
+/* Activity hold (decision 0016 items 17 to 20). The landing is the band and
+ * frequency Classic is waiting on; landing_held marks that it has had its one
+ * hold. */
+static bool hold_active;
+static bool landing_held;
+static bool landing_known;
+static uint8_t landing_band;
+static uint32_t landing_khz;
+static uint32_t hold_start_ms;
+static uint32_t hold_last_onset_ms;
 
 /* Jump schedule (decision 0016 items 7, 8, 21). due_frac counts the
  * remainder of 60000 / due_rate in 1/due_rate ms, so periods that are not a
@@ -23,6 +36,7 @@ static uint16_t scan_distance[CLASSIC_SCAN_BAND_COUNT];
 static bool schedule_armed;
 static bool resume_pending;
 static bool waited_for_tune;
+static bool held_past_due;
 static uint32_t due_ms;
 static uint32_t due_frac;
 static uint16_t due_rate;
@@ -83,6 +97,10 @@ void ClassicScan_DefaultConfig(ClassicScanConfig *config)
     1U, 2U, 3U, 4U, 5U, 7U, 10U, 15U, 20U, 30U, 50U, 70U, 100U, 150U, 200U,
     300U, 500U, 700U, 1000U, 1500U, 2000U
   };
+  static const uint16_t holds[] =
+  {
+    0U, 1U, 2U, 3U, 5U, 8U, 10U, 15U, 20U, 30U
+  };
   uint32_t index;
 
   if (config == NULL)
@@ -112,6 +130,14 @@ void ClassicScan_DefaultConfig(ClassicScanConfig *config)
   config->default_distance[1] = 1U;  /* AM 10 kHz */
   config->default_distance[2] = 20U; /* SW 100 kHz */
   config->default_distance[3] = 1U;  /* LW 9 kHz */
+  for (index = 0U; index < (sizeof(holds) / sizeof(holds[0])); ++index)
+  {
+    config->hold_seconds[index] = holds[index];
+  }
+  config->hold_count = (uint8_t)(sizeof(holds) / sizeof(holds[0]));
+  config->default_hold_index = 0U; /* off */
+  config->hold_trigger_size = 2U;  /* medium */
+  config->hold_release_ms = 1500U;
   config->start_running = true;
   config->start_up = true;
   config->start_edge = CLASSIC_EDGE_WRAP;
@@ -189,6 +215,16 @@ static bool StrictlyIncreasing(const uint16_t *values, uint8_t count)
   return true;
 }
 
+/* Zero (off) first, then strictly increasing, with at least one hold time. */
+static bool HoldTableValid(const ClassicScanConfig *config)
+{
+  return (config->hold_count >= 2U) &&
+         (config->hold_count <= CLASSIC_SCAN_HOLD_STEPS_MAX) &&
+         (config->hold_seconds[0] == 0U) &&
+         StrictlyIncreasing(&config->hold_seconds[1],
+                            (uint8_t)(config->hold_count - 1U));
+}
+
 bool ClassicScan_Init(const ClassicScanConfig *config,
                       const ClassicTerritory territories[CLASSIC_SCAN_BAND_COUNT])
 {
@@ -203,7 +239,12 @@ bool ClassicScan_Init(const ClassicScanConfig *config,
       (config->distance_count > CLASSIC_SCAN_DISTANCE_STEPS_MAX) ||
       ((uint32_t)config->start_edge >= (uint32_t)CLASSIC_EDGE_COUNT) ||
       !StrictlyIncreasing(config->rate_per_min, config->rate_count) ||
-      !StrictlyIncreasing(config->distance_channels, config->distance_count))
+      !StrictlyIncreasing(config->distance_channels, config->distance_count) ||
+      !HoldTableValid(config) ||
+      (config->default_hold_index >= config->hold_count) ||
+      (config->hold_trigger_size == 0U) ||
+      (config->hold_trigger_size > CLASSIC_SCAN_ONSET_SIZES) ||
+      (config->hold_release_ms == 0U))
   {
     return false;
   }
@@ -229,9 +270,18 @@ bool ClassicScan_Init(const ClassicScanConfig *config,
   scan_up = config->start_up;
   scan_edge = config->start_edge;
   scan_rate_index = config->default_rate_index;
+  scan_hold_index = config->default_hold_index;
+  hold_active = false;
+  landing_held = false;
+  landing_known = false;
+  landing_band = 0U;
+  landing_khz = 0U;
+  hold_start_ms = 0U;
+  hold_last_onset_ms = 0U;
   schedule_armed = false;
   resume_pending = false;
   waited_for_tune = false;
+  held_past_due = false;
   due_ms = 0U;
   due_frac = 0U;
   due_rate = 0U;
@@ -283,6 +333,8 @@ void ClassicScan_ToggleRun(void)
     return;
   }
   scan_running = !scan_running;
+  /* Pausing ends a hold (item 20). */
+  hold_active = false;
   /* A resume makes its first jump at once (item 8); a pause cancels it. */
   resume_pending = scan_running;
   schedule_armed = false;
@@ -347,6 +399,18 @@ bool ClassicScan_StepEdge(int32_t detents)
   return scan_edge != previous;
 }
 
+bool ClassicScan_StepHoldTime(int32_t detents)
+{
+  const uint8_t previous = scan_hold_index;
+
+  if (!scan_ready)
+  {
+    return false;
+  }
+  scan_hold_index = StepWithin(scan_hold_index, scan_config.hold_count, detents);
+  return scan_hold_index != previous;
+}
+
 /* Next due time, one period of `rate` after the current one. */
 static void AdvanceDue(uint16_t rate)
 {
@@ -375,6 +439,56 @@ static void RestartScheduleAt(uint32_t now_ms, uint16_t rate)
 static bool Reached(uint32_t now_ms, uint32_t when_ms)
 {
   return (int32_t)(now_ms - when_ms) >= 0;
+}
+
+/* A new band or frequency is a new landing, which may hold once (item 20).
+ * A jump whose tune is refused or fails stays on the same landing. */
+static void TrackLanding(const ClassicScanInput *input)
+{
+  if (!landing_known || (input->band != landing_band) ||
+      (input->frequency_khz != landing_khz))
+  {
+    landing_known = true;
+    landing_band = input->band;
+    landing_khz = input->frequency_khz;
+    landing_held = false;
+    hold_active = false;
+  }
+}
+
+/* Starts, extends or ends the hold (items 17 to 19). Returns true when a
+ * hold ended on this pass. */
+static bool UpdateHold(uint32_t now_ms, const ClassicScanInput *input)
+{
+  const uint32_t hold_ms =
+    (uint32_t)scan_config.hold_seconds[scan_hold_index] * CLASSIC_MS_PER_SECOND;
+
+  if (!hold_active)
+  {
+    /* A resume jumps at once (item 8), so it cannot start a hold. */
+    if ((hold_ms != 0U) && !landing_held && !resume_pending &&
+        input->activity_valid && !input->tune_in_flight &&
+        (input->onset >= scan_config.hold_trigger_size))
+    {
+      hold_active = true;
+      landing_held = true;
+      hold_start_ms = now_ms;
+      hold_last_onset_ms = now_ms;
+    }
+    return false;
+  }
+  if (input->activity_valid && (input->onset != 0U))
+  {
+    hold_last_onset_ms = now_ms;
+  }
+  if (!input->activity_valid || input->tune_in_flight ||
+      ((now_ms - hold_start_ms) >= hold_ms) ||
+      ((now_ms - hold_last_onset_ms) > scan_config.hold_release_ms))
+  {
+    hold_active = false;
+    return true;
+  }
+  return false;
 }
 
 /* The landing of one jump from channel `from` (items 12 to 15). */
@@ -465,8 +579,10 @@ bool ClassicScan_Service(uint32_t now_ms, const ClassicScanInput *input,
   if (!scan_running || !input->active || !input->can_tune ||
       !input->tuning_valid)
   {
+    hold_active = false; /* no measurement while the radio cannot run (item 17) */
     schedule_armed = false;
     waited_for_tune = false;
+    held_past_due = false;
     return false;
   }
 
@@ -477,6 +593,7 @@ bool ClassicScan_Service(uint32_t now_ms, const ClassicScanInput *input,
      * one period (items 8, 21). */
     schedule_armed = true;
     waited_for_tune = false;
+    held_past_due = false;
     if (resume_pending)
     {
       due_ms = now_ms;
@@ -488,7 +605,14 @@ bool ClassicScan_Service(uint32_t now_ms, const ClassicScanInput *input,
       RestartScheduleAt(now_ms, rate);
     }
   }
-  if (!Reached(now_ms, due_ms))
+  TrackLanding(input);
+  if (UpdateHold(now_ms, input) && Reached(now_ms, due_ms))
+  {
+    /* The hold kept a due jump waiting: issue it now and start the schedule
+     * again from it (item 19). */
+    held_past_due = true;
+  }
+  if (hold_active || !Reached(now_ms, due_ms))
   {
     return false;
   }
@@ -515,16 +639,17 @@ bool ClassicScan_Service(uint32_t now_ms, const ClassicScanInput *input,
   else
   {
     /* On time, the next jump is one period after this one was due, so
-     * timing does not drift. After waiting for a tune, or once a whole period
-     * has been missed, the schedule starts again from now: no catch-up
+     * timing does not drift. After waiting for a tune or a hold, or once a
+     * whole period has been missed, the schedule starts again from now: no catch-up
      * burst (item 7). */
     AdvanceDue(rate);
-    if (waited_for_tune || Reached(now_ms, due_ms))
+    if (waited_for_tune || held_past_due || Reached(now_ms, due_ms))
     {
       RestartScheduleAt(now_ms, rate);
     }
   }
   waited_for_tune = false;
+  held_past_due = false;
   return true;
 }
 
@@ -545,7 +670,7 @@ bool ClassicScan_GetStatus(uint8_t band, uint32_t frequency_khz,
 
   if (scan_running)
   {
-    status->run_state = CLASSIC_RUN_RUNNING;
+    status->run_state = hold_active ? CLASSIC_RUN_HOLDING : CLASSIC_RUN_RUNNING;
   }
   else if ((scan_up && (index == (uint16_t)(count - 1U))) ||
            (!scan_up && (index == 0U)))
@@ -565,5 +690,6 @@ bool ClassicScan_GetStatus(uint8_t band, uint32_t frequency_khz,
   status->distance_khz = (uint32_t)scan_distance[band] * territory->step_khz;
   status->channel_index = index;
   status->channel_count = count;
+  status->hold_seconds = scan_config.hold_seconds[scan_hold_index];
   return true;
 }
