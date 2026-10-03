@@ -7,6 +7,7 @@
 #include "classic_adapter.h"
 #include "codec_volume_service.h"
 #include "main.h"
+#include "radio_activity_feed.h"
 #include "radio_control_service.h"
 #include "sm/radio_port.h"
 #include "usb_test.h"
@@ -66,6 +67,26 @@ bool RadioAdapter_RequestBand(uint32_t band)
     return false;
   }
   return PostCommand(RAD_CMD_BAND, false, false, band);
+}
+
+void RadioAdapter_ServiceActivity(void)
+{
+  const RadState state = Radio_GetState();
+  uint32_t block = 0U;
+  const bool known = AudioPath_GetBlockInProgress(&block);
+
+  RadioActivityFeed_Service(HAL_GetTick(),
+                            (state == RAD_STATE_SETTLED) || (state == RAD_STATE_TUNING),
+                            state == RAD_STATE_TUNING, known, block);
+}
+
+/* Start stamp of a retune interval on the radio sample timeline. */
+static void StartRetune(void)
+{
+  uint32_t block = 0U;
+  const bool known = AudioPath_GetBlockInProgress(&block);
+
+  RadioActivityFeed_OnRetuneStart(known, block);
 }
 
 void RadioAdapter_ReportStarted(bool ok)
@@ -204,6 +225,10 @@ bool rad_integration_begin_tune(uint32_t frequency_khz)
 {
   completion_known = false;
   completion_posted = false;
+  /* The start stamp of the retune interval, before the receiver can change
+   * (decision 0015 item 3). It ends once the machine leaves Tuning, including
+   * when the tune cannot be issued. */
+  StartRetune();
   return RadioControl_BeginTune(frequency_khz);
 }
 
@@ -218,6 +243,9 @@ bool rad_integration_switch_band(uint32_t band_value)
   {
     return false;
   }
+  /* A band switch is also not a measurement, and the new band's level is not
+   * comparable with the old one's. */
+  StartRetune();
   if (!CodecVolume_SetTransitionMuted(true))
   {
     goto failed;
@@ -229,6 +257,7 @@ bool rad_integration_switch_band(uint32_t band_value)
     goto failed;
   }
 
+  RadioActivityFeed_ResetAverages();
   AudioPath_SetStreamEnabled(true);
   if (!CodecVolume_SetTransitionMuted(false))
   {

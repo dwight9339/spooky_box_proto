@@ -1,5 +1,5 @@
 /*
- * Host tests for Classic on the M7 (full_spooky_proto-54w.33): the classic_scan
+ * Host tests for Classic on the M7 (full_spooky_proto-54w.33, 54w.32): the classic_scan
  * core run against shared radio and session state through the real command
  * policy, with the radio queue and the event log as fakes. Host results only.
  */
@@ -317,7 +317,15 @@ static void commands_publish_one_event_each(void)
     CHECK(events[CLASSIC_PUB_EDGE] == 1u && event_state.edge == CLASSIC_EDGE_BOUNCE);
     command(CTX_CMD_EDGE_BEHAVIOR, -5);
     CHECK(events[CLASSIC_PUB_EDGE] == 2u && event_state.edge == CLASSIC_EDGE_WRAP);
-    CHECK(event_total == 6u);
+    command(CTX_CMD_HOLD_TIME, 2); /* C-111 */
+    CHECK(events[CLASSIC_PUB_HOLD_TIME] == 1u && event_state.hold_seconds == 2u);
+    command(CTX_CMD_HOLD_TIME, -1);
+    CHECK(events[CLASSIC_PUB_HOLD_TIME] == 2u && event_state.hold_seconds == 1u);
+    command(CTX_CMD_HOLD_TIME, -1);
+    CHECK(events[CLASSIC_PUB_HOLD_TIME] == 3u && event_state.hold_seconds == 0u);
+    command(CTX_CMD_HOLD_TIME, -1); /* already off: no change, no event */
+    CHECK(events[CLASSIC_PUB_HOLD_TIME] == 3u);
+    CHECK(event_total == 9u);
 
     /* A resume jumps at once, down by four channels. */
     command(CTX_CMD_RUN_PAUSE, CLASSIC_RUN_TOGGLE);
@@ -325,8 +333,7 @@ static void commands_publish_one_event_each(void)
     run(5u);
     CHECK(requests == 1u && requested_khz == 98700u);
 
-    /* Not Classic's: the activity hold (54w.32) and other engines' commands. */
-    CHECK(!ClassicService_OnCommand(CTX_CMD_HOLD_TIME, 1, now_ms, &world));
+    /* Not Classic's: other engines' commands. */
     CHECK(!ClassicService_OnCommand(CTX_CMD_TUNE, 1, now_ms, &world));
     CHECK(!ClassicService_OnCommand(CTX_CMD_RUN_PAUSE, 7, now_ms, &world));
     CHECK(!ClassicService_OnCommand(CTX_CMD_RUN_PAUSE, 0, now_ms, NULL));
@@ -409,9 +416,84 @@ static void inactive_classic_does_not_move(void)
     CHECK(requests == 1u);
 }
 
+/* One onset-driven pass of the foreground loop. */
+static void pass_with_onset(uint8_t onset)
+{
+    world.onset = onset;
+    ClassicService_Service(now_ms, &world);
+    world.onset = 0u;
+    now_ms += 5u;
+}
+
+/* FR-020 and FR-028: holding is a published run state, counted, and replaced
+ * by unable to scan when Classic cannot retune. */
+static void a_hold_is_published_and_counted(void)
+{
+    ClassicServiceStats stats;
+    ClassicState state;
+
+    start();
+    world.activity_valid = true;
+    command(CTX_CMD_HOLD_TIME, 1); /* 1 s */
+    run(5u);
+    clear_events();
+    pass_with_onset(2u);
+    CHECK(events[CLASSIC_PUB_RUN_STATE] == 1u && event_total == 1u);
+    CHECK(event_state.run_state == CLASSIC_STATE_HOLDING);
+    CHECK(strcmp(ClassicService_RunName(event_state.run_state), "HOLDING") == 0);
+    ClassicService_GetStats(&stats);
+    CHECK(stats.holds == 1u);
+    /* Onsets reach the hold only through the service pass: a command with an
+     * onset in its world starts nothing. */
+    run(1100u);
+    CHECK(state_now().run_state == CLASSIC_STATE_RUNNING);
+    CHECK(requests == 1u);
+    radio_completes();
+    world.onset = 3u;
+    command(CTX_CMD_TOGGLE_DIRECTION, 0);
+    CHECK(state_now().run_state == CLASSIC_STATE_RUNNING);
+    command(CTX_CMD_TOGGLE_DIRECTION, 0);
+    world.onset = 0u;
+    /* A hold on the new landing; the session guard then makes Classic unable
+     * to scan, which ends it. */
+    pass_with_onset(3u);
+    CHECK(state_now().run_state == CLASSIC_STATE_HOLDING);
+    world.session_state = SES_STATE_RECORDING;
+    CHECK(ClassicService_GetState(&world, &state));
+    CHECK(state.run_state == CLASSIC_STATE_UNABLE);
+    CHECK(state.unable_reason == CLASSIC_UNABLE_SESSION);
+    run(5u);
+    world.session_state = SES_STATE_IDLE;
+    CHECK(state_now().run_state == CLASSIC_STATE_RUNNING);
+    ClassicService_GetStats(&stats);
+    CHECK(stats.holds == 2u);
+    /* CLASSIC PAUSE during a hold pauses. */
+    run(1000u);
+    radio_completes();
+    pass_with_onset(2u);
+    CHECK(state_now().run_state == CLASSIC_STATE_HOLDING);
+    command(CTX_CMD_RUN_PAUSE, CLASSIC_RUN_ENSURE_PAUSED);
+    CHECK(state_now().run_state == CLASSIC_STATE_PAUSED);
+}
+
+/* Without a valid measurement no onset holds. */
+static void no_hold_without_a_valid_measurement(void)
+{
+    start();
+    command(CTX_CMD_HOLD_TIME, 3);
+    run(5u);
+    world.activity_valid = false;
+    pass_with_onset(3u);
+    CHECK(state_now().run_state == CLASSIC_STATE_RUNNING);
+    run(500u);
+    CHECK(requests == 1u);
+}
+
 static void names_cover_every_value(void)
 {
     CHECK(strcmp(ClassicService_RunName(CLASSIC_STATE_UNABLE), "UNABLE") == 0);
+    CHECK(strcmp(ClassicService_RunName(CLASSIC_STATE_HOLDING), "HOLDING") == 0);
+    CHECK(strcmp(ClassicService_EventName(CLASSIC_PUB_HOLD_TIME), "HOLD_TIME") == 0);
     CHECK(strcmp(ClassicService_RunName(9u), "UNKNOWN") == 0);
     CHECK(strcmp(ClassicService_ReasonName(CLASSIC_UNABLE_SESSION), "SESSION") == 0);
     CHECK(strcmp(ClassicService_EdgeName(CLASSIC_EDGE_STOP), "STOP") == 0);
@@ -432,6 +514,8 @@ int main(void)
     a_band_change_brings_the_band_parameters();
     a_lost_tune_delays_the_landing_without_skipping_it();
     inactive_classic_does_not_move();
+    a_hold_is_published_and_counted();
+    no_hold_without_a_valid_measurement();
     names_cover_every_value();
 
     if (failures != 0u) {

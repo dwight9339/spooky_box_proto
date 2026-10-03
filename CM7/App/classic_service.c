@@ -61,6 +61,10 @@ bool ClassicService_GetState(const ClassicWorld *world, ClassicState *state)
       state->run_state = (state->unable_reason != (uint8_t)CLASSIC_UNABLE_NONE)
                        ? (uint8_t)CLASSIC_STATE_UNABLE : (uint8_t)CLASSIC_STATE_RUNNING;
       break;
+    case CLASSIC_RUN_HOLDING:
+      state->run_state = (state->unable_reason != (uint8_t)CLASSIC_UNABLE_NONE)
+                       ? (uint8_t)CLASSIC_STATE_UNABLE : (uint8_t)CLASSIC_STATE_HOLDING;
+      break;
     case CLASSIC_RUN_SWEEP_COMPLETE:
       state->run_state = (uint8_t)CLASSIC_STATE_SWEEP_COMPLETE;
       break;
@@ -80,6 +84,7 @@ bool ClassicService_GetState(const ClassicWorld *world, ClassicState *state)
   state->channel_count = status.channel_count;
   state->frequency_khz = world->frequency_khz;
   state->distance_khz = status.distance_khz;
+  state->hold_seconds = status.hold_seconds;
   return true;
 }
 
@@ -90,6 +95,7 @@ static void Publish(ClassicPublished event, uint32_t now_ms, const ClassicState 
 }
 
 /* One event per changed fact, after any command or pass that may change one.
+ * A hold always lasts at least one pass, so each one publishes HOLDING.
  * The first call publishes every fact, so a recording can start from them. */
 static void PublishChanges(uint32_t now_ms, const ClassicWorld *world)
 {
@@ -102,6 +108,10 @@ static void PublishChanges(uint32_t now_ms, const ClassicWorld *world)
   if (!have_published || (now.run_state != published.run_state) ||
       (now.unable_reason != published.unable_reason))
   {
+    if (now.run_state == (uint8_t)CLASSIC_STATE_HOLDING)
+    {
+      ++service_stats.holds;
+    }
     Publish(CLASSIC_PUB_RUN_STATE, now_ms, &now);
   }
   if (!have_published || (now.direction_up != published.direction_up))
@@ -122,6 +132,10 @@ static void PublishChanges(uint32_t now_ms, const ClassicWorld *world)
   {
     Publish(CLASSIC_PUB_EDGE, now_ms, &now);
   }
+  if (!have_published || (now.hold_seconds != published.hold_seconds))
+  {
+    Publish(CLASSIC_PUB_HOLD_TIME, now_ms, &now);
+  }
   published = now;
   have_published = true;
 }
@@ -131,7 +145,8 @@ static bool IsRunning(const ClassicWorld *world)
   ClassicScanStatus status;
 
   return ClassicScan_GetStatus(world->band, world->frequency_khz, &status) &&
-         (status.run_state == CLASSIC_RUN_RUNNING);
+         ((status.run_state == CLASSIC_RUN_RUNNING) ||
+          (status.run_state == CLASSIC_RUN_HOLDING));
 }
 
 bool ClassicService_OnCommand(CtxCommand command, int32_t arg, uint32_t now_ms,
@@ -167,8 +182,11 @@ bool ClassicService_OnCommand(CtxCommand command, int32_t arg, uint32_t now_ms,
     case CTX_CMD_EDGE_BEHAVIOR:
       (void)ClassicScan_StepEdge(arg);
       break;
+    case CTX_CMD_HOLD_TIME:
+      (void)ClassicScan_StepHoldTime(arg);
+      break;
     default:
-      return false; /* the activity hold is full_spooky_proto-54w.32 */
+      return false;
   }
   PublishChanges(now_ms, world);
   return true;
@@ -206,6 +224,8 @@ void ClassicService_Service(uint32_t now_ms, const ClassicWorld *world)
                          (world->radio_state == (uint8_t)RAD_STATE_TUNING);
   input.active = world->active;
   input.can_tune = UnableReason(world) == CLASSIC_UNABLE_NONE;
+  input.activity_valid = world->activity_valid;
+  input.onset = world->onset;
 
   if (ClassicScan_Service(now_ms, &input, &jump))
   {
@@ -237,7 +257,9 @@ void ClassicService_GetStats(ClassicServiceStats *stats)
 
 const char *ClassicService_RunName(uint8_t run_state)
 {
-  static const char *const names[] = {"RUNNING", "PAUSED", "SWEEP_COMPLETE", "UNABLE"};
+  static const char *const names[] = {
+    "RUNNING", "PAUSED", "SWEEP_COMPLETE", "UNABLE", "HOLDING"
+  };
 
   return (run_state < (sizeof(names) / sizeof(names[0]))) ? names[run_state] : "UNKNOWN";
 }
@@ -259,7 +281,7 @@ const char *ClassicService_EdgeName(uint8_t edge)
 const char *ClassicService_EventName(ClassicPublished event)
 {
   static const char *const names[CLASSIC_PUB_COUNT] = {
-    "RUN_STATE", "DIRECTION", "RATE", "DISTANCE", "EDGE"
+    "RUN_STATE", "DIRECTION", "RATE", "DISTANCE", "EDGE", "HOLD_TIME"
   };
 
   return ((uint32_t)event < (uint32_t)CLASSIC_PUB_COUNT) ? names[event] : "UNKNOWN";

@@ -4,6 +4,7 @@
 
 #include "diagnostics.h"
 #include "main.h"
+#include "radio_activity_feed.h"
 #include "radio_recorder.h"
 
 #include <stdio.h>
@@ -202,6 +203,8 @@ bool AudioPath_StartCapture(void)
   rx_full_count = 0U;
   fault_flags = 0U;
   stream_enabled = false;
+  /* Block indices restart with the counters. */
+  (void)RadioActivityFeed_Init();
   /* The DMA starts at index 0 with no halves completed: a new epoch. */
   (void)AudioTimeline_StreamStart(&radio_timeline,
                                   AUDIO_PATH_HALF_SAMPLES / 2U, 2U, 0U);
@@ -261,6 +264,10 @@ static void ProcessHalf(uint32_t offset)
                             AUDIO_PATH_HALF_SAMPLES * sizeof(uint16_t));
   }
 #endif
+  /* Last, after the headphone copy: one level per block for the radio onset
+   * detector, indexed by the completed-half count before this block. */
+  RadioActivityFeed_OnBlock(rx_half_count + rx_full_count, (const int16_t *)raw,
+                            AUDIO_PATH_HALF_SAMPLES);
 }
 
 bool AudioPath_StartMonitor(void)
@@ -395,6 +402,18 @@ static bool ObserveLocked(AudioTimelinePosition *position)
 
   return AudioTimeline_StreamObserve(&radio_timeline, completed, remaining,
                                      position) == AUDIO_TIMELINE_OK;
+}
+
+bool AudioPath_GetBlockInProgress(uint32_t *block)
+{
+  AudioTimelinePosition position;
+
+  if ((block == NULL) || !AudioPath_GetPosition(&position))
+  {
+    return false;
+  }
+  *block = (uint32_t)(position.frame / (AUDIO_PATH_HALF_SAMPLES / 2U));
+  return true;
 }
 
 bool AudioPath_GetPosition(AudioTimelinePosition *position)

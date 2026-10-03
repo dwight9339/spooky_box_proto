@@ -167,6 +167,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/ui_render_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/emf_level.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/radio_activity.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/radio_activity_feed.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/classic_scan.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/classic_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/classic_adapter.c

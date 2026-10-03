@@ -33,6 +33,9 @@ void RadioAdapter_Init(void);
 void RadioAdapter_Dispatch(const EvqEvent *event);
 /* Poll the tune in flight; at most one bounded receiver transaction per call. */
 void RadioAdapter_Service(void);
+/* Feeds the radio onset detector (radio_activity_feed.c); once per pass,
+ * before the Classic service takes its onsets. */
+void RadioAdapter_ServiceActivity(void);
 
 /* Reply `OK RADIO BAND=... FREQ=...` with the last completed tune result. */
 void RadioAdapter_SendStatus(void);

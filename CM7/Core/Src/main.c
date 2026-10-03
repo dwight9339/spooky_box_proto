@@ -794,6 +794,7 @@ Error_Handler();
       PrototypePower_Service(SleepStopRadioAudio));
     RUN_FOREGROUND(FOREGROUND_SERVICE_MAGNETOMETER,
       MagnetometerTest_Service(!RadioRecorder_IsCapturing()));
+    RUN_FOREGROUND(FOREGROUND_SERVICE_ACTIVITY, RadioAdapter_ServiceActivity());
     RUN_FOREGROUND(FOREGROUND_SERVICE_CLASSIC, ClassicAdapter_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_DISPATCH, AppDispatch_Service());
     HAL_Delay(5U);
