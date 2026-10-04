@@ -477,6 +477,20 @@ boot.
 OK DEMO LIGHTS IDLE=400 DUTY=113 PRESSED_DUTY=1000
 ```
 
+The demo image lifts the in-band tune guard, so Classic keeps scanning during a session;
+`TUNE`, `UP` and `DOWN` are accepted while recording there too. Band changes stay
+rejected during a session. Its bench qualification is demo-image evidence only
+(`full_spooky_proto-p04.4`). `DEMO TUNES` reports how long Classic's tunes take, from the
+Radio machine's tune start to its answer, per band, split by whether the recorder was
+capturing when the tune started. `FAILED` counts tunes that were issued and then
+failed; `ISSUE_FAILED` counts tunes the receiver would not accept, which the Radio
+machine answers as failed without starting them. `DEMO TUNES RESET` clears it.
+
+```text
+DEMO TUNES BAND=FM CAPTURING=1 TUNES=401 FAILED=0 ISSUE_FAILED=0 MEAN_US=28394 MAX_US=86478
+OK DEMO TUNES END
+```
+
 `UI DISPLAY TEST` draws a static test image with the confirmed zero-column mapping
 and reports:
 

@@ -72,6 +72,24 @@ static uint32_t matrix_last_frames;
 static uint32_t matrix_last_superseded;
 static DemoCounters counters;
 
+/* Classic's tunes, from the Radio machine's tune start (command written) to its
+ * answer, per band and split by whether the recorder was capturing at the start
+ * (decision 0011 item 13: measured tune timing; p04.4). */
+typedef struct
+{
+  uint32_t tunes;
+  uint32_t failed;  /* issued, then answered with anything other than tuned */
+  uint32_t issue_failed; /* could not be issued: answered failed with no start */
+  uint32_t max_us;
+  uint64_t total_us;
+} DemoTuneStats;
+
+static DemoTuneStats tune_stats[RADIO_BAND_COUNT][2]; /* [band][capturing] */
+static bool tune_timing;
+static uint32_t tune_start_cycles;
+static uint8_t tune_band;
+static bool tune_capturing;
+
 static uint32_t Now(void)
 {
   return HAL_GetTick();
@@ -91,6 +109,8 @@ void DemoField_Init(void)
   uint8_t control;
 
   (void)memset(&counters, 0, sizeof(counters));
+  (void)memset(tune_stats, 0, sizeof(tune_stats));
+  tune_timing = false;
   tick_posted = false;
   mode = CTX_MODE_FIELD;
   field_engine = CTX_ENGINE_CLASSIC;
@@ -421,11 +441,62 @@ void DemoField_OnSessionStateChanged(void)
   }
 }
 
+static void TimeTune(RadPublished event)
+{
+  DemoTuneStats *stats;
+  uint32_t elapsed_us;
+
+  if (event == RAD_PUB_TUNE_STARTED)
+  {
+    RadioControlStatus radio;
+
+    (void)RadioControl_GetStatus(&radio);
+    tune_timing = radio.band < RADIO_BAND_COUNT;
+    tune_band = (uint8_t)radio.band;
+    tune_capturing = RadioRecorder_IsCapturing();
+    tune_start_cycles = DWT->CYCCNT;
+    return;
+  }
+  if (!tune_timing)
+  {
+    /* No timed start: the tune could not be issued (RadioSm TuneIssue), or the
+     * command was rejected or superseded before it was. Only the first is a
+     * receiver failure. */
+    if (event == RAD_PUB_TUNE_FAILED)
+    {
+      RadioControlStatus radio;
+
+      (void)RadioControl_GetStatus(&radio);
+      if (radio.band < RADIO_BAND_COUNT)
+      {
+        ++tune_stats[radio.band][RadioRecorder_IsCapturing() ? 1U : 0U].issue_failed;
+      }
+    }
+    return;
+  }
+  tune_timing = false;
+  elapsed_us = (DWT->CYCCNT - tune_start_cycles) / cycles_per_us;
+  stats = &tune_stats[tune_band][tune_capturing ? 1U : 0U];
+  ++stats->tunes;
+  stats->failed += (event == RAD_PUB_TUNED) ? 0U : 1U;
+  stats->total_us += elapsed_us;
+  if (elapsed_us > stats->max_us)
+  {
+    stats->max_us = elapsed_us;
+  }
+}
+
 void DemoField_OnRadioAnswer(RadPublished event, const RadCommand *command)
 {
   const bool band_command = (command != NULL) &&
                             (command->source == (uint8_t)RAD_SOURCE_INTERNAL) &&
                             (command->kind == (uint8_t)RAD_CMD_BAND);
+
+  if ((command != NULL) && (command->source == (uint8_t)RAD_SOURCE_INTERNAL) &&
+      (command->kind == (uint8_t)RAD_CMD_TUNE))
+  {
+    TimeTune(event);
+  }
 
   switch (event)
   {
@@ -707,6 +778,59 @@ static bool HandleLights(const char *command)
   return true;
 }
 
+/* `DEMO TUNES`: Classic's tune timing per band, idle and while capturing;
+ * `DEMO TUNES RESET` clears it. The reply goes out as one USB transfer, because
+ * UsbTest_SendText drops a second send while the first is in flight. */
+static bool HandleTunes(const char *command)
+{
+  static const char *const bands[RADIO_BAND_COUNT] = {"FM", "AM", "SW", "LW"};
+  static char response[1000]; /* one USB transfer: at most 1 KiB */
+  size_t used = 0U;
+  uint32_t band;
+  uint32_t capturing;
+
+  if (strcmp(command, "DEMO TUNES RESET") == 0)
+  {
+    (void)memset(tune_stats, 0, sizeof(tune_stats));
+    tune_timing = false;
+    (void)UsbTest_SendText("OK DEMO TUNES RESET\r\n");
+    return true;
+  }
+  if (strcmp(command, "DEMO TUNES") != 0)
+  {
+    return false;
+  }
+  for (band = 0U; band < RADIO_BAND_COUNT; ++band)
+  {
+    for (capturing = 0U; capturing < 2U; ++capturing)
+    {
+      const DemoTuneStats *stats = &tune_stats[band][capturing];
+
+      if ((stats->tunes == 0U) && (stats->issue_failed == 0U))
+      {
+        continue;
+      }
+      const int written =
+        snprintf(&response[used], sizeof(response) - used,
+                 "DEMO TUNES BAND=%s CAPTURING=%lu TUNES=%lu FAILED=%lu "
+                 "ISSUE_FAILED=%lu MEAN_US=%lu MAX_US=%lu\r\n",
+                 bands[band], (unsigned long)capturing, (unsigned long)stats->tunes,
+                 (unsigned long)stats->failed, (unsigned long)stats->issue_failed,
+                 (stats->tunes == 0U) ? 0UL
+                                      : (unsigned long)(stats->total_us / stats->tunes),
+                 (unsigned long)stats->max_us);
+
+      if ((written > 0) && ((size_t)written < (sizeof(response) - used)))
+      {
+        used += (size_t)written;
+      }
+    }
+  }
+  (void)snprintf(&response[used], sizeof(response) - used, "OK DEMO TUNES END\r\n");
+  (void)UsbTest_SendText(response);
+  return true;
+}
+
 bool DemoField_HandleCommand(const char *command)
 {
   static const char *const screens[DEMO_SCREEN_COUNT] = {
@@ -720,7 +844,7 @@ bool DemoField_HandleCommand(const char *command)
   EvqStats queue;
   char response[384];
 
-  if (HandleLights(command))
+  if (HandleLights(command) || HandleTunes(command))
   {
     return true;
   }

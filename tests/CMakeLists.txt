@@ -48,6 +48,9 @@ spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.
 # The same policy test for the opt-in in-band tuning qualification build (54w.6).
 spooky_test(command_policy_qualification_test command_policy_test.c ../CM7/App/command_policy.c)
 target_compile_definitions(command_policy_qualification_test PRIVATE SPOOKY_RADIO_TUNE_QUALIFICATION)
+# Demo branch only: the Demo image lifts the in-band tune guard and keeps the band guard (p04.4).
+spooky_test(command_policy_demo_test command_policy_test.c ../CM7/App/command_policy.c)
+target_compile_definitions(command_policy_demo_test PRIVATE SPOOKY_DEMO)
 spooky_test(storage_lease_test storage_lease_test.c ../CM7/App/storage_lease.c)
 # The recorder USB reply queue policy (jjy.10).
 spooky_test(reply_queue_test reply_queue_test.c ../CM7/App/reply_queue.c)

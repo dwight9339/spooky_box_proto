@@ -37,8 +37,11 @@ static const CommandPolicyRule rules[COMMAND_ACTION_COUNT] = {
     ALLOW, REJECT, REJECT, "ERR EMF unavailable while recording\r\n"},
   /* Decision 0003 guard: in-band tuning stays rejected while recording until
    * 54w.6 qualifies it on the bench. The opt-in qualification build allows it so
-   * the bench can measure it (constitution, opt-in experiments). */
-#if defined(SPOOKY_RADIO_TUNE_QUALIFICATION)
+   * the bench can measure it (constitution, opt-in experiments). The demo image
+   * lifts it too, so Classic scans during a session, on the strength of its own
+   * bench run (decision 0011 item 13, full_spooky_proto-p04.4); that evidence
+   * qualifies the demo image only. */
+#if defined(SPOOKY_RADIO_TUNE_QUALIFICATION) || defined(SPOOKY_DEMO)
   [COMMAND_ACTION_RADIO_TUNE] = {ALLOW, ALLOW, ALLOW, NULL},
 #else
   [COMMAND_ACTION_RADIO_TUNE] = {
