@@ -105,6 +105,7 @@ spooky_test(classic_service_test classic_service_test.c ../CM7/App/classic_servi
 # Demo branch only: the Demo image's OLED view and lights (decision 0011, p04.3).
 spooky_test(demo_view_test demo_view_test.c ../CM7/App/demo_view.c)
 spooky_test(demo_lights_test demo_lights_test.c ../CM7/App/demo_lights.c)
+spooky_test(rolling_catalog_test rolling_catalog_test.c ../CM7/App/rolling_catalog.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)

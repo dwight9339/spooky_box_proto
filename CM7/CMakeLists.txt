@@ -212,6 +212,8 @@ if(SPOOKY_DEMO)
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_view.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_lights.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_field.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/rolling_catalog.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_rolling.c
     )
 endif()
 

@@ -41,13 +41,16 @@ void DemoField_OnDetents(uint8_t encoder, int32_t detents, uint32_t now_ms);
 /* Published Session events and state changes (session_control.c). */
 void DemoField_OnSessionEvent(SesPublished event);
 void DemoField_OnSessionStateChanged(void);
+/* The final outcome of a capture save (demo_rolling.c): a DemoSaveOutcome. */
+void DemoField_OnSaveOutcome(uint8_t outcome);
 /* Every Radio machine answer (radio_adapter.c). */
 void DemoField_OnRadioAnswer(RadPublished event, const RadCommand *command);
 
 /* Context has Classic as the Field engine and Field as the mode. */
 bool DemoField_ClassicActive(void);
 
-/* `DEMO` and `DEMO STATUS` reply `OK DEMO ...` (counters for bench evidence). */
+/* `DEMO` and `DEMO STATUS` reply `OK DEMO ...` (counters for bench evidence);
+ * `ROLL`, `ROLL ON|OFF` and `ROLL SAVE` control and report rolling capture. */
 bool DemoField_HandleCommand(const char *command);
 
 #endif /* SPOOKY_DEMO_FIELD_H */

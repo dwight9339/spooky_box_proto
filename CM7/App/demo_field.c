@@ -8,6 +8,7 @@
 #include "classic_adapter.h"
 #include "command_policy.h"
 #include "demo_lights.h"
+#include "demo_rolling.h"
 #include "demo_view.h"
 #include "emf_level.h"
 #include "main.h"
@@ -71,6 +72,7 @@ static uint32_t matrix_last_ms;
 static uint32_t matrix_last_frames;
 static uint32_t matrix_last_superseded;
 static DemoCounters counters;
+static uint8_t last_buffer_state;
 
 /* Classic's tunes, from the Radio machine's tune start (command written) to its
  * answer, per band and split by whether the recorder was capturing at the start
@@ -251,6 +253,7 @@ static void BuildModel(uint32_t now, const CtxStatus *ctx, const InpStatus *inp,
   RadioControlStatus radio;
   ClassicState classic;
   EmfLevelReading emf;
+  DemoRollStatus rolling;
   const RadState radio_state = Radio_GetState();
 
   (void)memset(model, 0, sizeof(*model));
@@ -280,6 +283,9 @@ static void BuildModel(uint32_t now, const CtxStatus *ctx, const InpStatus *inp,
   (void)EmfLevel_Get(now, &emf);
   model->emf_known = emf.state == EMF_LEVEL_VALID;
   model->emf_uT = emf.emf_uT;
+  DemoRolling_GetStatus(&rolling);
+  model->buffer = rolling.state;
+  model->buffer_seconds = rolling.retained_ms / 1000U;
   model->notice = notice;
   model->notice_arg = notice_arg;
 }
@@ -330,7 +336,7 @@ static void ServiceLights(uint32_t now, const CtxStatus *ctx, const DemoViewMode
   input.button_pressed[0] = pressed[INP_BUTTON0];
   input.button_pressed[1] = pressed[INP_BUTTON1];
   input.shift_mode_switch = !Session_IsActive();
-  input.shift_save = false; /* capture save is p04.5 */
+  input.shift_save = !Session_IsActive() && (model->buffer == DEMO_BUFFER_RUNNING);
   input.shift_quick_jump = (ctx->state == (uint8_t)CTX_STATE_CLASSIC) ||
                            (ctx->state == (uint8_t)CTX_STATE_MANUAL_QUICK_JUMP);
   DemoLights_Compute(&input, now, &output);
@@ -377,6 +383,17 @@ void DemoField_Service(void)
     notice = (uint8_t)DEMO_NOTICE_NONE;
   }
   MeasureMatrix(now);
+  {
+    DemoRollStatus rolling;
+
+    DemoRolling_GetStatus(&rolling);
+    if ((rolling.state == (uint8_t)DEMO_ROLL_FAULT) &&
+        (last_buffer_state != (uint8_t)DEMO_ROLL_FAULT))
+    {
+      Notify(DEMO_NOTICE_BUFFER_FAULT, 0U, DEMO_FAULT_NOTICE_MS);
+    }
+    last_buffer_state = rolling.state;
+  }
   Context_GetStatus(&ctx);
   InputResolution_GetStatus(&inp);
   BuildModel(now, &ctx, &inp, &model);
@@ -660,6 +677,48 @@ static void Posted(bool posted)
   }
 }
 
+/* C-009 (and the save half of C-010). Rolling capture is off during a session,
+ * so a save is rejected there with its reason (decision 0011 item 14). */
+static void RequestSave(void)
+{
+  if (Session_IsActive())
+  {
+    Notify(DEMO_NOTICE_SAVE_IN_SESSION, 0U, DEMO_NOTICE_MS);
+    return;
+  }
+  switch (DemoRolling_RequestSave())
+  {
+    case DEMO_SAVE_WRITING:
+      Notify(DEMO_NOTICE_SAVE_WRITING, 0U, DEMO_FAULT_NOTICE_MS); /* until the outcome */
+      break;
+    case DEMO_SAVE_BUSY:
+      Notify(DEMO_NOTICE_SAVE_BUSY, 0U, DEMO_NOTICE_MS);
+      break;
+    case DEMO_SAVE_UNAVAILABLE:
+    default:
+      Notify(DEMO_NOTICE_SAVE_UNAVAILABLE, 0U, DEMO_NOTICE_MS);
+      break;
+  }
+}
+
+void DemoField_OnSaveOutcome(uint8_t outcome)
+{
+  switch (outcome)
+  {
+    case DEMO_SAVE_SAVED:
+      Notify(DEMO_NOTICE_SAVE_DONE, 0U, DEMO_NOTICE_MS);
+      break;
+    case DEMO_SAVE_UNAVAILABLE:
+      Notify(DEMO_NOTICE_SAVE_UNAVAILABLE, 0U, DEMO_NOTICE_MS);
+      break;
+    case DEMO_SAVE_FAILED:
+      Notify(DEMO_NOTICE_SAVE_FAILED, 0U, DEMO_FAULT_NOTICE_MS);
+      break;
+    default:
+      break;
+  }
+}
+
 void ctx_integration_command(CtxCommand command, int32_t arg)
 {
   switch (command)
@@ -688,7 +747,7 @@ void ctx_integration_command(CtxCommand command, int32_t arg)
       }
       break;
     case CTX_CMD_CAPTURE_SAVE:
-      Notify(DEMO_NOTICE_SAVE_UNAVAILABLE, 0U, DEMO_NOTICE_MS); /* p04.5 */
+      RequestSave();
       break;
     case CTX_CMD_MONITOR_PTT:  /* no monitor stage yet: full_spooky_proto-54w.9 */
     case CTX_CMD_SELECT_ENGINE:/* followed by CTX_PUB_ENGINE_CHANGED */
@@ -831,6 +890,64 @@ static bool HandleTunes(const char *command)
   return true;
 }
 
+/* `ROLL`: rolling-capture status. `ROLL ON|OFF` turns it on or off (off frees
+ * the card for SD and WAV commands). `ROLL SAVE` is C-009 from the CLI. */
+static bool HandleRoll(const char *command)
+{
+  static char response[512];
+  RadioRecorderRollingStats stream;
+  DemoRollStatus rolling;
+
+  if ((strcmp(command, "ROLL") != 0) && (strncmp(command, "ROLL ", 5U) != 0))
+  {
+    return false;
+  }
+  if (strcmp(command, "ROLL ON") == 0)
+  {
+    (void)RadioRecorder_SetRolling(true);
+  }
+  else if (strcmp(command, "ROLL OFF") == 0)
+  {
+    if (!RadioRecorder_SetRolling(false))
+    {
+      (void)UsbTest_SendText("ERR ROLL OFF refused: a capture save is in progress\r\n");
+      return true;
+    }
+  }
+  else if (strcmp(command, "ROLL SAVE") == 0)
+  {
+    RequestSave();
+  }
+  else if ((strcmp(command, "ROLL STATUS") != 0) && (strcmp(command, "ROLL") != 0))
+  {
+    (void)UsbTest_SendText("ERR usage: ROLL [STATUS|ON|OFF|SAVE]\r\n");
+    return true;
+  }
+  DemoRolling_GetStatus(&rolling);
+  RadioRecorder_GetRollingStats(&stream);
+  (void)snprintf(response, sizeof(response),
+                 "OK ROLL STATE=%s ENABLED=%u RETAINED_MS=%lu SEGMENTS=%lu ROTATIONS=%lu "
+                 "ROTATE_MS_MAX=%lu STEP_MS_MAX=%lu WRITE_MS_MAX=%lu QUEUES=%u,%u/8 "
+                 "BLOCKS=%lu STARTS=%lu FAULTS=%lu RECLAIMED=%lu ALLOC_FAIL=%lu "
+                 "SAVE=%s SAVES=%lu FAILED=%lu BUSY=%lu UNAVAILABLE=%lu SAVE_MS_MAX=%lu "
+                 "LAST=C%03lu LAST_FRAMES=%lu\r\n",
+                 DemoRolling_StateName(rolling.state), stream.enabled ? 1U : 0U,
+                 (unsigned long)rolling.retained_ms, (unsigned long)rolling.segments,
+                 (unsigned long)rolling.rotations, (unsigned long)rolling.rotate_ms_max,
+                 (unsigned long)rolling.step_ms_max, (unsigned long)stream.max_write_ms,
+                 (unsigned)stream.radio_high_water, (unsigned)stream.pdm_high_water,
+                 (unsigned long)stream.blocks, (unsigned long)stream.starts,
+                 (unsigned long)rolling.faults, (unsigned long)rolling.reclaimed,
+                 (unsigned long)rolling.allocation_failures,
+                 DemoRolling_SaveName(rolling.save), (unsigned long)rolling.saves,
+                 (unsigned long)rolling.saves_failed, (unsigned long)rolling.saves_busy,
+                 (unsigned long)rolling.saves_unavailable,
+                 (unsigned long)rolling.save_ms_max, (unsigned long)rolling.last_capture,
+                 (unsigned long)rolling.last_capture_frames);
+  (void)UsbTest_SendText(response);
+  return true;
+}
+
 bool DemoField_HandleCommand(const char *command)
 {
   static const char *const screens[DEMO_SCREEN_COUNT] = {
@@ -844,7 +961,7 @@ bool DemoField_HandleCommand(const char *command)
   EvqStats queue;
   char response[384];
 
-  if (HandleLights(command) || HandleTunes(command))
+  if (HandleLights(command) || HandleTunes(command) || HandleRoll(command))
   {
     return true;
   }

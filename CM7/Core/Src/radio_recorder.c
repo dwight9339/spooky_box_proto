@@ -12,6 +12,9 @@
 #include "storage_margin.h"
 #include "storage_service.h"
 #include "usb_test.h"
+#if defined(SPOOKY_DEMO)
+#include "demo_rolling.h"
+#endif
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -91,7 +94,19 @@ typedef enum
   RECORDER_IDLE = 0,
   RECORDER_PREPARING, /* Card mounted; file being named, created, allocated. */
   RECORDER_ACTIVE
+#if defined(SPOOKY_DEMO)
+  ,
+  RECORDER_ROLLING    /* Demo only: streaming into the rolling segments (p04.5). */
+#endif
 } RecorderState;
+
+#if defined(SPOOKY_DEMO)
+/* A rolling stream that could not start or stopped on a fault waits this long. */
+#define RECORDER_ROLLING_RETRY_MS 5000U
+static bool rolling_enabled = true;
+static uint32_t rolling_retry_at_ms;
+static uint32_t rolling_starts;
+#endif
 
 /* Preparation runs in bounded foreground steps before capture (jjy.9). */
 typedef enum
@@ -934,17 +949,11 @@ static void RecorderCheckMargin(uint32_t write_ms)
   }
 }
 
-static bool RecorderWriteBlock(void)
+/* Write statistics of one block, for sessions and the demo's rolling stream. */
+static void RecorderNoteWrite(uint32_t write_ms)
 {
-  UINT written = 0U;
-  FRESULT result;
-  uint32_t write_start = HAL_GetTick();
-  uint32_t write_ms;
   uint32_t bin;
 
-  result = f_write(&recorder_file, output_block,
-                   RECORDER_OUTPUT_BYTES, &written);
-  write_ms = HAL_GetTick() - write_start;
   Diagnostics_Record(DIAG_SD_WRITE, write_ms,
     (uint32_t)radio_queue_count | ((uint32_t)pdm_queue_count << 16));
   if (write_ms > max_write_ms)
@@ -959,6 +968,17 @@ static bool RecorderWriteBlock(void)
   ++write_hist[bin];
   ++write_count;
   RecorderCheckMargin(write_ms);
+}
+
+static bool RecorderWriteBlock(void)
+{
+  UINT written = 0U;
+  FRESULT result;
+  uint32_t write_start = HAL_GetTick();
+
+  result = f_write(&recorder_file, output_block,
+                   RECORDER_OUTPUT_BYTES, &written);
+  RecorderNoteWrite(HAL_GetTick() - write_start);
   if ((result != FR_OK) || (written != RECORDER_OUTPUT_BYTES))
   {
     Diagnostics_Record(DIAG_SD_ERROR, (uint32_t)result, written);
@@ -1038,8 +1058,45 @@ static bool RecorderFinish(bool aborted, const char *reason)
   return finalized;
 }
 
+#if defined(SPOOKY_DEMO)
+/* Ends the rolling stream: capture stops, the segment closes, the card is
+ * released and the window is discarded. */
+static bool RecorderStopRolling(void)
+{
+  if (recorder_state != RECORDER_ROLLING)
+  {
+    return true;
+  }
+  if (DemoRolling_SaveActive())
+  {
+    return false;
+  }
+  RadioRecorder_StopCapture();
+  (void)DemoRolling_Stop();
+  recorder_state = RECORDER_IDLE;
+  return true;
+}
+
+static void RecorderRollingFault(const char *reason)
+{
+  RadioRecorder_StopCapture();
+  DemoRolling_Fault(reason);
+  recorder_state = RECORDER_IDLE;
+  rolling_retry_at_ms = HAL_GetTick() + RECORDER_ROLLING_RETRY_MS;
+}
+#endif
+
 bool RadioRecorder_CanStart(uint32_t seconds, bool radio_ready)
 {
+#if defined(SPOOKY_DEMO)
+  /* A session turns rolling capture off (decision 0011 item 14). The Session
+   * machine opens the file in the same dispatch, so it cannot restart between. */
+  if (!RecorderStopRolling())
+  {
+    RecorderSend("ERR RECORD capture save in progress; try again\r\n");
+    return false;
+  }
+#endif
   if (recorder_state != RECORDER_IDLE)
   {
     RecorderSend("ERR RECORD already active\r\n");
@@ -1081,7 +1138,9 @@ bool RadioRecorder_CanStart(uint32_t seconds, bool radio_ready)
   return true;
 }
 
-bool RadioRecorder_StartCapture(void)
+/* Resets the queues and counters and starts both producers together on the
+ * radio timeline (decision 0012). False with finish_reason set. */
+static bool RecorderStartStream(void)
 {
   uint32_t primask;
 
@@ -1124,7 +1183,6 @@ bool RadioRecorder_StartCapture(void)
   session_event_pending = false;
 
   RecorderPrepareDmaBuffer(pdm_dma_buffer, sizeof(pdm_dma_buffer));
-  recorder_state = RECORDER_ACTIVE;
   /* Decision 0012 item 4: the radio position snapshot, the radio capture
    * enable and the microphone DMA start happen together with interrupts
    * masked, so the delay between them is constant and folded into C. The
@@ -1156,6 +1214,16 @@ bool RadioRecorder_StartCapture(void)
   pdm_dma_running = true;
   recording_start_ms = HAL_GetTick();
   progress_last_ms = recording_start_ms;
+  return true;
+}
+
+bool RadioRecorder_StartCapture(void)
+{
+  recorder_state = RECORDER_ACTIVE;
+  if (!RecorderStartStream())
+  {
+    return false;
+  }
   Diagnostics_Record(DIAG_RECORD_START, pending_seconds, RECORDER_SAMPLE_RATE_HZ);
   if (pending_seconds == 0U)
   {
@@ -1430,6 +1498,92 @@ bool RadioRecorder_HandleCommand(const char *command, bool radio_ready)
   return true;
 }
 
+#if defined(SPOOKY_DEMO)
+/* Outside a session, start the rolling stream when it is on, the card and both
+ * audio sources are ready, and no retry is pending. */
+static void RecorderMaybeStartRolling(void)
+{
+  const uint32_t now = HAL_GetTick();
+
+  if (!rolling_enabled)
+  {
+    DemoRolling_SetState(DEMO_ROLL_OFF);
+    return;
+  }
+  if ((int32_t)(now - rolling_retry_at_ms) < 0)
+  {
+    return;
+  }
+  if (!StorageService_CardPresent() || !AudioPath_IsRunning() ||
+      (StorageService_Owner() != STORAGE_OWNER_NONE) || (pdm_filter == NULL) ||
+      (HAL_DFSDM_FilterGetState(pdm_filter) == HAL_DFSDM_FILTER_STATE_ERROR))
+  {
+    DemoRolling_SetState(DEMO_ROLL_WAITING);
+    rolling_retry_at_ms = now + RECORDER_ROLLING_RETRY_MS;
+    return;
+  }
+  if (!DemoRolling_Begin())
+  {
+    rolling_retry_at_ms = now + RECORDER_ROLLING_RETRY_MS;
+    return;
+  }
+  recorder_state = RECORDER_ROLLING;
+  if (!RecorderStartStream())
+  {
+    RecorderRollingFault(finish_reason);
+    return;
+  }
+  ++rolling_starts;
+}
+
+/* The rolling stream: the session path's queue draining and conversion, with
+ * blocks going to the rolling segments and segment or save steps in between. */
+static void RecorderServiceRolling(void)
+{
+  int16_t *radio;
+  int32_t *pdm;
+
+  if (!StorageService_CardPresent())
+  {
+    RecorderRollingFault("SD card removed");
+    return;
+  }
+  if (radio_error || pdm_error || radio_overrun || pdm_overrun)
+  {
+    RecorderRollingFault(radio_error ? "radio DMA error" :
+                         pdm_error ? "PDM DMA error" :
+                         radio_overrun ? "radio queue overrun" : "PDM queue overrun");
+    return;
+  }
+  radio = (radio_queue_count != 0U) ? radio_queue[radio_queue_head] : NULL;
+  pdm = (pdm_queue_count != 0U) ? pdm_queue[pdm_queue_head] : NULL;
+  if (!output_pending && (radio != NULL) && (pdm != NULL))
+  {
+    RecorderConvertBlock(radio, pdm);
+    RecorderReleaseQueues();
+    output_pending = true;
+  }
+  else if (output_pending && DemoRolling_ReadyForBlock())
+  {
+    uint32_t write_ms = 0U;
+    const bool ok = DemoRolling_WriteBlock(output_block, RECORDER_OUTPUT_BYTES, &write_ms);
+
+    output_pending = false;
+    RecorderNoteWrite(write_ms);
+    if (!ok)
+    {
+      RecorderRollingFault("segment write failed");
+      return;
+    }
+    frames_written += RECORDER_BLOCK_FRAMES;
+  }
+  else if (!DemoRolling_Step())
+  {
+    RecorderRollingFault("segment or save step failed");
+  }
+}
+#endif
+
 void RadioRecorder_Service(void)
 {
   int16_t *radio;
@@ -1442,6 +1596,18 @@ void RadioRecorder_Service(void)
     RecorderPrepareStep();
     return;
   }
+#if defined(SPOOKY_DEMO)
+  if (recorder_state == RECORDER_IDLE)
+  {
+    RecorderMaybeStartRolling();
+    return;
+  }
+  if (recorder_state == RECORDER_ROLLING)
+  {
+    RecorderServiceRolling();
+    return;
+  }
+#endif
   if (recorder_state != RECORDER_ACTIVE)
   {
     return;
@@ -1553,13 +1719,68 @@ void RadioRecorder_NotifyRadioError(void)
   {
     radio_error = true;
   }
+#if defined(SPOOKY_DEMO)
+  if (recorder_state == RECORDER_ROLLING)
+  {
+    radio_error = true;
+  }
+#endif
 }
 
-/* Preparing counts as active: the card is held for the session. */
+/* Preparing counts as active: the card is held for the session. The demo's
+ * rolling stream is not a session (SessionControl_Check compares the two). */
 bool RadioRecorder_IsActive(void)
 {
+#if defined(SPOOKY_DEMO)
+  if (recorder_state == RECORDER_ROLLING)
+  {
+    return false;
+  }
+#endif
   return recorder_state != RECORDER_IDLE;
 }
+
+#if defined(SPOOKY_DEMO)
+bool RadioRecorder_IsSessionCapturing(void)
+{
+  return capture_enabled && (recorder_state == RECORDER_ACTIVE);
+}
+
+bool RadioRecorder_SetRolling(bool enabled)
+{
+  if (!enabled && !RecorderStopRolling())
+  {
+    return false;
+  }
+  rolling_enabled = enabled;
+  if (enabled)
+  {
+    rolling_retry_at_ms = HAL_GetTick();
+  }
+  else
+  {
+    DemoRolling_SetState(DEMO_ROLL_OFF);
+  }
+  return true;
+}
+
+void RadioRecorder_GetRollingStats(RadioRecorderRollingStats *stats)
+{
+  const bool rolling = recorder_state == RECORDER_ROLLING;
+
+  if (stats == NULL)
+  {
+    return;
+  }
+  stats->enabled = rolling_enabled;
+  stats->rolling = rolling;
+  stats->radio_high_water = rolling ? radio_queue_high_water : 0U;
+  stats->pdm_high_water = rolling ? pdm_queue_high_water : 0U;
+  stats->max_write_ms = rolling ? max_write_ms : 0U;
+  stats->blocks = rolling ? (frames_written / RECORDER_BLOCK_FRAMES) : 0U;
+  stats->starts = rolling_starts;
+}
+#endif
 
 bool RadioRecorder_IsCapturing(void)
 {
@@ -1568,6 +1789,12 @@ bool RadioRecorder_IsCapturing(void)
 
 void RadioRecorder_Stop(void)
 {
+#if defined(SPOOKY_DEMO)
+  if ((recorder_state == RECORDER_ROLLING) && !RecorderStopRolling())
+  {
+    RecorderRollingFault("stopped during a save");
+  }
+#endif
   if (recorder_state == RECORDER_PREPARING)
   {
     RadioRecorder_DiscardFile();

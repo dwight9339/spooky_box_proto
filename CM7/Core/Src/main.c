@@ -48,6 +48,12 @@
 #endif
 #if defined(SPOOKY_DEMO)
 #include "demo_field.h"
+/* The demo's rolling stream captures whenever no session runs (p04.5). The I2C2
+ * sensor guards follow session capture there, so EMF and the fuel gauge stay
+ * live outside sessions; the bench run measures the effect on the stream. */
+#define SENSOR_GUARD_CAPTURING() RadioRecorder_IsSessionCapturing()
+#else
+#define SENSOR_GUARD_CAPTURING() RadioRecorder_IsCapturing()
 #endif
 #include "prototype_power.h"
 #include "fuel_gauge_test.h"
@@ -420,14 +426,14 @@ static void UsbCliCommand(const char *line)
       (strcmp(command, "BATTERY READ") == 0) ||
       (strcmp(command, "BATTERY STATUS") == 0))
   {
-    BoardDiagnostics_SendBatteryStatus(false, !RadioRecorder_IsCapturing());
+    BoardDiagnostics_SendBatteryStatus(false, !SENSOR_GUARD_CAPTURING());
     return;
   }
   if ((strcmp(command, "CHARGE") == 0) ||
       (strcmp(command, "CHARGE READ") == 0) ||
       (strcmp(command, "CHARGE STATUS") == 0))
   {
-    BoardDiagnostics_SendBatteryStatus(true, !RadioRecorder_IsCapturing());
+    BoardDiagnostics_SendBatteryStatus(true, !SENSOR_GUARD_CAPTURING());
     return;
   }
   if (ClassicAdapter_HandleCommand(command))
@@ -797,7 +803,7 @@ Error_Handler();
     RUN_FOREGROUND(FOREGROUND_SERVICE_AUDIO, RadioAudio_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_RECORDER, RadioRecorder_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_FUEL,
-      FuelGaugeTest_Service(!RadioRecorder_IsCapturing()));
+      FuelGaugeTest_Service(!SENSOR_GUARD_CAPTURING()));
     RUN_FOREGROUND(FOREGROUND_SERVICE_USB, UsbTest_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_WAV, WavTransfer_Service());
 #if defined(SPOOKY_LOGGER_LOAD_QUALIFICATION)
@@ -812,7 +818,7 @@ Error_Handler();
     RUN_FOREGROUND(FOREGROUND_SERVICE_POWER,
       PrototypePower_Service(SleepStopRadioAudio));
     RUN_FOREGROUND(FOREGROUND_SERVICE_MAGNETOMETER,
-      MagnetometerTest_Service(!RadioRecorder_IsCapturing()));
+      MagnetometerTest_Service(!SENSOR_GUARD_CAPTURING()));
     RUN_FOREGROUND(FOREGROUND_SERVICE_ACTIVITY, RadioAdapter_ServiceActivity());
     RUN_FOREGROUND(FOREGROUND_SERVICE_CLASSIC, ClassicAdapter_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_DISPATCH, AppDispatch_Service());

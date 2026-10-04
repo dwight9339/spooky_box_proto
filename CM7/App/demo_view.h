@@ -39,6 +39,15 @@ typedef enum
   DEMO_SCREEN_COUNT
 } DemoScreen;
 
+/* Rolling capture (demo_rolling.h DemoRollState order). */
+typedef enum
+{
+  DEMO_BUFFER_OFF = 0,
+  DEMO_BUFFER_WAITING,
+  DEMO_BUFFER_RUNNING,
+  DEMO_BUFFER_FAULT
+} DemoBuffer;
+
 /* Published Session state (SesState order). */
 typedef enum
 {
@@ -65,7 +74,13 @@ typedef enum
   DEMO_NOTICE_SESSION_ABORTED,
   DEMO_NOTICE_CARD_FULL,
   DEMO_NOTICE_SESSION_CANCELLED,
-  DEMO_NOTICE_SAVE_UNAVAILABLE,  /* capture save is not in this build */
+  DEMO_NOTICE_SAVE_WRITING,      /* C-009 accepted; the save is being committed */
+  DEMO_NOTICE_SAVE_DONE,         /* the capture descriptor is committed */
+  DEMO_NOTICE_SAVE_BUSY,         /* a save is already in progress */
+  DEMO_NOTICE_SAVE_UNAVAILABLE,  /* no rolling window to save */
+  DEMO_NOTICE_SAVE_IN_SESSION,   /* rolling capture is off during a session */
+  DEMO_NOTICE_SAVE_FAILED,
+  DEMO_NOTICE_BUFFER_FAULT,      /* rolling capture stopped by a fault */
   DEMO_NOTICE_NOT_WHILE_RECORDING,
   DEMO_NOTICE_BUSY,              /* the event queue refused a command */
   DEMO_NOTICE_COUNT
@@ -90,6 +105,8 @@ typedef struct
   uint16_t hold_seconds;   /* 0: the hold is off */
   uint8_t menu_highlight;  /* CtxBand or CtxEngine while a menu is open */
   uint32_t session_seconds;/* since SES_PUB_RECORDING_STARTED, while active */
+  uint8_t buffer;          /* DemoBuffer */
+  uint32_t buffer_seconds; /* rolling window held, while running */
   bool emf_known;          /* emf_level VALID */
   uint32_t emf_uT;
   uint8_t notice;          /* DemoNotice */

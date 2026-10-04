@@ -209,7 +209,25 @@ static void SessionLabel(const DemoViewModel *model, char *text, size_t size)
       (void)snprintf(text, size, "PREPARING");
       break;
     default:
-      text[0] = '\0';
+      /* No session: the rolling window, which a save would keep. */
+      if (model->buffer == DEMO_BUFFER_RUNNING)
+      {
+        (void)snprintf(text, size, "BUF %lus",
+                       (unsigned long)((model->buffer_seconds > 99U) ? 99U
+                                                                      : model->buffer_seconds));
+      }
+      else if (model->buffer == DEMO_BUFFER_FAULT)
+      {
+        (void)snprintf(text, size, "BUF FAULT");
+      }
+      else if (model->buffer == DEMO_BUFFER_WAITING)
+      {
+        (void)snprintf(text, size, "NO BUF");
+      }
+      else
+      {
+        text[0] = '\0';
+      }
       break;
   }
 }
@@ -343,8 +361,20 @@ static const char *NoticeText(const DemoViewModel *model, char *text, size_t siz
       return "REC FAULT: CARD FULL";
     case DEMO_NOTICE_SESSION_CANCELLED:
       return "SESSION CANCELLED";
+    case DEMO_NOTICE_SAVE_WRITING:
+      return "SAVING CAPTURE...";
+    case DEMO_NOTICE_SAVE_DONE:
+      return "CAPTURE SAVED";
+    case DEMO_NOTICE_SAVE_BUSY:
+      return "SAVE BUSY";
     case DEMO_NOTICE_SAVE_UNAVAILABLE:
-      return "SAVE: NOT IN BUILD";
+      return "SAVE: NO BUFFER";
+    case DEMO_NOTICE_SAVE_IN_SESSION:
+      return "SAVE: NOT IN SESSION";
+    case DEMO_NOTICE_SAVE_FAILED:
+      return "SAVE FAILED";
+    case DEMO_NOTICE_BUFFER_FAULT:
+      return "BUFFER FAULT";
     case DEMO_NOTICE_NOT_WHILE_RECORDING:
       return "NOT WHILE RECORDING";
     case DEMO_NOTICE_BUSY:

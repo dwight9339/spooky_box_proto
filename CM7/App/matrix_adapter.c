@@ -152,8 +152,10 @@ void MatrixAdapter_Service(void)
       return;
     }
 #if defined(SPOOKY_DEMO)
-    /* Capture outranks presentation: one run per pass while capturing. */
-    if (RadioRecorder_IsCapturing())
+    /* Capture outranks presentation: one run per pass during a session. The
+     * rolling stream keeps the 2 ms pass budget, as the qualification build ran
+     * during recordings (p04.5 bench: one run per pass superseded 35% of frames). */
+    if (RadioRecorder_IsSessionCapturing())
     {
       return;
     }
