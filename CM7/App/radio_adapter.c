@@ -4,24 +4,48 @@
 
 #include "app_events.h"
 #include "audio_path_service.h"
+#include "classic_adapter.h"
 #include "codec_volume_service.h"
 #include "main.h"
+#include "radio_activity_feed.h"
 #include "radio_control_service.h"
 #include "sm/radio_port.h"
 #include "usb_test.h"
 
 /* arg0 of APP_EVENT_RADIO_COMMAND: kind in bits 0-7, source in 8-15, up in bit 16,
  * wrap in bit 17. */
-static uint32_t PackCommand(RadCommandKind kind, bool up, bool wrap)
+static uint32_t PackCommand(RadCommandKind kind, RadSource source, bool up, bool wrap)
 {
-  return (uint32_t)kind | ((uint32_t)RAD_SOURCE_CLI << 8) |
+  return (uint32_t)kind | ((uint32_t)source << 8) |
          (up ? (1UL << 16) : 0UL) | (wrap ? (1UL << 17) : 0UL);
 }
 
+/* CLI radio commands posted and not yet answered. The Radio machine answers every
+ * command exactly once, so a scan engine can wait for them instead of issuing a
+ * jump computed from a frequency the CLI is about to change. */
+static uint32_t cli_commands_pending;
+
 static bool PostCommand(RadCommandKind kind, bool up, bool wrap, uint32_t arg)
 {
-  return AppEvents_Post(EVQ_CLASS_EXTERNAL_COMMAND, APP_EVENT_RADIO_COMMAND,
-                        PackCommand(kind, up, wrap), arg);
+  if (!AppEvents_Post(EVQ_CLASS_EXTERNAL_COMMAND, APP_EVENT_RADIO_COMMAND,
+                      PackCommand(kind, RAD_SOURCE_CLI, up, wrap), arg))
+  {
+    return false;
+  }
+  ++cli_commands_pending;
+  return true;
+}
+
+bool RadioAdapter_CliCommandPending(void)
+{
+  return cli_commands_pending != 0U;
+}
+
+bool RadioAdapter_RequestInternalTune(uint32_t frequency_khz)
+{
+  return AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_RADIO_COMMAND,
+                        PackCommand(RAD_CMD_TUNE, RAD_SOURCE_INTERNAL, false, false),
+                        frequency_khz);
 }
 
 bool RadioAdapter_RequestTune(uint32_t frequency_khz)
@@ -43,6 +67,26 @@ bool RadioAdapter_RequestBand(uint32_t band)
     return false;
   }
   return PostCommand(RAD_CMD_BAND, false, false, band);
+}
+
+void RadioAdapter_ServiceActivity(void)
+{
+  const RadState state = Radio_GetState();
+  uint32_t block = 0U;
+  const bool known = AudioPath_GetBlockInProgress(&block);
+
+  RadioActivityFeed_Service(HAL_GetTick(),
+                            (state == RAD_STATE_SETTLED) || (state == RAD_STATE_TUNING),
+                            state == RAD_STATE_TUNING, known, block);
+}
+
+/* Start stamp of a retune interval on the radio sample timeline. */
+static void StartRetune(void)
+{
+  uint32_t block = 0U;
+  const bool known = AudioPath_GetBlockInProgress(&block);
+
+  RadioActivityFeed_OnRetuneStart(known, block);
 }
 
 void RadioAdapter_ReportStarted(bool ok)
@@ -181,6 +225,10 @@ bool rad_integration_begin_tune(uint32_t frequency_khz)
 {
   completion_known = false;
   completion_posted = false;
+  /* The start stamp of the retune interval, before the receiver can change
+   * (decision 0015 item 3). It ends once the machine leaves Tuning, including
+   * when the tune cannot be issued. */
+  StartRetune();
   return RadioControl_BeginTune(frequency_khz);
 }
 
@@ -195,6 +243,9 @@ bool rad_integration_switch_band(uint32_t band_value)
   {
     return false;
   }
+  /* A band switch is also not a measurement, and the new band's level is not
+   * comparable with the old one's. */
+  StartRetune();
   if (!CodecVolume_SetTransitionMuted(true))
   {
     goto failed;
@@ -206,6 +257,7 @@ bool rad_integration_switch_band(uint32_t band_value)
     goto failed;
   }
 
+  RadioActivityFeed_ResetAverages();
   AudioPath_SetStreamEnabled(true);
   if (!CodecVolume_SetTransitionMuted(false))
   {
@@ -244,6 +296,11 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
   const bool to_cli = (command != NULL) && (command->source == RAD_SOURCE_CLI);
 
   (void)RadioControl_GetStatus(&status);
+  ClassicAdapter_OnRadioAnswer(event, command);
+  if (to_cli && (event != RAD_PUB_TUNE_STARTED) && (cli_commands_pending != 0U))
+  {
+    --cli_commands_pending; /* every other event with a command answers it */
+  }
   switch (event)
   {
     case RAD_PUB_TUNED:

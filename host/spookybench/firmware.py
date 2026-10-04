@@ -8,8 +8,6 @@ from .result import BenchError
 
 MAX_ELF = 16 * 1024**2
 MAX_SOURCE_SNAPSHOT = 64 * 1024**2
-# Demo exists only on demo/halloween-2026 (decision 0011); its evidence is demo-image evidence.
-PRESETS = ("Debug", "Release", "IpcSmoke", "IpcMismatch", "Demo")
 BUILD_ID_MARKER = b"SBID1:"
 
 
@@ -64,6 +62,11 @@ def elf_ranges(raw, core):
     if not ram_start < stack <= ram_end or stack % 8 or reset != entry:
         reject("unexpected initial stack or reset vector")
     return sorted(ranges, key=lambda r: r["start"])
+
+
+# Root CMake presets whose image pairs may be flashed; experiment presets are opt-in.
+# Demo exists only on demo/halloween-2026 (decision 0011); its evidence is demo-image evidence.
+PRESETS = ("Debug", "Release", "IpcSmoke", "IpcMismatch", "RadioTuneQual", "Demo")
 
 
 def _validate_pair(path):

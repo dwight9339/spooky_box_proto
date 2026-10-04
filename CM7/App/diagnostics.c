@@ -10,7 +10,7 @@
 
 typedef enum {REPLY_IDLE, REPLY_STATUS, REPLY_QUEUE, REPLY_LOG, REPLY_LAST,
   REPLY_DUMP_HEADER, REPLY_DUMP_ROWS, REPLY_DUMP_END, REPLY_HELP,
-  REPLY_LATENCY_HEADER, REPLY_LATENCY_ROWS, REPLY_LATENCY_END} ReplyState;
+  REPLY_LATENCY_HEADER, REPLY_LATENCY_ROWS, REPLY_LATENCY_END, REPLY_USB} ReplyState;
 static DiagHistory history;
 static ReplyState reply;
 static uint32_t dump_sequence;
@@ -36,14 +36,16 @@ static const char *const help_lines[] = {
   "OK RADIO BAND [FM|AM|SW|LW] | TUNE <kHz> | UP | DOWN | STATUS\r\n",
   "OK VOLUME READ | BATTERY READ | CHARGE STATUS | SLEEP START\r\n",
   "OK DIAG IDENTITY (build, boot epoch, reset flags, capabilities)\r\n",
-  "OK IPC STATUS | LOG STATUS | DIAG STATUS|QUEUE|LATENCY|LAST|DUMP|STOP\r\n",
+  "OK IPC STATUS | LOG STATUS | DIAG STATUS|QUEUE|USB|LATENCY|LAST|DUMP|STOP\r\n",
   "OK MAG READ|STATUS|STREAM START [ms]|STOP\r\n",
   "OK EMF READ|STATUS|ZERO|STREAM START [ms]|STOP\r\n",
-  "OK RECORD STATUS|LATENCY|START [seconds]|STOP\r\n",
+  "OK RECORD STATUS|RESULT|LATENCY|START [seconds]|STOP\r\n",
   "OK WAV FETCH REC###.WAV|ABORT (binary protocol v1)\r\n",
-  "OK SD STATUS|REINIT|STRESS [size-MiB] [passes]|STRESS STOP|CLEAN\r\n",
-  "OK UI STATUS|WATCH START|WATCH STOP|LEDS|MATRIX PROBE|MATRIX ANIMATE|"
-    "DISPLAY TEST [0|2]|DISPLAY OFF|OFF\r\n"
+  "OK SD STATUS|INFO|REINIT|STRESS [size-MiB] [passes]|STRESS STOP|CLEAN|FORMAT [CONFIRM]\r\n",
+  "OK UI STATUS|WATCH START|WATCH STOP|LEDS|MATRIX PROBE|MATRIX ANIMATE|MATRIX ORIENT|"
+    "MATRIX FEEDBACK [ON|OFF]|MATRIX TRAIL ON|OFF|"
+    "DISPLAY TEST [0|2]|DISPLAY OFF|OFF\r\n",
+  "OK CLASSIC [RUN|PAUSE|TOGGLE|DIR|RATE n|DIST n|EDGE n|HOLD n|ACTIVITY]\r\n"
 };
 
 void Diagnostics_Init(void)
@@ -120,6 +122,7 @@ bool Diagnostics_HandleCommand(const char *command)
   else if (strcmp(command, "LOG STATUS") == 0) reply = REPLY_LOG;
   else if (strcmp(command, "DIAG STATUS") == 0) reply = REPLY_STATUS;
   else if (strcmp(command, "DIAG QUEUE") == 0) reply = REPLY_QUEUE;
+  else if (strcmp(command, "DIAG USB") == 0) reply = REPLY_USB;
   else if (strcmp(command, "DIAG LATENCY") == 0)
   {
     latency_index = 0U;
@@ -136,7 +139,7 @@ bool Diagnostics_HandleCommand(const char *command)
   }
   else
   {
-    (void)UsbTest_SendText("ERR usage: LOG STATUS | DIAG STATUS|QUEUE|LATENCY|LAST|DUMP|STOP\r\n");
+    (void)UsbTest_SendText("ERR usage: LOG STATUS | DIAG STATUS|QUEUE|USB|LATENCY|LAST|DUMP|STOP\r\n");
     return true;
   }
   last_send_ms = HAL_GetTick();
@@ -181,6 +184,15 @@ static void SendOneLine(uint32_t now)
       (unsigned long)q.rejected[EVQ_CLASS_EXTERNAL_COMMAND],
       (unsigned long)q.rejected[EVQ_CLASS_INTERNAL], (unsigned long)q.reconciles,
       (unsigned long)q.max_wait_ms);
+  }
+  else if (reply == REPLY_USB)
+  {
+    UsbTestRxStats u;
+    UsbTest_GetRxStats(&u);
+    (void)snprintf(line, sizeof(line),
+      "OK DIAG USB RX_PACKETS=%lu RX_PAUSES=%lu RX_OVERRUNS=%lu RX_QUEUED=%lu "
+      "RX_PAUSED=%u\r\n", (unsigned long)u.packets, (unsigned long)u.pauses,
+      (unsigned long)u.overruns, (unsigned long)u.queued, u.paused ? 1U : 0U);
   }
   else if (reply == REPLY_LOG)
   {

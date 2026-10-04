@@ -7,7 +7,7 @@
 #define _FS_MINIMIZE        0
 #define _USE_STRFUNC        0
 #define _USE_FIND           0
-#define _USE_MKFS           0
+#define _USE_MKFS           1  /* In-device SD FORMAT (jjy.14) */
 #define _USE_FASTSEEK       0
 #define _USE_EXPAND         1
 #define _USE_CHMOD          0

@@ -13,21 +13,23 @@ typedef enum ContextSm_EventId
     ContextSm_EventId_E1_HOLD = 3,
     ContextSm_EventId_E1_TURN = 4,
     ContextSm_EventId_E2_HOLD = 5,
-    ContextSm_EventId_E3_CLICK = 6,
-    ContextSm_EventId_E3_HOLD = 7,
-    ContextSm_EventId_MENU_TIMEOUT = 8,
-    ContextSm_EventId_PTT_OFF = 9,
-    ContextSm_EventId_PTT_ON = 10,
-    ContextSm_EventId_RECONCILE = 11,
-    ContextSm_EventId_SESSION_CHANGED = 12,
-    ContextSm_EventId_SHIFT_B0 = 13,
-    ContextSm_EventId_SHIFT_B1 = 14,
-    ContextSm_EventId_SHIFT_CHORD = 15,
-    ContextSm_EventId_SHIFT_E0 = 16,
-    ContextSm_EventId_SHIFT_E1 = 17
+    ContextSm_EventId_E2_TURN = 6,
+    ContextSm_EventId_E3_CLICK = 7,
+    ContextSm_EventId_E3_HOLD = 8,
+    ContextSm_EventId_E3_TURN = 9,
+    ContextSm_EventId_MENU_TIMEOUT = 10,
+    ContextSm_EventId_PTT_OFF = 11,
+    ContextSm_EventId_PTT_ON = 12,
+    ContextSm_EventId_RECONCILE = 13,
+    ContextSm_EventId_SESSION_CHANGED = 14,
+    ContextSm_EventId_SHIFT_B0 = 15,
+    ContextSm_EventId_SHIFT_B1 = 16,
+    ContextSm_EventId_SHIFT_CHORD = 17,
+    ContextSm_EventId_SHIFT_E0 = 18,
+    ContextSm_EventId_SHIFT_E1 = 19
 } ContextSm_EventId;
 
-#define ContextSm_EventIdCount (18)
+#define ContextSm_EventIdCount (20)
 
 typedef enum ContextSm_StateId
 {

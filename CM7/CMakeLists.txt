@@ -54,6 +54,26 @@ if(SPOOKY_RADIO_TUNE_QUALIFICATION)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_RADIO_TUNE_QUALIFICATION=1)
 endif()
 
+option(SPOOKY_LOGGER_LOAD_QUALIFICATION
+    "Add LOG LOAD and LOG FAULT for logger saturation bench qualification (jjy.6)" OFF)
+if(SPOOKY_LOGGER_LOAD_QUALIFICATION)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_LOGGER_LOAD_QUALIFICATION=1)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/App/logger_load.c)
+endif()
+
+option(SPOOKY_ISR_TIMING_QUALIFICATION
+    "Time every M7 interrupt handler through a RAM vector table (jjy.11)" OFF)
+if(SPOOKY_ISR_TIMING_QUALIFICATION)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_ISR_TIMING_QUALIFICATION=1)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/App/isr_timing.c)
+endif()
+
+option(SPOOKY_MATRIX_RECORDING_QUALIFICATION
+    "Keep the decision 0013 matrix running during capture for bench qualification (54w.8)" OFF)
+if(SPOOKY_MATRIX_RECORDING_QUALIFICATION)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_MATRIX_RECORDING_QUALIFICATION=1)
+endif()
+
 set(SPOOKY_RECORDING_CARD_RESERVE_SECONDS "60" CACHE STRING
     "Seconds of three-channel audio retained before reporting card full")
 set(SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES "0" CACHE STRING
@@ -62,6 +82,16 @@ set(SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES "0" CACHE STRING
     "Additional allocation bytes needed to finalize a recording")
 set(SPOOKY_RECORDING_WAV_MAX_FRAMES "715827876" CACHE STRING
     "Maximum WAV frames; override only for bounded storage-limit bench tests")
+set(SPOOKY_RECORDING_PREALLOC_SECONDS "60" CACHE STRING
+    "Seconds of audio preallocated contiguously before capture starts (jjy.9)")
+set(SPOOKY_RECORD_PREPARE_STEP_MS "32" CACHE STRING
+    "Foreground milliseconds per recording preparation step (jjy.9)")
+set(SPOOKY_RECORDING_MAX_GAP_FAT_SECTORS "16" CACHE STRING
+    "Longest used FAT stretch, in FAT sectors, a recording may grow across (jjy.17)")
+set(SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS "4" CACHE STRING
+    "Audio queue high-water (of 8 blocks) that reports low storage margin (decision 0014)")
+set(SPOOKY_STORAGE_MARGIN_WRITE_MS "341" CACHE STRING
+    "Single SD write duration that reports low storage margin (decision 0014)")
 set(SPOOKY_BUILD_ID "unidentified" CACHE STRING
     "ASCII build identity reported by DIAG IDENTITY")
 string(LENGTH "${SPOOKY_BUILD_ID}" SPOOKY_BUILD_ID_LENGTH)
@@ -74,8 +104,22 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES=${SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES}
     SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES=${SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES}
     SPOOKY_RECORDING_WAV_MAX_FRAMES=${SPOOKY_RECORDING_WAV_MAX_FRAMES}
+    SPOOKY_RECORDING_PREALLOC_SECONDS=${SPOOKY_RECORDING_PREALLOC_SECONDS}
+    SPOOKY_RECORD_PREPARE_STEP_MS=${SPOOKY_RECORD_PREPARE_STEP_MS}
+    SPOOKY_RECORDING_MAX_GAP_FAT_SECTORS=${SPOOKY_RECORDING_MAX_GAP_FAT_SECTORS}
+    SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS=${SPOOKY_STORAGE_MARGIN_QUEUE_BLOCKS}
+    SPOOKY_STORAGE_MARGIN_WRITE_MS=${SPOOKY_STORAGE_MARGIN_WRITE_MS}
     SPOOKY_BUILD_ID=\"${SPOOKY_BUILD_ID}\"
 )
+# HAL ACMD41 power-up tries (HAL default 0xFFFF). Lowered so an unresponsive
+# card fails close to the SD 1 s power-up allowance instead of ~38 s (jjy.15).
+# The HAL is compiled in the generated STM32_Drivers library, so it needs the
+# definition too; both targets use the same value.
+set(SPOOKY_SDMMC_MAX_VOLT_TRIAL 2000U)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    SDMMC_MAX_VOLT_TRIAL=${SPOOKY_SDMMC_MAX_VOLT_TRIAL})
+target_compile_definitions(STM32_Drivers PRIVATE
+    SDMMC_MAX_VOLT_TRIAL=${SPOOKY_SDMMC_MAX_VOLT_TRIAL})
 
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
@@ -95,6 +139,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/log_buffer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/diag_history.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/audio_timeline.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/target_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/diagnostics.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/foreground_budget.c
@@ -104,6 +149,12 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/command_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/session_control.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/recording_limits.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/recording_result.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/reply_queue.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/sd_media.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_margin.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/fat_run.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/cdc_rx_flow.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_lease.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/sm/session_port.c
@@ -120,6 +171,16 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/build_identity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/ui_input_service.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/ui_render_service.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/emf_level.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/radio_activity.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/radio_activity_feed.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/matrix_writer.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/matrix_service.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/matrix_adapter.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/classic_scan.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/classic_service.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/classic_adapter.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/matrix_feedback.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/fuel_gauge_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/magnetometer_test.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/radio_recorder.c

@@ -73,6 +73,8 @@ typedef enum CtxCommand {
     CTX_CMD_TOGGLE_DIRECTION,  /* Classic: toggle the scan direction */
     CTX_CMD_JUMP_RATE,         /* Classic: signed detents */
     CTX_CMD_JUMP_DISTANCE,     /* Classic: signed detents */
+    CTX_CMD_EDGE_BEHAVIOR,     /* Classic: signed detents through wrap, bounce, stop */
+    CTX_CMD_HOLD_TIME,         /* Classic: signed detents of the activity hold time */
     CTX_CMD_TUNE,              /* Manual: signed detents, one band step each */
     CTX_CMD_TOGGLE_WRAP,       /* Manual: toggle wrap at the band edges */
     CTX_CMD_SWITCH_BAND,       /* CtxBand */

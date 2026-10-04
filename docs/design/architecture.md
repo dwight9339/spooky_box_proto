@@ -77,6 +77,38 @@ most one direct-LED action or five matrix pixels; the SSD1309 test image is a fi
 still have exactly one M7 hardware owner until product IPC and the PF6 reconciliation
 gates in decision 0001 are complete.
 
+The matrix mapping of [decision 0013](../decisions/0013-matrix-emf-radio-and-status-mapping.md)
+is split the same way. Sensor interpretation stays on the M7: `emf_level` turns the
+magnetometer's change from baseline into a bucket, or an explicit unknown state (no
+sample, no baseline, stale, sensor fault), and `radio_activity` detects onsets in the
+radio audio from one mean absolute level per half-buffer, holding its averages while
+the radio is not measuring. `radio_activity_feed` drives it from the live stream: the
+radio capture callback posts each half-buffer's level, with its index on the decision
+0012 timeline, into a 32-entry ring that drops and counts on overflow, and the
+foreground gives the blocks to the detector, marking those inside a decision 0015
+retune interval, or taken while the radio is not running, as not measuring. The radio
+adapter stamps each interval's start before a tune or band switch is written to the
+receiver; the feed closes it one half-buffer after the radio is seen settled. The
+pixel decisions live in the portable `Common/matrix_feedback` renderer, which takes
+only those semantic facts and the recording state and composes a 9x9 frame. It can run on whichever core renders the
+matrix. [Decision 0019](../decisions/0019-matrix-emf-four-buckets-and-quiet-baseline.md)
+sets the four EMF buckets, the quiet-field baseline and the trail default.
+
+While I2C2 stays on the M7, three M7 modules put the frame on the matrix
+(`full_spooky_proto-54w.8`). `matrix_writer` compares each frame with what the matrix
+shows and hands out only the changed rows as IS31FL3741 register runs, correcting for
+the matrix being mounted rotated 180 degrees. `matrix_service` feeds the renderer its
+inputs and the session events and hands the adapter one run at a time.
+`matrix_adapter` gathers the EMF level and the onsets, writes runs over I2C2 for up to
+2 ms per foreground pass (the `MATRIX` latency slot), and stops after three failed
+writes. On normal images it turns the matrix off through its enable pin while the
+recorder captures, so there is no I2C2 traffic during a capture, and writes the whole
+frame again afterwards; the opt-in `SPOOKY_MATRIX_RECORDING_QUALIFICATION` build keeps
+it writing. Feedback is off at boot and is started from the CLI
+([USB CLI](usb-cli.md#matrix-feedback)). The
+[bench evidence](../evidence/2026-10-03-matrix-feedback-on-m7.md) covers how it looks,
+its write cost and a recording regression with the matrix running.
+
 The external Pico debugprobe is development-bench infrastructure, not an
 application coprocessor. Spooky Bench provides a Windows-hosted command surface
 around flashing, UART capture and target USB diagnostics; see
@@ -112,6 +144,38 @@ bounded M7 event queue, fed from the foreground and dispatched run-to-completion
 ([decision 0007](../decisions/0007-m7-event-queue.md)). Scan engines should produce structured tune targets within named
 territories; the radio controller decides whether each target needs an
 in-band tune or an expensive band/RF-path transition.
+
+The Classic engine core, `classic_scan`, follows this shape
+([spec 001](../../spec/specs/001-classic-scan-engine/spec.md),
+[decision 0016](../decisions/0016-classic-scan-motion.md)). It is portable code
+that keeps only Classic's own parameters and run state: direction, jump rate, edge
+behavior, a jump distance per band, hold time, and running, holding or paused. Band
+and frequency stay with the radio. Each service pass passes in the shared tuning
+(band, last completed frequency, whether a tune is in flight), whether Classic may
+move, and the radio onsets since the last pass with whether their measurement is
+valid. When a jump is due, the core answers with the target channel and frequency,
+and the caller issues the tune. An onset of the trigger size starts the activity
+hold, once per landing, and jumps wait while it lasts. Sweep complete is derived from
+position and direction, not stored. All decision 0016 values are in one
+`ClassicScanConfig`. Host tests cover the landings, the edges, the jump schedule and
+the hold.
+
+On the M7, `classic_service` runs the core each foreground pass against the shared
+radio and session state and issues each jump as an internal tune command to the Radio
+machine through the event queue. It issues a jump only when the shared command policy
+allows in-band tuning in the current session state and the radio is running;
+otherwise it publishes "unable to scan" with the reason and does not retry. It waits
+while the radio is tuning, while its own command is unanswered, and while a CLI radio
+command is unanswered. It publishes one event per change of run state, direction,
+rate, distance, edge behavior or hold time ([presentation](behavior/presentation.md)),
+and `classic_adapter` logs each event with the radio sample-timeline position; it
+takes the onsets from `radio_activity_feed` once per pass. Until Context is wired,
+Classic is always the active engine and the CLI issues its commands
+([USB CLI](usb-cli.md#classic-scan-engine)). Host tests cover the service; the
+[Classic bench evidence](../evidence/2026-10-02-classic-on-m7.md) covers everything
+but the activity hold. The [hold's bench trial](../evidence/2026-10-03-classic-activity-hold.md)
+shows the mechanism working but did not meet spec SC-008: at weak reception, radio
+onsets did not separate stations from static (`full_spooky_proto-54w.32`).
 
 The USB CLI ([contract](usb-cli.md)) and recorder are bring-up implementations of
 this model, not the final command router or `SessionManager`.

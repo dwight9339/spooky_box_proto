@@ -180,7 +180,7 @@ class Serial:
                     4096 - math.ceil(self.state.get("sd_used_bytes", 0) / MIB)
                 self.pending = (f"OK SD PRESENT=1 MOUNTED=1 TYPE=SDHC/SDXC "
                     f"CAPACITY=30000MiB FREE={free}MiB BLOCKS={blocks} "
-                    "BUS=4 CLOCKDIV=0\r\n").encode()
+                    "BUS=4 CLOCKDIV=2\r\n").encode()
             return len(data)
         if command.startswith("SD STRESS ") and command != "SD STRESS STOP":
             if self.scenario == "sd-existing":
@@ -281,7 +281,7 @@ class Serial:
         elif command == "RECORD STATUS":
             if self.scenario == "record-busy" or self.state.get("recording_active"):
                 answers[command] = (b"OK RECORD ACTIVE file=REC899.WAV audio=1.0s "
-                                    b"queues=0/8,0/8 max-write=25ms\r\n")
+                                    b"queues=0/8,0/8 max-write=25ms margin=OK\r\n")
             else:
                 answers[command] = b"OK RECORD IDLE last-file=none frames=0 max-write=0ms\r\n"
         self.pending = answers[command]
@@ -316,4 +316,5 @@ class Serial:
                 f"elapsed={audio_ms + 40}ms\r\n")
         radio_high = 8 if self.scenario == "record-overrun" else 1
         self.pending = (result + f"RECORD DIAG queues radio={radio_high}/8 pdm=1/8 "
-            "max-write=25ms peaks=1800,1790,500\r\n").encode()
+            "max-write=25ms peaks=1800,1790,500 "
+            f"margin={'LOW' if radio_high >= 4 else 'OK'}\r\n").encode()
