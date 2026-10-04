@@ -17,6 +17,7 @@
 typedef enum Call {
     CALL_CAN_START = 0,
     CALL_OPEN_FILE,
+    CALL_DISCARD,
     CALL_START_CAPTURE,
     CALL_REQUEST_STOP,
     CALL_TARGET_REACHED,
@@ -58,6 +59,8 @@ bool ses_integration_open_file(uint32_t seconds)
     fake.open_seconds = seconds;
     return fake.open_ok;
 }
+
+void ses_integration_discard_file(void) { ++fake.calls[CALL_DISCARD]; }
 
 bool ses_integration_start_capture(void)
 {
@@ -125,9 +128,11 @@ static bool last_published_is(SesPublished event)
     return fake.published_count > 0 && fake.published[fake.published_count - 1] == event;
 }
 
+/* Start, then the recorder reports the file allocated. */
 static void start_recording(void)
 {
     Session_OnStart(60u);
+    Session_OnPrepared(true);
 }
 
 static void start_finalizing(void)
@@ -138,21 +143,88 @@ static void start_finalizing(void)
 
 /* --- Scenarios ----------------------------------------------------------------- */
 
-static void starting_opens_the_file_starts_capture_and_records(void)
+static void starting_prepares_the_file_before_capture(void)
 {
     reset();
     Session_OnStart(60u);
-    CHECK(Session_GetState() == SES_STATE_RECORDING && Session_IsActive());
+    CHECK(Session_GetState() == SES_STATE_PREPARING && Session_IsActive());
     CHECK(fake.calls[CALL_OPEN_FILE] == 1 && fake.open_seconds == 60u);
+    CHECK(fake.calls[CALL_START_CAPTURE] == 0);
+    /* Never shown as recording before capture starts (PRES-R2). */
+    CHECK(fake.published_count == 1 && last_published_is(SES_PUB_RECORDING_PREPARING));
+    CHECK(fake.state_changes == 1 && fake.last_state == SES_STATE_PREPARING);
+    Session_OnPrepared(true);
+    CHECK(Session_GetState() == SES_STATE_RECORDING && Session_IsActive());
     CHECK(fake.calls[CALL_START_CAPTURE] == 1 && fake.calls[CALL_FINALIZE] == 0);
-    CHECK(fake.published_count == 1 && last_published_is(SES_PUB_RECORDING_STARTED));
-    CHECK(fake.state_changes == 1 && fake.last_state == SES_STATE_RECORDING);
+    CHECK(fake.calls[CALL_DISCARD] == 0);
+    CHECK(fake.published_count == 2 && last_published_is(SES_PUB_RECORDING_STARTED));
+    CHECK(fake.state_changes == 2 && fake.last_state == SES_STATE_RECORDING);
+}
+
+static void a_failed_preparation_discards_the_file_and_rejects(void)
+{
+    reset();
+    Session_OnStart(60u);
+    Session_OnPrepared(false);
+    CHECK(Session_GetState() == SES_STATE_IDLE);
+    CHECK(fake.calls[CALL_DISCARD] == 1 && fake.calls[CALL_START_CAPTURE] == 0);
+    CHECK(fake.calls[CALL_FINALIZE] == 0);
+    CHECK(last_published_is(SES_PUB_RECORDING_REJECTED));
+    CHECK(fake.last_state == SES_STATE_IDLE);
+}
+
+static void stop_while_preparing_cancels_without_capture(void)
+{
+    reset();
+    Session_OnStart(0u);
+    Session_OnStop();
+    CHECK(Session_GetState() == SES_STATE_IDLE);
+    CHECK(fake.calls[CALL_DISCARD] == 1 && fake.calls[CALL_REQUEST_STOP] == 0);
+    CHECK(fake.calls[CALL_START_CAPTURE] == 0 && fake.calls[CALL_FINALIZE] == 0);
+    CHECK(last_published_is(SES_PUB_RECORDING_CANCELLED));
+    /* A late PREPARED from the cancelled start changes nothing. */
+    Session_OnPrepared(true);
+    CHECK(Session_GetState() == SES_STATE_IDLE && fake.calls[CALL_START_CAPTURE] == 0);
+}
+
+static void a_fault_while_preparing_discards_instead_of_finalizing(void)
+{
+    reset();
+    Session_OnStart(60u);
+    Session_OnCaptureFault();
+    CHECK(Session_GetState() == SES_STATE_IDLE);
+    CHECK(fake.calls[CALL_DISCARD] == 1 && fake.calls[CALL_FINALIZE] == 0);
+    CHECK(last_published_is(SES_PUB_RECORDING_REJECTED));
+}
+
+static void preparing_ignores_blocks_and_rejects_a_second_start(void)
+{
+    reset();
+    Session_OnStart(60u);
+    Session_OnBlockWritten();
+    Session_OnStart(30u);
+    CHECK(Session_GetState() == SES_STATE_PREPARING);
+    CHECK(fake.calls[CALL_OPEN_FILE] == 1 && fake.calls[CALL_FINALIZE] == 0);
+    CHECK(last_published_is(SES_PUB_RECORDING_REJECTED));
+}
+
+static void prepared_outside_preparing_is_ignored(void)
+{
+    reset();
+    Session_OnPrepared(true);
+    CHECK(Session_GetState() == SES_STATE_IDLE && fake.published_count == 0);
+    start_recording();
+    const unsigned published = fake.published_count;
+    Session_OnPrepared(false);
+    CHECK(Session_GetState() == SES_STATE_RECORDING);
+    CHECK(fake.published_count == published && fake.calls[CALL_DISCARD] == 0);
 }
 
 static void an_open_ended_start_forwards_zero(void)
 {
     reset();
     Session_OnStart(0u);
+    Session_OnPrepared(true);
     CHECK(Session_GetState() == SES_STATE_RECORDING && Session_IsActive());
     CHECK(fake.calls[CALL_OPEN_FILE] == 1 && fake.open_seconds == 0u);
     CHECK(last_published_is(SES_PUB_RECORDING_STARTED));
@@ -161,7 +233,7 @@ static void an_open_ended_start_forwards_zero(void)
 static void the_start_guard_is_evaluated_once_per_start(void)
 {
     reset();
-    Session_OnStart(60u);
+    start_recording();
     CHECK(fake.calls[CALL_CAN_START] == 1);
     reset();
     fake.can_start = false;
@@ -188,7 +260,7 @@ static void a_file_that_cannot_be_opened_rejects_the_start(void)
     Session_OnStart(60u);
     CHECK(Session_GetState() == SES_STATE_IDLE);
     CHECK(fake.calls[CALL_OPEN_FILE] == 1 && fake.calls[CALL_START_CAPTURE] == 0);
-    CHECK(fake.calls[CALL_FINALIZE] == 0);
+    CHECK(fake.calls[CALL_FINALIZE] == 0 && fake.calls[CALL_DISCARD] == 0);
     CHECK(fake.published_count == 1 && last_published_is(SES_PUB_RECORDING_REJECTED));
 }
 
@@ -196,10 +268,10 @@ static void capture_that_does_not_start_aborts_and_finalizes(void)
 {
     reset();
     fake.capture_ok = false;
-    Session_OnStart(60u);
+    start_recording();
     CHECK(Session_GetState() == SES_STATE_IDLE);
     CHECK(fake.calls[CALL_START_CAPTURE] == 1 && fake.calls[CALL_FINALIZE] == 1);
-    CHECK(fake.published_count == 1 && last_published_is(SES_PUB_RECORDING_ABORTED));
+    CHECK(fake.published_count == 2 && last_published_is(SES_PUB_RECORDING_ABORTED));
     CHECK(fake.last_state != SES_STATE_RECORDING);
 }
 
@@ -391,6 +463,7 @@ static void outcomes_are_never_shown_as_success_after_a_failure(void)
     for (int run = 0; run < 300; ++run) {
         reset();
         bool active = false;
+        bool preparing = false; /* accepted, file not yet captured into */
         unsigned started = 0, ended = 0;
         for (int step = 0; step < 100; ++step) {
             rng = rng * 1664525u + 1013904223u;
@@ -400,20 +473,37 @@ static void outcomes_are_never_shown_as_success_after_a_failure(void)
             fake.capture_ok = (r & 4u) != 0;
             fake.target_reached = (r & 8u) != 0;
             fake.finalize_ok = (r & 16u) != 0;
+            const bool prepared_ok = (r & 32u) != 0;
             const unsigned before = fake.published_count;
             const unsigned finalizes = fake.calls[CALL_FINALIZE];
-            switch ((r >> 5) % 4u) {
-            case 0: Session_OnStart(1u + (r >> 7) % 3600u); break;
+            const unsigned captures = fake.calls[CALL_START_CAPTURE];
+            const unsigned discards = fake.calls[CALL_DISCARD];
+            switch ((r >> 6) % 5u) {
+            case 0: Session_OnStart(1u + (r >> 9) % 3600u); break;
             case 1: Session_OnStop(); break;
             case 2: Session_OnBlockWritten(); break;
+            case 3: Session_OnPrepared(prepared_ok); break;
             default: Session_OnCaptureFault(); break;
             }
             for (unsigned i = before; i < fake.published_count && i < LOG_CAPACITY; ++i) {
                 const SesPublished e = fake.published[i];
+                if (e == SES_PUB_RECORDING_PREPARING) {
+                    CHECK(!active && !preparing);
+                    preparing = true;
+                }
                 if (e == SES_PUB_RECORDING_STARTED) {
-                    CHECK(!active);
+                    /* Capture starts only on a successful preparation. */
+                    CHECK(preparing && !active &&
+                          fake.calls[CALL_START_CAPTURE] == captures + 1u);
+                    preparing = false;
                     active = true;
                     ++started;
+                }
+                if (e == SES_PUB_RECORDING_ABORTED && preparing) {
+                    /* Capture failed to start after preparation. */
+                    CHECK(fake.calls[CALL_START_CAPTURE] == captures + 1u &&
+                          fake.calls[CALL_FINALIZE] == finalizes + 1u);
+                    preparing = false;
                 }
                 if (e == SES_PUB_RECORDING_COMPLETED) {
                     CHECK(active && fake.calls[CALL_FINALIZE] == finalizes + 1u &&
@@ -427,12 +517,18 @@ static void outcomes_are_never_shown_as_success_after_a_failure(void)
                     ++ended;
                 }
             }
+            /* A preparation that ends without capture discards its file. */
+            if (fake.calls[CALL_DISCARD] != discards) {
+                CHECK(preparing && !active && fake.calls[CALL_DISCARD] == discards + 1u);
+                CHECK(fake.calls[CALL_FINALIZE] == finalizes);
+                preparing = false;
+            }
             if (fake.published_count >= LOG_CAPACITY - 8u) {
                 fake.published_count = 0;
             }
-            if (Session_IsActive() != active) {
+            if (Session_IsActive() != (active || preparing)) {
                 printf("FAIL %s: run %d step %d: machine active=%d, expected %d\n",
-                       current_test, run, step, Session_IsActive(), active);
+                       current_test, run, step, Session_IsActive(), active || preparing);
                 ++failures;
                 return;
             }
@@ -449,7 +545,12 @@ static void outcomes_are_never_shown_as_success_after_a_failure(void)
 
 int main(void)
 {
-    RUN(starting_opens_the_file_starts_capture_and_records);
+    RUN(starting_prepares_the_file_before_capture);
+    RUN(a_failed_preparation_discards_the_file_and_rejects);
+    RUN(stop_while_preparing_cancels_without_capture);
+    RUN(a_fault_while_preparing_discards_instead_of_finalizing);
+    RUN(preparing_ignores_blocks_and_rejects_a_second_start);
+    RUN(prepared_outside_preparing_is_ignored);
     RUN(an_open_ended_start_forwards_zero);
     RUN(the_start_guard_is_evaluated_once_per_start);
     RUN(a_start_that_cannot_start_is_rejected_without_touching_the_card);

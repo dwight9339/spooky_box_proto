@@ -113,6 +113,15 @@ class ControlTests(unittest.TestCase):
             with self.assertRaises(BenchError):
                 validate_pair(self.manifest_path)
 
+    def test_manifest_accepts_radio_tune_qualification_preset(self):
+        self.manifest["preset"] = "RadioTuneQual"
+        self.save_manifest()
+        self.assertEqual(validate_pair(self.manifest_path)[0]["preset"], "RadioTuneQual")
+        self.manifest["preset"] = "RadioTuneQualification"
+        self.save_manifest()
+        with self.assertRaises(BenchError):
+            validate_pair(self.manifest_path)
+
     def test_manifest_rejects_unidentified_build(self):
         self.manifest["build_id"] = "unidentified"
         self.save_manifest()

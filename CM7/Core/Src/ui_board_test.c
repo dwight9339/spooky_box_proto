@@ -1,9 +1,13 @@
 #include "ui_board_test.h"
 
 #include "main.h"
+#include "matrix_writer.h"
 #include "ui_input_service.h"
 #include "ui_render_service.h"
 #include "usb_test.h"
+#if defined(SPOOKY_DEMO)
+#include "demo_field.h"
+#endif
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -113,6 +117,8 @@ static volatile bool ui_ready;
 static bool ui_watch_enabled;
 static bool ui_matrix_enabled;
 static bool ui_matrix_animation_active;
+/* The matrix feedback service owns the matrix; test commands keep off it. */
+static bool ui_matrix_held;
 static uint8_t ui_matrix_page;
 static bool ui_led_chase_active;
 static uint8_t ui_led_chase_index;
@@ -349,6 +355,20 @@ static void UiServiceSwitches(uint32_t now_ms)
                                    ui_switches[index].pin);
   }
   UiInputService_UpdateSwitches(raw_switches, now_ms, &events);
+#if defined(SPOOKY_DEMO)
+  for (index = 0U; index < UI_SWITCH_COUNT; ++index)
+  {
+    const uint8_t mask = (uint8_t)(1U << index);
+
+    if (((events.high_mask | events.low_mask) & mask) != 0U)
+    {
+      const bool raw = (events.high_mask & mask) != 0U;
+
+      DemoField_OnControl((uint8_t)index,
+                          ui_switches[index].active_high ? raw : !raw, now_ms);
+    }
+  }
+#endif
   if (!ui_watch_enabled)
   {
     return;
@@ -383,6 +403,15 @@ static void UiServiceEncoderEvents(void)
   {
     UiEncoder *encoder = &ui_encoders[index];
     uint8_t current_ab;
+
+#if defined(SPOOKY_DEMO)
+    if (events[index].clockwise != events[index].counterclockwise)
+    {
+      DemoField_OnDetents((uint8_t)index,
+                          (int32_t)events[index].clockwise -
+                          (int32_t)events[index].counterclockwise, HAL_GetTick());
+    }
+#endif
 
     if (!ui_watch_enabled ||
         ((events[index].clockwise == 0U) &&
@@ -534,44 +563,11 @@ static bool UiMatrixInitialize(uint8_t *device_id)
 static bool UiMatrixSetPixel(uint8_t logical_x, uint8_t logical_y,
                              uint8_t red, uint8_t green, uint8_t blue)
 {
-  static const uint8_t row_map[UI_RENDER_MATRIX_HEIGHT] =
-    {8U, 5U, 4U, 3U, 2U, 1U, 0U, 7U, 6U};
-  uint8_t physical_x;
-  uint8_t mapped_y;
-  uint16_t led_offset;
-  uint8_t page;
-  uint8_t reg;
-  uint8_t values[3];
+  const MatrixFeedbackRgb colour = {red, green, blue};
+  MatrixWriterRun run;
 
-  if ((logical_x >= UI_RENDER_MATRIX_WIDTH) ||
-      (logical_y >= UI_RENDER_MATRIX_HEIGHT))
-  {
-    return false;
-  }
-
-  physical_x = logical_x + UI_MATRIX_COLUMN_OFFSET;
-  mapped_y = row_map[logical_y];
-  led_offset = (uint16_t)(physical_x +
-    ((physical_x < 10U) ? ((uint16_t)mapped_y * 10U)
-                        : (80U + ((uint16_t)mapped_y * 3U)))) * 3U;
-
-  /* The Adafruit 13x9 board is BGR on even columns and GRB on odd ones. */
-  if ((physical_x & 1U) != 0U)
-  {
-    values[0] = green;
-    values[1] = red;
-    values[2] = blue;
-  }
-  else
-  {
-    values[0] = blue;
-    values[1] = green;
-    values[2] = red;
-  }
-
-  page = (led_offset < 180U) ? 0U : 1U;
-  reg = (uint8_t)((led_offset < 180U) ? led_offset : led_offset - 180U);
-  return UiMatrixSelectPage(page) && UiMatrixWrite(reg, values, 3U);
+  return MatrixWriter_PixelRun(logical_x, logical_y, colour, &run) &&
+         UiMatrixSelectPage(run.page) && UiMatrixWrite(run.reg, run.bytes, run.length);
 }
 
 static void UiServiceMatrixAnimation(uint32_t now_ms)
@@ -746,10 +742,8 @@ static void UiDisplayHardwareOff(void)
   ui_display_on = false;
 }
 
-static bool UiDisplayRunTest(uint8_t column_offset)
+static const uint8_t ui_display_init_commands[] =
 {
-  static const uint8_t init_commands[] =
-  {
     0xAEU,             /* display off */
     0xD5U, 0xA0U,      /* clock divide / oscillator */
     0xA8U, 0x3FU,      /* 64-row multiplex */
@@ -765,7 +759,10 @@ static bool UiDisplayRunTest(uint8_t column_offset)
     0x2EU,             /* deactivate scroll */
     0xA4U,             /* show GDDRAM */
     0xA6U              /* normal (not inverted) display */
-  };
+};
+
+static bool UiDisplayRunTest(uint8_t column_offset)
+{
   const uint8_t *display_buffer;
 
   UiDisplayHardwareOff();
@@ -774,7 +771,8 @@ static bool UiDisplayRunTest(uint8_t column_offset)
   HAL_Delay(100U);
 
   display_buffer = UiRenderService_BuildDisplayTestPattern();
-  if (!UiDisplayTransfer(false, init_commands, sizeof(init_commands)) ||
+  if (!UiDisplayTransfer(false, ui_display_init_commands,
+                         sizeof(ui_display_init_commands)) ||
       !UiDisplayWriteBuffer(column_offset, display_buffer) ||
       !UiDisplayCommand(0xAFU))
   {
@@ -950,9 +948,10 @@ bool UiBoardTest_HandleCommand(const char *command)
       UiQueueMessage("ERR UI MATRIX I2C2 unavailable\r\n");
       return true;
     }
-    if (ui_matrix_animation_active)
+    if (ui_matrix_animation_active || ui_matrix_held)
     {
-      UiQueueMessage("ERR UI MATRIX busy animation-running=1\r\n");
+      UiQueueMessage("ERR UI MATRIX busy animation-running=%u feedback=%u\r\n",
+                     ui_matrix_animation_active ? 1U : 0U, ui_matrix_held ? 1U : 0U);
       return true;
     }
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
@@ -978,6 +977,37 @@ bool UiBoardTest_HandleCommand(const char *command)
         (unsigned int)probe_status, (unsigned long)hal_error);
     }
   }
+  else if (strcmp(command, "UI MATRIX ORIENT") == 0)
+  {
+    uint8_t device_id;
+
+    /* Three logical corners in distinct colours show how the matrix is
+     * mounted: red top-left, green top-right, blue bottom-left. */
+    if (ui_i2c == NULL)
+    {
+      UiQueueMessage("ERR UI MATRIX I2C2 unavailable\r\n");
+      return true;
+    }
+    if (ui_matrix_animation_active || ui_matrix_held)
+    {
+      UiQueueMessage("ERR UI MATRIX busy animation-running=%u feedback=%u\r\n",
+                     ui_matrix_animation_active ? 1U : 0U, ui_matrix_held ? 1U : 0U);
+      return true;
+    }
+    if (!UiMatrixInitialize(&device_id) ||
+        !UiMatrixSetPixel(0U, 0U, 255U, 0U, 0U) ||
+        !UiMatrixSetPixel(8U, 0U, 0U, 255U, 0U) ||
+        !UiMatrixSetPixel(0U, 8U, 0U, 0U, 255U))
+    {
+      hal_error = HAL_I2C_GetError(ui_i2c);
+      UiMatrixHardwareOff();
+      UiQueueMessage("ERR UI MATRIX ORIENT hal=0x%08lX EN=0\r\n",
+                     (unsigned long)hal_error);
+      return true;
+    }
+    UiQueueMessage("OK UI MATRIX ORIENT red=(0,0) green=(8,0) blue=(0,8); "
+                   "UI OFF clears\r\n");
+  }
   else if ((strcmp(command, "UI MATRIX ANIMATE") == 0) ||
            (strcmp(command, "UI MATRIX DEMO") == 0))
   {
@@ -988,9 +1018,10 @@ bool UiBoardTest_HandleCommand(const char *command)
       UiQueueMessage("ERR UI MATRIX I2C2 unavailable\r\n");
       return true;
     }
-    if (ui_matrix_animation_active)
+    if (ui_matrix_animation_active || ui_matrix_held)
     {
-      UiQueueMessage("ERR UI MATRIX busy animation-running=1\r\n");
+      UiQueueMessage("ERR UI MATRIX busy animation-running=%u feedback=%u\r\n",
+                     ui_matrix_animation_active ? 1U : 0U, ui_matrix_held ? 1U : 0U);
       return true;
     }
     if (!UiMatrixInitialize(&device_id))
@@ -1098,12 +1129,191 @@ void UiBoardTest_Tick1ms(void)
   UiInputService_Tick1ms(encoder_ab);
 }
 
+bool UiBoardTest_MatrixAcquire(void)
+{
+  uint8_t device_id;
+
+  if (!ui_ready || (ui_i2c == NULL) || ui_matrix_animation_active)
+  {
+    return false;
+  }
+  if (!UiMatrixInitialize(&device_id))
+  {
+    UiMatrixHardwareOff();
+    ui_matrix_held = false;
+    return false;
+  }
+  ui_matrix_held = true;
+  return true;
+}
+
+bool UiBoardTest_MatrixHeld(void)
+{
+  return ui_matrix_held;
+}
+
+bool UiBoardTest_MatrixWriteRun(uint8_t page, uint8_t reg, const uint8_t *bytes,
+                                uint8_t length)
+{
+  uint8_t copy[MATRIX_WRITER_MAX_BYTES];
+
+  if (!ui_matrix_held || !ui_matrix_enabled || (bytes == NULL) || (length == 0U) ||
+      (length > sizeof(copy)))
+  {
+    return false;
+  }
+  (void)memcpy(copy, bytes, length);
+  return UiMatrixSelectPage(page) && UiMatrixWrite(reg, copy, length);
+}
+
+void UiBoardTest_MatrixPowerOff(void)
+{
+  UiMatrixHardwareOff();
+}
+
+void UiBoardTest_MatrixRelease(bool blank)
+{
+  if (!ui_matrix_held)
+  {
+    return;
+  }
+  if (blank && ui_matrix_enabled)
+  {
+    (void)UiMatrixBlankAndDisable();
+  }
+  UiMatrixHardwareOff();
+  ui_matrix_held = false;
+}
+
 void UiBoardTest_SafeOff(void)
 {
   ui_watch_enabled = false;
+  ui_matrix_held = false;
   ui_led_chase_active = false;
   UiRenderService_SafeOff();
   UiAllLedsOff();
   UiMatrixHardwareOff();
   UiDisplayHardwareOff();
 }
+
+#if defined(SPOOKY_DEMO)
+/* --- Demo-only surfaces (decision 0011 item 12, p04.3) ----------------------- */
+
+/* Button LED PWM: PF6 is TIM16_CH1 and PF7 TIM17_CH1 (AF1). The demo image
+ * gives both timers to the M7; the M4 sleeps. Duty is in permille. */
+#define UI_DEMO_PWM_PRESCALER 2U
+#define UI_DEMO_PWM_PERIOD 1000U
+
+static bool ui_demo_pwm_ready;
+
+static void UiDemoPwmTimerStart(TIM_TypeDef *timer)
+{
+  timer->CR1 = 0U;
+  timer->PSC = UI_DEMO_PWM_PRESCALER;
+  timer->ARR = UI_DEMO_PWM_PERIOD - 1U;
+  timer->CCR1 = 0U;
+  timer->CCMR1 = TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1PE; /* PWM 1 */
+  timer->CCER = TIM_CCER_CC1E;
+  timer->BDTR = TIM_BDTR_MOE;
+  timer->EGR = TIM_EGR_UG;
+  timer->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
+}
+
+bool UiBoardTest_DemoLightsStart(void)
+{
+  GPIO_InitTypeDef gpio = {0};
+
+  if (!ui_ready)
+  {
+    return false;
+  }
+  __HAL_RCC_TIM16_CLK_ENABLE();
+  __HAL_RCC_TIM17_CLK_ENABLE();
+  UiDemoPwmTimerStart(TIM16);
+  UiDemoPwmTimerStart(TIM17);
+  gpio.Pin = ui_leds[0].pin;
+  gpio.Mode = GPIO_MODE_AF_PP;
+  gpio.Pull = GPIO_NOPULL;
+  gpio.Speed = GPIO_SPEED_FREQ_LOW;
+  gpio.Alternate = GPIO_AF1_TIM16;
+  HAL_GPIO_Init(ui_leds[0].port, &gpio);
+  gpio.Pin = ui_leds[1].pin;
+  gpio.Alternate = GPIO_AF1_TIM17;
+  HAL_GPIO_Init(ui_leds[1].port, &gpio);
+  ui_demo_pwm_ready = true;
+  return true;
+}
+
+void UiBoardTest_DemoSetLights(const uint16_t button_duty[2], const uint8_t encoder_rgb[4])
+{
+  uint32_t encoder;
+
+  if (!ui_demo_pwm_ready || (button_duty == NULL) || (encoder_rgb == NULL))
+  {
+    return;
+  }
+  TIM16->CCR1 = (button_duty[0] > UI_DEMO_PWM_PERIOD) ? UI_DEMO_PWM_PERIOD : button_duty[0];
+  TIM17->CCR1 = (button_duty[1] > UI_DEMO_PWM_PERIOD) ? UI_DEMO_PWM_PERIOD : button_duty[1];
+  /* ui_leds[2..13]: ENCn_R, _G, _B for encoders 0 to 3. */
+  for (encoder = 0U; encoder < 4U; ++encoder)
+  {
+    uint32_t channel;
+
+    for (channel = 0U; channel < 3U; ++channel)
+    {
+      const UiLed *led = &ui_leds[2U + (encoder * 3U) + channel];
+      const bool on = (encoder_rgb[encoder] & (4U >> channel)) != 0U;
+
+      HAL_GPIO_WritePin(led->port, led->pin, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    }
+  }
+}
+
+bool UiBoardTest_DemoDisplayStart(void)
+{
+  static const uint8_t blank[UI_DISPLAY_WIDTH * UI_DISPLAY_PAGES];
+
+  if (!ui_display_spi_ready)
+  {
+    return false;
+  }
+  UiDisplayHardwareOff();
+  HAL_Delay(100U);
+  HAL_GPIO_WritePin(DISP_RST_GPIO_Port, DISP_RST_Pin, GPIO_PIN_SET);
+  HAL_Delay(100U);
+  if (!UiDisplayTransfer(false, ui_display_init_commands,
+                         sizeof(ui_display_init_commands)) ||
+      !UiDisplayWriteBuffer(UI_DISPLAY_DEFAULT_OFFSET, blank) ||
+      !UiDisplayCommand(0xAFU))
+  {
+    UiDisplayHardwareOff();
+    return false;
+  }
+  ui_display_on = true;
+  return true;
+}
+
+bool UiBoardTest_DemoDisplayWritePage(uint8_t page, const uint8_t *bytes)
+{
+  const uint8_t commands[3] =
+  {
+    (uint8_t)(0xB0U | page),
+    (uint8_t)(UI_DISPLAY_DEFAULT_OFFSET & 0x0FU),
+    (uint8_t)(0x10U | (UI_DISPLAY_DEFAULT_OFFSET >> 4U))
+  };
+
+  if (!ui_display_on || (page >= UI_DISPLAY_PAGES) || (bytes == NULL))
+  {
+    return false;
+  }
+  return UiDisplayTransfer(false, commands, sizeof(commands)) &&
+         UiDisplayTransfer(true, bytes, UI_DISPLAY_WIDTH);
+}
+
+bool UiBoardTest_DemoPressed(uint8_t control)
+{
+  return (control < UI_SWITCH_COUNT) &&
+         (UiReadPin(ui_switches[control].port, ui_switches[control].pin) ==
+          ui_switches[control].active_high);
+}
+#endif

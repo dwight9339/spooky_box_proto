@@ -124,11 +124,18 @@ Make capture recoverable and reusable.
 - **Scope:** rolling-window strategy chosen from measured capacity; versioned session,
   asset and recovery formats; session transactions and interrupted-recording recovery;
   immutable rolling save while capture continues; nondestructive Field session browser
-  and playback; band transitions qualified during recording.
+  and playback; band transitions qualified during recording; storage stall headroom: a
+  supported-media write-stall contract from a media survey, recorder queues and DMA
+  buffers sized to that contract with per-block copies out of the DMA interrupts, and
+  session directories small enough that preparing a recording stays within the
+  foreground budget (decision 0014 items 4, 6 and 7).
 - **Exit:** the rolling-save and playback stress: capture continuity and alignment
   archived with no overrun; every reported saved asset loads; failed saves preserve
-  active capture where possible; latencies within measured budgets.
-- **Epic:** `full_spooky_proto-hpq`, plus `full_spooky_proto-54w.12`.
+  active capture where possible; latencies within measured budgets; recorder queue
+  headroom covers the media contract's maximum stall plus its margin, and preparing a
+  recording in the largest supported session directory causes no foreground stall.
+- **Epic:** `full_spooky_proto-hpq`, plus `full_spooky_proto-54w.12` and the
+  storage-headroom tasks `full_spooky_proto-jjy.13`, `.16` and `.18`.
 
 ### M5 — Field-to-Granular
 

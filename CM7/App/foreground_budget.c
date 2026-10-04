@@ -17,7 +17,11 @@ const char *ForegroundBudget_Name(ForegroundService service)
 {
   static const char *const names[FOREGROUND_SERVICE_COUNT] = {
     "LOOP", "IPC", "AUDIO", "RECORDER", "FUEL", "USB", "WAV",
-    "LOGGER", "DIAGNOSTICS", "UI", "SD_TEST", "POWER", "MAG", "DISPATCH"
+    "LOGGER", "DIAGNOSTICS", "UI", "SD_TEST", "POWER", "MAG", "DISPATCH",
+    "CLASSIC", "ACTIVITY", "MATRIX",
+#if defined(SPOOKY_DEMO)
+    "DEMO"
+#endif
   };
   return ((uint32_t)service < FOREGROUND_SERVICE_COUNT) ? names[service] : "UNKNOWN";
 }

@@ -183,7 +183,11 @@ static void MX_TIM16_Init(void)
 {
 
   /* USER CODE BEGIN TIM16_Init 0 */
-
+#if defined(SPOOKY_DEMO)
+  /* The demo image gives TIM16 and PF6 to the M7 button-light PWM (decision
+   * 0011 item 12, p04.3), so each has one owner in the image pair. */
+  return;
+#endif
   /* USER CODE END TIM16_Init 0 */
 
   TIM_OC_InitTypeDef sConfigOC = {0};

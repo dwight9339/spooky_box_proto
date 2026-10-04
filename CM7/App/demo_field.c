@@ -1,0 +1,758 @@
+#include "demo_field.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#include "app_events.h"
+#include "audio_path_service.h"
+#include "classic_adapter.h"
+#include "command_policy.h"
+#include "demo_lights.h"
+#include "demo_view.h"
+#include "emf_level.h"
+#include "main.h"
+#include "matrix_service.h"
+#include "radio_adapter.h"
+#include "radio_control_service.h"
+#include "radio_recorder.h"
+#include "session_control.h"
+#include "sm/context_port.h"
+#include "sm/input_resolution_port.h"
+#include "ui_board_test.h"
+#include "usb_test.h"
+
+_Static_assert((uint32_t)INP_CONTROL_COUNT == 6U, "controls follow the UI switch order");
+_Static_assert((uint32_t)CTX_BAND_COUNT == (uint32_t)RADIO_BAND_COUNT,
+               "the band menu lists the receiver's bands in RadioBand order");
+
+/* View cadence: the frame is composed at most this often, and less often while
+ * the recorder captures (PRES-R5). One OLED page is written per pass. */
+#define DEMO_COMPOSE_MS 50U
+#define DEMO_COMPOSE_CAPTURE_MS 100U
+/* Notice durations; faults stay up longer (Principle I: failures are visible). */
+#define DEMO_NOTICE_MS 2000U
+#define DEMO_FAULT_NOTICE_MS 8000U
+#define DEMO_BAND_NOTICE_MS 3000U
+
+typedef struct
+{
+  uint32_t inputs;           /* inputs the queue admitted */
+  uint32_t inputs_refused;   /* inputs the queue refused; it then reconciles */
+  uint32_t gestures;
+  uint32_t gestures_refused;
+  uint32_t ticks;
+  uint32_t reconciles;       /* reconcile events dispatched */
+  uint32_t commands_refused; /* commands the queue refused (BUSY notice) */
+  uint32_t commands_rejected;/* commands the policy rejected */
+  uint32_t session_changes_refused;
+  uint32_t display_us_max;   /* longest OLED page write */
+  uint32_t matrix_capture_ms;          /* time observed while capturing */
+  uint32_t matrix_capture_frames;      /* frames composed while capturing */
+  uint32_t matrix_capture_superseded;  /* of those, replaced before fully written */
+} DemoCounters;
+
+static bool display_ready;
+static bool lights_ready;
+static bool pressed[INP_CONTROL_COUNT];
+static bool tick_posted;
+static CtxMode mode;
+static CtxEngine field_engine;
+static uint8_t notice;
+static uint8_t notice_arg;
+static uint32_t notice_until_ms;
+static bool session_started;
+static uint32_t session_started_ms;
+static uint32_t last_compose_ms;
+static bool composed_once;
+static DemoLightsOutput lights_shown;
+static bool lights_valid;
+static uint32_t cycles_per_us;
+static uint32_t matrix_last_ms;
+static uint32_t matrix_last_frames;
+static uint32_t matrix_last_superseded;
+static DemoCounters counters;
+
+static uint32_t Now(void)
+{
+  return HAL_GetTick();
+}
+
+static void Notify(DemoNotice kind, uint8_t arg, uint32_t duration_ms)
+{
+  notice = (uint8_t)kind;
+  notice_arg = arg;
+  notice_until_ms = Now() + duration_ms;
+}
+
+/* --- Service interface ----------------------------------------------------- */
+
+void DemoField_Init(void)
+{
+  uint8_t control;
+
+  (void)memset(&counters, 0, sizeof(counters));
+  tick_posted = false;
+  mode = CTX_MODE_FIELD;
+  field_engine = CTX_ENGINE_CLASSIC;
+  notice = (uint8_t)DEMO_NOTICE_NONE;
+  session_started = false;
+  composed_once = false;
+  lights_valid = false;
+  for (control = 0U; control < (uint8_t)INP_CONTROL_COUNT; ++control)
+  {
+    pressed[control] = UiBoardTest_DemoPressed(control);
+  }
+  InputResolution_Init();
+  Context_Init();
+  DemoView_Init();
+  DemoLights_Init();
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+  cycles_per_us = SystemCoreClock / 1000000U;
+  matrix_last_ms = Now();
+  display_ready = UiBoardTest_DemoDisplayStart();
+  lights_ready = UiBoardTest_DemoLightsStart();
+  printf("[demo] Field on the M7 (decision 0011 item 12): display=%u lights=%u\r\n",
+         display_ready ? 1U : 0U, lights_ready ? 1U : 0U);
+}
+
+void DemoField_OnControl(uint8_t control, bool is_pressed, uint32_t now_ms)
+{
+  if (control >= (uint8_t)INP_CONTROL_COUNT)
+  {
+    return;
+  }
+  pressed[control] = is_pressed;
+  if (AppEvents_Post(EVQ_CLASS_INPUT, APP_EVENT_DEMO_INPUT,
+                     (uint32_t)(is_pressed ? INP_INPUT_PRESS : INP_INPUT_RELEASE) |
+                     ((uint32_t)control << 8), now_ms))
+  {
+    ++counters.inputs;
+  }
+  else
+  {
+    ++counters.inputs_refused;
+  }
+}
+
+void DemoField_OnDetents(uint8_t encoder, int32_t detents, uint32_t now_ms)
+{
+  const int32_t clamped = (detents > 127) ? 127 : ((detents < -127) ? -127 : detents);
+
+  if ((encoder >= INP_ENCODER_COUNT) || (clamped == 0))
+  {
+    return;
+  }
+  if (AppEvents_Post(EVQ_CLASS_INPUT, APP_EVENT_DEMO_INPUT,
+                     (uint32_t)INP_INPUT_DETENTS | ((uint32_t)encoder << 8) |
+                     ((uint32_t)(uint8_t)(int8_t)clamped << 16), now_ms))
+  {
+    ++counters.inputs;
+  }
+  else
+  {
+    ++counters.inputs_refused;
+  }
+}
+
+void DemoField_Dispatch(const EvqEvent *event)
+{
+  InpInput input;
+
+  switch (event->type)
+  {
+    case APP_EVENT_DEMO_INPUT:
+      input.sequence = event->sequence;
+      input.time_ms = event->arg1;
+      input.kind = (uint8_t)(event->arg0 & 0xFFU);
+      input.index = (uint8_t)((event->arg0 >> 8) & 0xFFU);
+      input.detents = (int8_t)(uint8_t)((event->arg0 >> 16) & 0xFFU);
+      input.reserved = 0U;
+      InputResolution_OnInput(&input);
+      break;
+    case APP_EVENT_DEMO_GESTURE:
+      Context_OnGesture(Gesture_Unpack(event->arg0));
+      break;
+    case APP_EVENT_DEMO_TICK:
+      tick_posted = false;
+      Context_OnTick();
+      InputResolution_OnTick();
+      break;
+    case APP_EVENT_DEMO_SESSION_CHANGED:
+      Context_OnSessionChanged();
+      InputResolution_OnSessionChanged();
+      break;
+    case APP_EVENT_RECONCILE:
+      /* Context ends PTT and closes a menu; InputResolution releases every
+       * control without firing an action (decision 0009 item 6). */
+      ++counters.reconciles;
+      Context_OnReconcile();
+      InputResolution_OnReconcile();
+      break;
+    default:
+      break;
+  }
+}
+
+/* --- Published state for the surfaces -------------------------------------- */
+
+static DemoScreen Screen(const CtxStatus *ctx, const InpStatus *inp)
+{
+  if (inp->state == (uint8_t)INP_STATE_START_PROMPT)
+  {
+    return DEMO_SCREEN_PROMPT_START;
+  }
+  if (inp->state == (uint8_t)INP_STATE_STOP_PROMPT)
+  {
+    return DEMO_SCREEN_PROMPT_STOP;
+  }
+  switch (ctx->state)
+  {
+    case CTX_STATE_MANUAL:
+    case CTX_STATE_MANUAL_QUICK_JUMP:
+      return DEMO_SCREEN_MANUAL;
+    case CTX_STATE_ENGINE_MENU:
+      return DEMO_SCREEN_ENGINE_MENU;
+    case CTX_STATE_BAND_MENU:
+      return DEMO_SCREEN_BAND_MENU;
+    case CTX_STATE_INSTRUMENT:
+      return DEMO_SCREEN_INSTRUMENT;
+    case CTX_STATE_UTILITY:
+      return DEMO_SCREEN_UTILITY;
+    case CTX_STATE_CLASSIC:
+    default:
+      return DEMO_SCREEN_CLASSIC;
+  }
+}
+
+static void BuildModel(uint32_t now, const CtxStatus *ctx, const InpStatus *inp,
+                       DemoViewModel *model)
+{
+  RadioControlStatus radio;
+  ClassicState classic;
+  EmfLevelReading emf;
+  const RadState radio_state = Radio_GetState();
+
+  (void)memset(model, 0, sizeof(*model));
+  model->screen = (uint8_t)Screen(ctx, inp);
+  model->session = (uint8_t)Session_GetState();
+  model->shift = InputResolution_ShiftActive();
+  model->radio_ok = (radio_state == RAD_STATE_SETTLED) || (radio_state == RAD_STATE_TUNING);
+  (void)RadioControl_GetStatus(&radio);
+  model->band = (uint8_t)radio.tune.band;
+  model->frequency_khz = radio.tune.frequency_khz;
+  if (ClassicAdapter_GetState(&classic))
+  {
+    model->run_state = classic.run_state;
+    model->unable_reason = classic.unable_reason;
+    model->edge = classic.edge;
+    model->direction_up = classic.direction_up;
+    model->rate_limited = classic.rate_limited;
+    model->rate_per_min = classic.rate_per_min;
+    model->distance_channels = classic.distance_channels;
+    model->hold_seconds = classic.hold_seconds;
+  }
+  model->menu_highlight = ctx->highlight;
+  if (Session_IsActive() && session_started)
+  {
+    model->session_seconds = (now - session_started_ms) / 1000U;
+  }
+  (void)EmfLevel_Get(now, &emf);
+  model->emf_known = emf.state == EMF_LEVEL_VALID;
+  model->emf_uT = emf.emf_uT;
+  model->notice = notice;
+  model->notice_arg = notice_arg;
+}
+
+static void ServiceDisplay(uint32_t now, const DemoViewModel *model)
+{
+  const uint32_t interval = RadioRecorder_IsCapturing() ? DEMO_COMPOSE_CAPTURE_MS
+                                                        : DEMO_COMPOSE_MS;
+  const uint8_t *bytes;
+  uint8_t page;
+
+  if (!display_ready)
+  {
+    return;
+  }
+  if (!composed_once || ((now - last_compose_ms) >= interval))
+  {
+    DemoView_Compose(model);
+    last_compose_ms = now;
+    composed_once = true;
+  }
+  if (DemoView_NextPage(&page, &bytes))
+  {
+    const uint32_t start = DWT->CYCCNT;
+    const bool ok = UiBoardTest_DemoDisplayWritePage(page, bytes);
+    const uint32_t elapsed_us = (DWT->CYCCNT - start) / cycles_per_us;
+
+    DemoView_PageDone(page, ok);
+    if (elapsed_us > counters.display_us_max)
+    {
+      counters.display_us_max = elapsed_us;
+    }
+  }
+}
+
+static void ServiceLights(uint32_t now, const CtxStatus *ctx, const DemoViewModel *model)
+{
+  DemoLightsInput input;
+  DemoLightsOutput output;
+
+  if (!lights_ready)
+  {
+    return;
+  }
+  input.screen = model->screen;
+  input.shift = model->shift;
+  input.session_active = Session_IsActive();
+  input.button_pressed[0] = pressed[INP_BUTTON0];
+  input.button_pressed[1] = pressed[INP_BUTTON1];
+  input.shift_mode_switch = !Session_IsActive();
+  input.shift_save = false; /* capture save is p04.5 */
+  input.shift_quick_jump = (ctx->state == (uint8_t)CTX_STATE_CLASSIC) ||
+                           (ctx->state == (uint8_t)CTX_STATE_MANUAL_QUICK_JUMP);
+  DemoLights_Compute(&input, now, &output);
+  if (!lights_valid || (memcmp(&output, &lights_shown, sizeof(output)) != 0))
+  {
+    UiBoardTest_DemoSetLights(output.button_duty, output.encoder_rgb);
+    lights_shown = output;
+    lights_valid = true;
+  }
+}
+
+/* Frames the matrix composes while the recorder captures (decision 0011 item 12:
+ * a reduced, measured frame rate). */
+static void MeasureMatrix(uint32_t now)
+{
+  MatrixServiceStatus matrix;
+
+  MatrixService_GetStatus(&matrix);
+  if (RadioRecorder_IsCapturing() && matrix.enabled)
+  {
+    counters.matrix_capture_ms += now - matrix_last_ms;
+    counters.matrix_capture_frames += matrix.frames - matrix_last_frames;
+    counters.matrix_capture_superseded += matrix.frames_superseded - matrix_last_superseded;
+  }
+  matrix_last_ms = now;
+  matrix_last_frames = matrix.frames;
+  matrix_last_superseded = matrix.frames_superseded;
+}
+
+void DemoField_Service(void)
+{
+  const uint32_t now = Now();
+  DemoViewModel model;
+  CtxStatus ctx;
+  InpStatus inp;
+
+  if (!tick_posted && (InputResolution_TickDue(now) || Context_TickDue(now)))
+  {
+    tick_posted = AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_DEMO_TICK, 0U, 0U);
+    counters.ticks += tick_posted ? 1U : 0U;
+  }
+  if ((notice != (uint8_t)DEMO_NOTICE_NONE) && ((int32_t)(now - notice_until_ms) >= 0))
+  {
+    notice = (uint8_t)DEMO_NOTICE_NONE;
+  }
+  MeasureMatrix(now);
+  Context_GetStatus(&ctx);
+  InputResolution_GetStatus(&inp);
+  BuildModel(now, &ctx, &inp, &model);
+  ServiceDisplay(now, &model);
+  ServiceLights(now, &ctx, &model);
+}
+
+bool DemoField_ClassicActive(void)
+{
+  return (mode == CTX_MODE_FIELD) && (field_engine == CTX_ENGINE_CLASSIC);
+}
+
+/* --- Published events from other regions ----------------------------------- */
+
+void DemoField_OnSessionEvent(SesPublished event)
+{
+  const uint32_t now = Now();
+
+  switch (event)
+  {
+    case SES_PUB_RECORDING_STARTED:
+      session_started = true;
+      session_started_ms = now;
+      Notify(DEMO_NOTICE_SESSION_STARTED, 0U, DEMO_NOTICE_MS);
+      break;
+    case SES_PUB_RECORDING_REJECTED:
+      DemoLights_OnSessionFault(now);
+      Notify(DEMO_NOTICE_SESSION_REJECTED, 0U, DEMO_FAULT_NOTICE_MS);
+      break;
+    case SES_PUB_RECORDING_COMPLETED:
+      session_started = false;
+      Notify(DEMO_NOTICE_SESSION_SAVED, 0U, DEMO_NOTICE_MS);
+      break;
+    case SES_PUB_RECORDING_FILE_LIMIT:
+      session_started = false;
+      Notify(DEMO_NOTICE_SESSION_LIMIT, 0U, DEMO_NOTICE_MS);
+      break;
+    case SES_PUB_RECORDING_ABORTED:
+      session_started = false;
+      DemoLights_OnSessionFault(now);
+      Notify(DEMO_NOTICE_SESSION_ABORTED, 0U, DEMO_FAULT_NOTICE_MS);
+      break;
+    case SES_PUB_RECORDING_CARD_FULL:
+      session_started = false;
+      DemoLights_OnSessionFault(now);
+      Notify(DEMO_NOTICE_CARD_FULL, 0U, DEMO_FAULT_NOTICE_MS);
+      break;
+    case SES_PUB_RECORDING_CANCELLED:
+      session_started = false;
+      Notify(DEMO_NOTICE_SESSION_CANCELLED, 0U, DEMO_NOTICE_MS);
+      break;
+    default:
+      break; /* preparing, stopping and an ignored stop show in the header */
+  }
+}
+
+void DemoField_OnSessionStateChanged(void)
+{
+  if (!AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_DEMO_SESSION_CHANGED, 0U, 0U))
+  {
+    ++counters.session_changes_refused;
+  }
+}
+
+void DemoField_OnRadioAnswer(RadPublished event, const RadCommand *command)
+{
+  const bool band_command = (command != NULL) &&
+                            (command->source == (uint8_t)RAD_SOURCE_INTERNAL) &&
+                            (command->kind == (uint8_t)RAD_CMD_BAND);
+
+  switch (event)
+  {
+    case RAD_PUB_BAND_CHANGED:
+      if (band_command)
+      {
+        Notify(DEMO_NOTICE_BAND_CHANGED, (uint8_t)command->arg, DEMO_NOTICE_MS);
+      }
+      break;
+    case RAD_PUB_FAULT_BAND:
+      Notify(DEMO_NOTICE_BAND_FAILED, 0U, DEMO_FAULT_NOTICE_MS);
+      break;
+    case RAD_PUB_REJECTED_RANGE:
+    case RAD_PUB_REJECTED_UNAVAILABLE:
+    case RAD_PUB_SUPERSEDED:
+    case RAD_PUB_ABANDONED:
+      if (band_command)
+      {
+        Notify(DEMO_NOTICE_BAND_FAILED, 0U, DEMO_FAULT_NOTICE_MS);
+      }
+      break;
+    case RAD_PUB_FAULT_START:
+    case RAD_PUB_FAULT_AUDIO:
+      Notify(DEMO_NOTICE_RADIO_FAULT, 0U, DEMO_FAULT_NOTICE_MS);
+      break;
+    default:
+      break;
+  }
+}
+
+/* --- InputResolution integration -------------------------------------------- */
+
+void inp_integration_emit(Gesture gesture)
+{
+  if (AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_DEMO_GESTURE, Gesture_Pack(gesture), 0U))
+  {
+    ++counters.gestures;
+  }
+  else
+  {
+    ++counters.gestures_refused;
+  }
+}
+
+void inp_integration_release_all(void)
+{
+  /* Context takes the same reconcile event first (DemoField_Dispatch). */
+}
+
+bool inp_integration_on_page(void)
+{
+  return Context_OnPage();
+}
+
+bool inp_integration_session_active(void)
+{
+  return Session_IsActive();
+}
+
+uint32_t inp_integration_now_ms(void)
+{
+  return Now();
+}
+
+void inp_integration_issue(InpCommand command)
+{
+  const bool start = command == INP_CMD_START_SESSION;
+  const CommandAction action = start ? COMMAND_ACTION_SESSION_START
+                                     : COMMAND_ACTION_SESSION_STOP;
+  bool posted;
+
+  if (CommandPolicy_Evaluate(action, Session_GetState()) != COMMAND_POLICY_ALLOWED)
+  {
+    ++counters.commands_rejected;
+    Notify(DEMO_NOTICE_SESSION_REJECTED, 0U, DEMO_FAULT_NOTICE_MS);
+    return;
+  }
+  /* An open-ended session, as RECORD START without a duration. */
+  posted = start ? SessionControl_RequestStart(0U, AudioPath_IsRunning())
+                 : SessionControl_RequestStop();
+  printf("[demo] session %s from the prompt%s\r\n", start ? "start" : "stop",
+         posted ? "" : ": queue full");
+  if (!posted)
+  {
+    ++counters.commands_refused;
+    Notify(DEMO_NOTICE_BUSY, 0U, DEMO_NOTICE_MS);
+  }
+}
+
+void inp_integration_publish(InpPublished event)
+{
+  static const char *const names[] = {
+    "PROMPT_OPENED_START", "PROMPT_OPENED_STOP", "PROMPT_CONFIRMED_START",
+    "PROMPT_CONFIRMED_STOP", "PROMPT_CANCELLED", "PROMPT_WITHDRAWN",
+    "SHIFT_ENTERED", "SHIFT_LEFT"
+  };
+
+  printf("[demo] t=%lu inp %s\r\n", (unsigned long)Now(),
+         ((uint32_t)event < (sizeof(names) / sizeof(names[0]))) ? names[event] : "?");
+}
+
+/* --- Context integration ---------------------------------------------------- */
+
+bool ctx_integration_session_active(void)
+{
+  return Session_IsActive();
+}
+
+bool ctx_integration_band_change_allowed(void)
+{
+  return CommandPolicy_Evaluate(COMMAND_ACTION_RADIO_BAND, Session_GetState()) ==
+         COMMAND_POLICY_ALLOWED;
+}
+
+bool ctx_integration_engine_available(CtxEngine engine)
+{
+  return engine == CTX_ENGINE_CLASSIC; /* Manual is not in the demo */
+}
+
+uint8_t ctx_integration_page_count(CtxEngine engine)
+{
+  (void)engine;
+  return 1U;
+}
+
+CtxBand ctx_integration_current_band(void)
+{
+  RadioControlStatus radio;
+
+  (void)RadioControl_GetStatus(&radio);
+  return (radio.band < RADIO_BAND_COUNT) ? (CtxBand)radio.band : CTX_BAND_FM;
+}
+
+bool ctx_integration_utility_at_root(void)
+{
+  return true; /* no utility service in the demo */
+}
+
+uint32_t ctx_integration_now_ms(void)
+{
+  return Now();
+}
+
+static bool Allowed(CommandAction action)
+{
+  if (CommandPolicy_Evaluate(action, Session_GetState()) == COMMAND_POLICY_ALLOWED)
+  {
+    return true;
+  }
+  ++counters.commands_rejected;
+  Notify(DEMO_NOTICE_NOT_WHILE_RECORDING, 0U, DEMO_NOTICE_MS);
+  return false;
+}
+
+static void Posted(bool posted)
+{
+  if (!posted)
+  {
+    ++counters.commands_refused;
+    Notify(DEMO_NOTICE_BUSY, 0U, DEMO_NOTICE_MS);
+  }
+}
+
+void ctx_integration_command(CtxCommand command, int32_t arg)
+{
+  switch (command)
+  {
+    case CTX_CMD_RUN_PAUSE:
+    case CTX_CMD_TOGGLE_DIRECTION:
+    case CTX_CMD_JUMP_RATE:
+    case CTX_CMD_JUMP_DISTANCE:
+    case CTX_CMD_EDGE_BEHAVIOR:
+    case CTX_CMD_HOLD_TIME:
+      if (Allowed(COMMAND_ACTION_SCAN_PARAMETER))
+      {
+        Posted(ClassicAdapter_RequestInternalCommand(command, arg));
+      }
+      break;
+    case CTX_CMD_SWITCH_BAND:
+      if (Allowed(COMMAND_ACTION_RADIO_BAND))
+      {
+        const bool posted = RadioAdapter_RequestInternalBand((uint32_t)arg);
+
+        Posted(posted);
+        if (posted)
+        {
+          Notify(DEMO_NOTICE_BAND_SWITCHING, (uint8_t)arg, DEMO_BAND_NOTICE_MS);
+        }
+      }
+      break;
+    case CTX_CMD_CAPTURE_SAVE:
+      Notify(DEMO_NOTICE_SAVE_UNAVAILABLE, 0U, DEMO_NOTICE_MS); /* p04.5 */
+      break;
+    case CTX_CMD_MONITOR_PTT:  /* no monitor stage yet: full_spooky_proto-54w.9 */
+    case CTX_CMD_SELECT_ENGINE:/* followed by CTX_PUB_ENGINE_CHANGED */
+    case CTX_CMD_SET_MODE:     /* followed by CTX_PUB_MODE_CHANGED */
+    case CTX_CMD_LOAD_CAPTURE: /* p04.6 */
+    case CTX_CMD_TUNE:         /* Manual is not in the demo */
+    case CTX_CMD_TOGGLE_WRAP:
+    case CTX_CMD_UTILITY_OPEN: /* no utility service in the demo */
+    case CTX_CMD_UTILITY_CLOSE:
+    case CTX_CMD_UTILITY_SCROLL:
+    case CTX_CMD_UTILITY_SELECT:
+    case CTX_CMD_UTILITY_BACK:
+    default:
+      break;
+  }
+}
+
+void ctx_integration_publish(CtxPublished event, int32_t arg)
+{
+  static const char *const names[] = {
+    "MODE_CHANGED", "ENGINE_CHANGED", "PAGE_CHANGED", "MENU_OPENED", "MENU_HIGHLIGHT",
+    "MENU_CLOSED", "MENU_WITHDRAWN", "UTILITY_OPENED", "UTILITY_CLOSED", "ACTION_REJECTED"
+  };
+
+  switch (event)
+  {
+    case CTX_PUB_MODE_CHANGED:
+      mode = (CtxMode)arg;
+      break;
+    case CTX_PUB_ENGINE_CHANGED:
+      field_engine = (CtxEngine)arg;
+      break;
+    case CTX_PUB_ACTION_REJECTED:
+      Notify((arg == (int32_t)CTX_ACTION_BAND_CHANGE) ? DEMO_NOTICE_BAND_UNAVAILABLE
+                                                      : DEMO_NOTICE_MODE_UNAVAILABLE,
+             0U, DEMO_NOTICE_MS);
+      break;
+    default:
+      break;
+  }
+  printf("[demo] t=%lu ctx %s %ld\r\n", (unsigned long)Now(),
+         ((uint32_t)event < (sizeof(names) / sizeof(names[0]))) ? names[event] : "?",
+         (long)arg);
+}
+
+/* --- CLI ----------------------------------------------------------------------- */
+
+/* `DEMO LIGHTS` reports and `DEMO LIGHTS IDLE <0-1000>` sets the button idle
+ * level in permille of perceived lightness, for setting it by eye on the bench.
+ * Not kept across a reset. */
+static bool HandleLights(const char *command)
+{
+  static const char prefix[] = "DEMO LIGHTS IDLE ";
+  char response[96];
+  const char *digits;
+  uint32_t value = 0U;
+  uint32_t count = 0U;
+
+  if (strcmp(command, "DEMO LIGHTS") != 0)
+  {
+    if (strncmp(command, prefix, sizeof(prefix) - 1U) != 0)
+    {
+      return false;
+    }
+    for (digits = &command[sizeof(prefix) - 1U]; (*digits >= '0') && (*digits <= '9');
+         ++digits)
+    {
+      value = (value * 10U) + (uint32_t)(*digits - '0');
+      ++count;
+      if (count > 4U)
+      {
+        break;
+      }
+    }
+    if ((count == 0U) || (count > 4U) || (*digits != '\0') || (value > 1000U))
+    {
+      (void)UsbTest_SendText("ERR usage: DEMO LIGHTS [IDLE 0..1000]\r\n");
+      return true;
+    }
+    DemoLights_SetIdleLightness((uint16_t)value);
+  }
+  (void)snprintf(response, sizeof(response),
+                 "OK DEMO LIGHTS IDLE=%u DUTY=%u PRESSED_DUTY=1000\r\n",
+                 (unsigned)DemoLights_IdleLightness(),
+                 (unsigned)DemoLights_LightnessToDuty(DemoLights_IdleLightness()));
+  (void)UsbTest_SendText(response);
+  return true;
+}
+
+bool DemoField_HandleCommand(const char *command)
+{
+  static const char *const screens[DEMO_SCREEN_COUNT] = {
+    "CLASSIC", "MANUAL", "BAND_MENU", "ENGINE_MENU", "PROMPT_START", "PROMPT_STOP",
+    "INSTRUMENT", "UTILITY"
+  };
+  DemoViewModel model;
+  DemoViewStatus view;
+  CtxStatus ctx;
+  InpStatus inp;
+  EvqStats queue;
+  char response[384];
+
+  if (HandleLights(command))
+  {
+    return true;
+  }
+  if ((strcmp(command, "DEMO") != 0) && (strcmp(command, "DEMO STATUS") != 0))
+  {
+    return false;
+  }
+  Context_GetStatus(&ctx);
+  InputResolution_GetStatus(&inp);
+  BuildModel(Now(), &ctx, &inp, &model);
+  DemoView_GetStatus(&view);
+  AppEvents_GetStats(&queue);
+  (void)snprintf(response, sizeof(response),
+                 "OK DEMO SCREEN=%s INP=%u SHIFT=%u INPUTS=%lu REFUSED=%lu "
+                 "GESTURES=%lu/%lu UNBOUND=%lu RECONCILES=%lu TICKS=%lu "
+                 "CMD_REJECTED=%lu CMD_REFUSED=%lu QUEUE_HIGH=%lu "
+                 "OLED=%u FRAMES=%lu PAGES=%lu PAGE_FAIL=%lu PAGE_US_MAX=%lu "
+                 "LIGHTS=%u MATRIX_REC_MS=%lu MATRIX_REC_FRAMES=%lu "
+                 "MATRIX_REC_SUPERSEDED=%lu\r\n",
+                 (model.screen < DEMO_SCREEN_COUNT) ? screens[model.screen] : "?",
+                 (unsigned)inp.state, model.shift ? 1U : 0U,
+                 (unsigned long)counters.inputs, (unsigned long)counters.inputs_refused,
+                 (unsigned long)counters.gestures, (unsigned long)counters.gestures_refused,
+                 (unsigned long)ctx.unbound, (unsigned long)counters.reconciles,
+                 (unsigned long)counters.ticks, (unsigned long)counters.commands_rejected,
+                 (unsigned long)counters.commands_refused, (unsigned long)queue.high_water,
+                 display_ready ? 1U : 0U, (unsigned long)view.frames,
+                 (unsigned long)view.pages_written, (unsigned long)view.pages_failed,
+                 (unsigned long)counters.display_us_max, lights_ready ? 1U : 0U,
+                 (unsigned long)counters.matrix_capture_ms,
+                 (unsigned long)counters.matrix_capture_frames,
+                 (unsigned long)counters.matrix_capture_superseded);
+  (void)UsbTest_SendText(response);
+  return true;
+}

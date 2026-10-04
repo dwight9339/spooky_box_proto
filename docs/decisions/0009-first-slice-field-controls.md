@@ -1,6 +1,7 @@
 # 0009. First-slice Field controls and gesture resolution
 
-- **Status:** Accepted 2026-09-28
+- **Status:** Accepted 2026-09-28; item 11 superseded for the Classic page by
+  [0016](0016-classic-scan-motion.md)
 - **Date:** 2026-09-28
 - **Supersedes:** none
 - **Beads:** `full_spooky_proto-54w.2` (this decision), `full_spooky_proto-54w.3`

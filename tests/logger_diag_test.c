@@ -4,6 +4,7 @@
 #include "diagnostics.h"
 #include "app_events.h"
 #include "fake_hal.h"
+#include "usb_test.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,15 @@ bool UsbTest_SendText(const char *text)
   CHECK(usb_count < 300U);
   strcpy(usb_lines[usb_count++], text);
   return true;
+}
+
+void UsbTest_GetRxStats(UsbTestRxStats *stats)
+{
+  stats->packets = 12U;
+  stats->pauses = 3U;
+  stats->overruns = 0U;
+  stats->queued = 5U;
+  stats->paused = false;
 }
 
 static void test_buffer(void)
@@ -215,14 +225,15 @@ static void test_cli(void)
 
   cli_reset();
   CHECK(Diagnostics_HandleCommand("HELP"));
-  for (uint32_t i = 0; i < 10U; ++i) Diagnostics_Service();
-  CHECK(usb_count == 10U);
+  for (uint32_t i = 0; i < 11U; ++i) Diagnostics_Service();
+  CHECK(usb_count == 11U);
   CHECK(strstr(usb_lines[2], "DIAG IDENTITY") != NULL);
   CHECK(strstr(usb_lines[3], "LOG STATUS") != NULL);
   CHECK(strstr(usb_lines[7], "WAV FETCH") != NULL);
+  CHECK(strstr(usb_lines[10], "OK CLASSIC") != NULL);
   CHECK(Diagnostics_HandleCommand("LOG STATUS"));
   Diagnostics_Service();
-  CHECK(strstr(usb_lines[10], "TX_ERRORS=4") != NULL);
+  CHECK(strstr(usb_lines[11], "TX_ERRORS=4") != NULL);
   CHECK(test_primask == 0U);
 }
 
@@ -237,10 +248,12 @@ static void test_foreground_latency(void)
   CHECK(Diagnostics_HandleCommand("DIAG LATENCY"));
   for (uint32_t i = 0U; i < FOREGROUND_SERVICE_COUNT + 2U; ++i)
     Diagnostics_Service();
-  CHECK(strstr(usb_lines[0], "BLOCK_MS=86 SERVICES=14 recording-only=1") != NULL);
+  CHECK(strstr(usb_lines[0], "BLOCK_MS=86 SERVICES=17 recording-only=1") != NULL);
   CHECK(strstr(usb_lines[1], "SERVICE=LOOP BUDGET_MS=75 MAX_MS=76 VIOLATIONS=1") != NULL);
   CHECK(strstr(usb_lines[4], "SERVICE=RECORDER BUDGET_MS=70 MAX_MS=51 VIOLATIONS=0") != NULL);
   CHECK(strstr(usb_lines[6], "SERVICE=USB BUDGET_MS=10 MAX_MS=11 VIOLATIONS=1") != NULL);
+  CHECK(strstr(usb_lines[FOREGROUND_SERVICE_ACTIVITY + 1U],
+               "SERVICE=ACTIVITY BUDGET_MS=10") != NULL);
   CHECK(strcmp(usb_lines[FOREGROUND_SERVICE_COUNT + 1U],
                "OK DIAG LATENCY END\r\n") == 0);
   CHECK(Diagnostics_HandleCommand("DIAG LAST"));
@@ -253,6 +266,16 @@ static void count_dispatch(void *context, const EvqEvent *event)
 {
   (void)event;
   ++*(uint32_t *)context;
+}
+
+/* 8lw.24: USB command receive counters on one DIAG line. */
+static void test_usb_diag(void)
+{
+  cli_reset();
+  CHECK(Diagnostics_HandleCommand("DIAG USB"));
+  Diagnostics_Service();
+  CHECK(strcmp(usb_lines[0], "OK DIAG USB RX_PACKETS=12 RX_PAUSES=3 RX_OVERRUNS=0 "
+    "RX_QUEUED=5 RX_PAUSED=0\r\n") == 0);
 }
 
 /* Decision 0007 item 14: queue counters on one DIAG line; a rejected internal
@@ -300,6 +323,7 @@ int main(void)
   test_logger();
   test_cli();
   test_foreground_latency();
+  test_usb_diag();
   test_queue_diag();
   puts("logger/diagnostics tests passed");
   return 0;

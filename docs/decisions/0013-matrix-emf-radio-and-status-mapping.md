@@ -1,6 +1,8 @@
 # 0013. LED matrix mapping for EMF, radio onsets and recording status
 
-- **Status:** Accepted 2026-10-01
+- **Status:** Accepted 2026-10-01; items 3 and 14, the trail default in item 2 and the
+  baseline behaviour in the Context superseded by
+  [0019](0019-matrix-emf-four-buckets-and-quiet-baseline.md)
 - **Date:** 2026-10-01
 - **Supersedes:** none
 - **Beads:** `full_spooky_proto-54w.8` (this decision and its implementation);

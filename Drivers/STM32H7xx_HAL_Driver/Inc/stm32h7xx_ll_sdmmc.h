@@ -325,7 +325,11 @@ typedef struct
 #define SDMMC_SDR25_SWITCH_PATTERN         ((uint32_t)0x80FFFF01U)
 #define SDMMC_SDR12_SWITCH_PATTERN         ((uint32_t)0x80FFFF00U)
 
+/* Project change (jjy.15): overridable so an unresponsive card fails within the
+ * SD 1 s power-up allowance; the HAL default is unchanged. */
+#ifndef SDMMC_MAX_VOLT_TRIAL
 #define SDMMC_MAX_VOLT_TRIAL               ((uint32_t)0x0000FFFFU)
+#endif
 
 #define SDMMC_MAX_TRIAL                    ((uint32_t)0x0000FFFFU)
 

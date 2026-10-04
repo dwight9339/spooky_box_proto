@@ -69,6 +69,9 @@ Classic : E0_TURN / ctx_command(CTX_CMD_JUMP_RATE, ctx_detents());
 Classic : E1_TURN / ctx_command(CTX_CMD_JUMP_DISTANCE, ctx_detents());
 Classic : E0_CLICK / ctx_command(CTX_CMD_RUN_PAUSE, 0);
 Classic : E1_CLICK / ctx_command(CTX_CMD_TOGGLE_DIRECTION, 0);
+' Edge behavior and activity hold time (decision 0016 items 11 and 16).
+Classic : E2_TURN / ctx_command(CTX_CMD_EDGE_BEHAVIOR, ctx_detents());
+Classic : E3_TURN / ctx_command(CTX_CMD_HOLD_TIME, ctx_detents());
 ' Manual quick-jump from Classic saves Classic in the return slot (item 28).
 Classic --> ManualQuickJump : SHIFT_E1 / ctx_select_engine(CTX_ENGINE_MANUAL);
 

@@ -46,7 +46,8 @@ static const CommandPolicyRule rules[COMMAND_ACTION_COUNT] = {
 #endif
   /* Band changes stay rejected until 54w.12 qualifies them. */
   [COMMAND_ACTION_RADIO_BAND] = {
-    ALLOW, REJECT, REJECT, "ERR RADIO tuning disabled while recording\r\n"}
+    ALLOW, REJECT, REJECT, "ERR RADIO tuning disabled while recording\r\n"},
+  [COMMAND_ACTION_SCAN_PARAMETER] = {ALLOW, ALLOW, ALLOW, NULL}
 };
 
 _Static_assert((sizeof(rules) / sizeof(rules[0])) == COMMAND_ACTION_COUNT,
@@ -74,6 +75,9 @@ CommandPolicyClass CommandPolicy_Evaluate(CommandAction action, SesState state)
   const CommandPolicyRule *rule = CommandPolicy_GetRule(action);
   switch (state)
   {
+    /* Preparing a recording file holds the card and keeps the radio audio
+     * path committed, so it follows the recording rules. */
+    case SES_STATE_PREPARING:
     case SES_STATE_RECORDING:
       return rule->recording;
     case SES_STATE_FINALIZING:
@@ -127,6 +131,8 @@ CommandAction CommandPolicy_ActionFromCli(const char *command)
       (strcmp(command, "UI LEDS START") == 0) ||
       (strcmp(command, "UI MATRIX ANIMATE") == 0) ||
       (strcmp(command, "UI MATRIX DEMO") == 0) ||
+      (strcmp(command, "UI MATRIX ORIENT") == 0) ||
+      (strcmp(command, "UI MATRIX FEEDBACK ON") == 0) ||
       (strcmp(command, "UI DISPLAY") == 0) ||
       HasWordPrefix(command, "UI DISPLAY TEST"))
   {
@@ -135,6 +141,14 @@ CommandAction CommandPolicy_ActionFromCli(const char *command)
   if (strcmp(command, "EMF ZERO") == 0)
   {
     return COMMAND_ACTION_EMF_ZERO;
+  }
+  if (strcmp(command, "CLASSIC") == 0)
+  {
+    return COMMAND_ACTION_STATUS_READ;
+  }
+  if (HasWordPrefix(command, "CLASSIC"))
+  {
+    return COMMAND_ACTION_SCAN_PARAMETER;
   }
   if (strcmp(command, "BAND") == 0)
   {

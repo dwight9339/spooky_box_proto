@@ -92,6 +92,18 @@ AudioTimelineResult AudioTimeline_AlignStart(const AudioTimelineStream *stream,
                                              uint32_t mic_latency_frames,
                                              AudioTimelineAlignment *alignment);
 
+/* First frame of the next half the stream will deliver: every completed half
+ * has been handed on, so the next delivery starts after the last of them. A
+ * completion pending at the last observation is still delivered next. */
+uint64_t AudioTimeline_NextHalfFrame(const AudioTimelineStream *stream);
+
+/* Frames to drop from the start of the next delivered half, which begins at
+ * next_half_frame, so that the first frame kept sits at alignment->origin.
+ * Whole halves delivered before the half in progress are dropped too. */
+AudioTimelineResult AudioTimeline_DeliverySkip(
+  const AudioTimelineAlignment *alignment, uint64_t next_half_frame,
+  uint32_t *skip_frames);
+
 /* Frames from origin to position on the same epoch. */
 AudioTimelineResult AudioTimeline_Offset(AudioTimelinePosition origin,
                                          AudioTimelinePosition position,

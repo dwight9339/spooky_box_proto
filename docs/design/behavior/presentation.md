@@ -45,12 +45,14 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | PRES-SES-06 | `SES_PUB_STOP_IGNORED` | Reply to the command's source | `OK RECORD already idle` |
 | PRES-SES-07 | `SES_PUB_RECORDING_CARD_FULL` | Display, lights and audio, as a card-full fault; retain the valid finalized file | `ERR RECORD ABORT file=... reason=card full finalized=1` |
 | PRES-SES-08 | `SES_PUB_RECORDING_FILE_LIMIT` | Display, lights and audio, as a clean single-file ending | `OK RECORD PASS file=... reason=WAV size limit` |
+| PRES-SES-09 | `SES_PUB_RECORDING_PREPARING` | Reply to the command's source; a surface may show that a start is pending, never that recording has begun (PRES-R2) | `OK RECORD PREPARING prealloc-kib=...`, then `OK RECORD PREPARED file=...` with step timings |
+| PRES-SES-10 | `SES_PUB_RECORDING_CANCELLED` | Display, lights and audio: the start was cancelled and nothing was recorded | `OK RECORD STOP cancelled before capture; no file kept` |
 
 ## Published session state
 
 | Field | CLI today |
 |---|---|
-| Session state | `RECORD STATUS` replies `OK RECORD ACTIVE` or `OK RECORD IDLE` |
+| Session state | `RECORD STATUS` replies `OK RECORD PREPARING`, `OK RECORD ACTIVE` or `OK RECORD IDLE` |
 | File name | `RECORD STATUS` |
 | Written audio | `RECORD STATUS` and periodic `RECORD progress` lines |
 | Requested duration | The `OK RECORD START` reply only |
@@ -113,6 +115,34 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | PRES-CTX-05 | `CTX_PUB_ACTION_REJECTED` | Display only: the action and "unavailable while recording" briefly, then the current view. Lights and audio are unchanged ([decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 10). | None |
 | PRES-INP-01 | `INP_PUB_SHIFT_ENTERED`, `INP_PUB_SHIFT_LEFT` | Lights: while Shift is held, only the controls with an available Shift action are lit ([decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 8) | None |
 
+## Classic scan engine events
+
+Published by the Classic service (`CM7/App/classic_service.c`) under
+[spec 001](../../../spec/specs/001-classic-scan-engine/spec.md) and
+[decision 0016](../../decisions/0016-classic-scan-motion.md). Each event carries the
+state after the change. Routine jumps change only the frequency and are not events
+([decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 12).
+
+| ID | Domain event | Required acknowledgement | CLI and log today |
+|---|---|---|---|
+| PRES-CLS-01 | `CLASSIC_PUB_RUN_STATE` | Display: running, holding, paused, sweep complete, or unable to scan with the reason. Unable to scan is never shown as running or holding (spec FR-027); holding is distinct from paused (FR-020). | `[classic] ... RUN_STATE` log line; `OK CLASSIC STATE=... REASON=...` to a CLI command |
+| PRES-CLS-02 | `CLASSIC_PUB_DIRECTION` | Display, including a bounce reversal | `[classic] ... DIRECTION` log line |
+| PRES-CLS-03 | `CLASSIC_PUB_RATE` | Display: the rate in effect, and that it is limited when the band's maximum applies | `[classic] ... RATE` log line |
+| PRES-CLS-04 | `CLASSIC_PUB_DISTANCE` | Display: channels and kHz | `[classic] ... DISTANCE` log line |
+| PRES-CLS-05 | `CLASSIC_PUB_EDGE` | Display | `[classic] ... EDGE` log line |
+| PRES-CLS-06 | `CLASSIC_PUB_HOLD_TIME` | Display: the hold time, or that the hold is off | `[classic] ... HOLD_TIME` log line |
+
+## Published Classic state
+
+| Field | CLI today |
+|---|---|
+| Run state and unable reason | `CLASSIC` replies `OK CLASSIC STATE=... REASON=...` |
+| Band, frequency, channel index and count | `CLASSIC` (`BAND`, `FREQ`, `CH`) |
+| Direction, edge behavior | `CLASSIC` (`DIR`, `EDGE`) |
+| Rate in effect, setting, limited | `CLASSIC` (`RATE`, `SET`, `LIMITED`) |
+| Jump distance in channels and kHz | `CLASSIC` (`DIST`, `DIST_KHZ`) |
+| Hold time | `CLASSIC` (`HOLD`) |
+
 ## Open behavior
 
 | Item | Question | Settled by |
@@ -120,6 +150,7 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | Session events on OLED, LEDs, matrix and audio | What does each surface show for each session event, and how are failures made visible? | `full_spooky_proto-54w.1` |
 | EMF, activity and warning expression | How do the matrix and LEDs express semantic EMF, radio activity and warnings? | `full_spooky_proto-54w.8` |
 | Utility entry and exit | What does the display show when a utility opens or closes? | `full_spooky_proto-54w.5` |
+| Classic view | How does the display show Classic's run state, rate, distance, edge behavior and hold time, and is scan position expressed on the matrix? | `full_spooky_proto-54w.5` |
 | Band change during a session | How are band changes and radio faults acknowledged on display, lights and audio while recording? | `full_spooky_proto-54w.1`, [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
 | Swallowed presses | Does a button that is pressed while its gesture is swallowed or dismissed still light at 100%? | `full_spooky_proto-54w.18` |
 | Prompt audio | Is opening, confirming or cancelling the prompt acknowledged with sound? | `full_spooky_proto-54w.1` |
@@ -138,6 +169,8 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | PRES-SES-06 | Target | CLI reply implemented; no bench evidence |
 | PRES-SES-07 | Target | Session outcome and CLI reply implemented; no nearly-full-card evidence |
 | PRES-SES-08 | Target | Session outcome and CLI reply implemented; no file-limit evidence |
+| PRES-SES-09 | Proven for the CLI reply | [Stepped preallocation](../../evidence/2026-10-02-stepped-preallocation.md) |
+| PRES-SES-10 | Proven for the CLI reply | [Stepped preallocation](../../evidence/2026-10-02-stepped-preallocation.md) |
 | PRES-RAD-01 | Proven for the boot log | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | PRES-RAD-02 | Target | Published by the Radio machine; no surface renders it |
 | PRES-RAD-03 | Target | CLI reply now sent through the Radio machine; the [radio regression](../../evidence/2026-09-24-radio-regression.md) proved the blocking path it replaced and has not been rerun (`full_spooky_proto-54w.28`) |
@@ -157,3 +190,5 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | PRES-DEV-03 | Target | Product intent. Published by the Context machine and host tested; not wired to firmware or any surface. |
 | PRES-CTX-01 to PRES-CTX-05 | Target | [Decision 0009](../../decisions/0009-first-slice-field-controls.md) and [decision 0008](../../decisions/0008-recording-safe-command-policy.md). Published by the Context machine and host tested; not wired to firmware or any surface. |
 | PRES-INP-01 | Target | [Decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 8. Published by the InputResolution machine and host tested; not wired to firmware or any surface. |
+| PRES-CLS-01 to PRES-CLS-05 | Proven for the CLI reply and log line | [Classic on the M7](../../evidence/2026-10-02-classic-on-m7.md), without the holding run state. No display surface (`full_spooky_proto-54w.5`). |
+| PRES-CLS-01 holding, PRES-CLS-06 | Proven for the CLI reply and log line | [Classic activity hold](../../evidence/2026-10-03-classic-activity-hold.md). When the hold triggers is not settled (spec SC-008 failed; `full_spooky_proto-54w.32`). No display surface (`full_spooky_proto-54w.5`). |

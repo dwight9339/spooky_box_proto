@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 project(spooky_host_tests LANGUAGES C)
 enable_testing()
+
+# Host tests must check everything in every build type. The documented build is
+# Release, where CMake defines NDEBUG and assert() would compile to nothing, so
+# strip it from every build type's flags (full_spooky_proto-hqc).
+foreach(config RELEASE RELWITHDEBINFO MINSIZEREL)
+    string(REGEX REPLACE "[/-]D *NDEBUG" "" CMAKE_C_FLAGS_${config} "${CMAKE_C_FLAGS_${config}}")
+endforeach()
 function(spooky_test name)
     add_executable(${name} ${ARGN})
     target_include_directories(${name} PRIVATE stubs ../Common/Inc ../CM7/App)
@@ -42,6 +49,18 @@ spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.
 spooky_test(command_policy_qualification_test command_policy_test.c ../CM7/App/command_policy.c)
 target_compile_definitions(command_policy_qualification_test PRIVATE SPOOKY_RADIO_TUNE_QUALIFICATION)
 spooky_test(storage_lease_test storage_lease_test.c ../CM7/App/storage_lease.c)
+# The recorder USB reply queue policy (jjy.10).
+spooky_test(reply_queue_test reply_queue_test.c ../CM7/App/reply_queue.c)
+# The RECORD RESULT outcome record (jjy.12).
+spooky_test(recording_result_test recording_result_test.c ../CM7/App/recording_result.c)
+# SD FORMAT alignment and confirmation (jjy.14).
+spooky_test(sd_media_test sd_media_test.c ../CM7/App/sd_media.c)
+# Decision 0014 storage-margin warning.
+spooky_test(storage_margin_test storage_margin_test.c ../CM7/App/storage_margin.c)
+# Bounded contiguous-run search for recorder preallocation (jjy.9).
+spooky_test(fat_run_test fat_run_test.c ../CM7/App/fat_run.c)
+# USB CDC command receive flow control (8lw.24).
+spooky_test(cdc_rx_flow_test cdc_rx_flow_test.c ../CM7/App/cdc_rx_flow.c)
 spooky_test(recording_limits_test recording_limits_test.c
     ../CM7/App/recording_limits.c)
 spooky_test(session_test session_test.c ../CM7/App/sm/session_port.c)
@@ -65,6 +84,24 @@ spooky_test(input_context_test input_context_test.c ../CM7/App/event_queue.c
 spooky_generated_sm(input_context_test InputResolutionSm.c ContextSm.c)
 spooky_test(ui_services_test ui_services_test.c
     ../CM7/App/ui_input_service.c ../CM7/App/ui_render_service.c)
+# Decision 0013 matrix feedback: EMF level, radio onsets and the renderer (54w.8).
+spooky_test(emf_level_test emf_level_test.c ../CM7/App/emf_level.c)
+spooky_test(radio_activity_test radio_activity_test.c ../CM7/App/radio_activity.c)
+spooky_test(matrix_feedback_test matrix_feedback_test.c ../Common/Src/matrix_feedback.c)
+spooky_test(matrix_writer_test matrix_writer_test.c ../CM7/App/matrix_writer.c)
+spooky_test(matrix_service_test matrix_service_test.c ../CM7/App/matrix_service.c
+    ../CM7/App/matrix_writer.c ../Common/Src/matrix_feedback.c)
+# Classic scan engine core: landings, edges and the jump schedule (spec 001, 54w.7).
+spooky_test(classic_scan_test classic_scan_test.c ../CM7/App/classic_scan.c)
+# Radio onsets from the live stream, with retune intervals unmeasured (54w.32).
+spooky_test(radio_activity_feed_test radio_activity_feed_test.c
+    ../CM7/App/radio_activity_feed.c ../CM7/App/radio_activity.c)
+# Classic on the M7: radio commands, the session guard and published events (54w.33).
+spooky_test(classic_service_test classic_service_test.c ../CM7/App/classic_service.c
+    ../CM7/App/classic_scan.c ../CM7/App/command_policy.c)
+# Demo branch only: the Demo image's OLED view and lights (decision 0011, p04.3).
+spooky_test(demo_view_test demo_view_test.c ../CM7/App/demo_view.c)
+spooky_test(demo_lights_test demo_lights_test.c ../CM7/App/demo_lights.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)

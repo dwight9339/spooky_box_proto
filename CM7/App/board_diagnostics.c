@@ -54,13 +54,13 @@ bool BoardDiagnostics_StartConsole(void)
   return true;
 }
 
-void BoardDiagnostics_SendBatteryStatus(bool charging_only)
+void BoardDiagnostics_SendBatteryStatus(bool charging_only, bool allow_bus_io)
 {
   FuelGaugeTelemetry telemetry;
   char response[192];
   const char *state;
 
-  if (!FuelGaugeTest_ReadTelemetry(&telemetry))
+  if (!FuelGaugeTest_ReadTelemetry(&telemetry, allow_bus_io))
   {
     (void)UsbTest_SendText("ERR BATTERY telemetry unavailable\r\n");
     return;
@@ -83,22 +83,24 @@ void BoardDiagnostics_SendBatteryStatus(bool charging_only)
   {
     (void)snprintf(response, sizeof(response),
                    "OK CHARGE VBUS=%u STATE=%s CURRENT=%d mA POWER=%d mW "
-                   "FULL=%u\r\n",
+                   "FULL=%u AGE_S=%lu\r\n",
                    HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9) == GPIO_PIN_SET,
                    state, telemetry.average_current_mA,
-                   telemetry.average_power_mW, telemetry.full);
+                   telemetry.average_power_mW, telemetry.full,
+                   (unsigned long)(telemetry.age_ms / 1000U));
   }
   else
   {
     (void)snprintf(response, sizeof(response),
                    "OK BATTERY PRESENT=%u SOC=%u%% VOLTAGE=%u mV "
                    "REMAINING=%u mAh FULL=%u mAh DESIGN=%u mAh "
-                   "SOH=%u%% FLAGS=0x%04X\r\n",
+                   "SOH=%u%% FLAGS=0x%04X AGE_S=%lu\r\n",
                    telemetry.battery_present, telemetry.state_of_charge_pct,
                    telemetry.voltage_mV, telemetry.remaining_capacity_mAh,
                    telemetry.full_charge_capacity_mAh,
                    telemetry.design_capacity_mAh,
-                   telemetry.state_of_health_pct, telemetry.flags);
+                   telemetry.state_of_health_pct, telemetry.flags,
+                   (unsigned long)(telemetry.age_ms / 1000U));
   }
   (void)UsbTest_SendText(response);
 }

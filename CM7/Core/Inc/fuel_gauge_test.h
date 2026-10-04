@@ -23,11 +23,15 @@ typedef struct
   uint16_t flags;
   bool battery_present;
   bool full;
+  uint32_t age_ms; /* Time since the gauge was read for these values. */
 } FuelGaugeTelemetry;
 
 bool FuelGaugeTest_Start(I2C_HandleTypeDef *i2c);
 bool FuelGaugeTest_ReportNow(void);
-bool FuelGaugeTest_ReadTelemetry(FuelGaugeTelemetry *telemetry);
+/* With allow_bus_io the gauge is read now (8lw.19); otherwise, or if that read
+ * fails, the last successful snapshot is returned with its age. Recording passes
+ * false: fuel-gauge I2C pauses while capturing (foreground-latency.md). */
+bool FuelGaugeTest_ReadTelemetry(FuelGaugeTelemetry *telemetry, bool allow_bus_io);
 void FuelGaugeTest_Service(bool allow_bus_io);
 
 #ifdef __cplusplus

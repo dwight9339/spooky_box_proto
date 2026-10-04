@@ -29,14 +29,25 @@
 #include "audio_path_service.h"
 #include "board_diagnostics.h"
 #include "build_identity.h"
+#include "classic_adapter.h"
+#include "matrix_adapter.h"
 #include "codec_volume_service.h"
 #include "command_policy.h"
 #include "target_logger.h"
 #include "diagnostics.h"
 #include "foreground_budget.h"
 #include "ipc_smoke_cli.h"
+#if defined(SPOOKY_LOGGER_LOAD_QUALIFICATION)
+#include "logger_load.h"
+#endif
+#if defined(SPOOKY_ISR_TIMING_QUALIFICATION)
+#include "isr_timing.h"
+#endif
 #if defined(SPOOKY_IPC_SMOKE)
 #include "ipc_smoke.h"
+#endif
+#if defined(SPOOKY_DEMO)
+#include "demo_field.h"
 #endif
 #include "prototype_power.h"
 #include "fuel_gauge_test.h"
@@ -315,6 +326,18 @@ static void UsbCliCommand(const char *line)
     return;
   }
 
+#if defined(SPOOKY_LOGGER_LOAD_QUALIFICATION)
+  if (LoggerLoad_HandleCommand(command))
+  {
+    return;
+  }
+#endif
+#if defined(SPOOKY_ISR_TIMING_QUALIFICATION)
+  if (IsrTiming_HandleCommand(command))
+  {
+    return;
+  }
+#endif
   if (Diagnostics_HandleCommand(command))
   {
     return;
@@ -351,6 +374,16 @@ static void UsbCliCommand(const char *line)
   {
     return;
   }
+  if (MatrixAdapter_HandleCommand(command))
+  {
+    return;
+  }
+#if defined(SPOOKY_DEMO)
+  if (DemoField_HandleCommand(command))
+  {
+    return;
+  }
+#endif
   if (UiBoardTest_HandleCommand(command))
   {
     return;
@@ -387,14 +420,18 @@ static void UsbCliCommand(const char *line)
       (strcmp(command, "BATTERY READ") == 0) ||
       (strcmp(command, "BATTERY STATUS") == 0))
   {
-    BoardDiagnostics_SendBatteryStatus(false);
+    BoardDiagnostics_SendBatteryStatus(false, !RadioRecorder_IsCapturing());
     return;
   }
   if ((strcmp(command, "CHARGE") == 0) ||
       (strcmp(command, "CHARGE READ") == 0) ||
       (strcmp(command, "CHARGE STATUS") == 0))
   {
-    BoardDiagnostics_SendBatteryStatus(true);
+    BoardDiagnostics_SendBatteryStatus(true, !RadioRecorder_IsCapturing());
+    return;
+  }
+  if (ClassicAdapter_HandleCommand(command))
+  {
     return;
   }
   if (!AudioPath_IsRunning())
@@ -637,6 +674,9 @@ int main(void)
   /* Configure the peripherals common clocks */
   PeriphCommonClock_Config();
   BuildIdentity_Init();
+#if defined(SPOOKY_ISR_TIMING_QUALIFICATION)
+  IsrTiming_Install(); /* After the clock is final: thresholds use SystemCoreClock. */
+#endif
 /* USER CODE BEGIN Boot_Mode_Sequence_2 */
 #if defined(SPOOKY_IPC_SMOKE)
   IpcSmoke_Init(); /* M4 is still held in its boot STOP wait. */
@@ -719,6 +759,10 @@ Error_Handler();
   {
     BSP_LED_On(LED_RED);
   }
+  MatrixAdapter_Init();
+#if defined(SPOOKY_DEMO)
+  DemoField_Init();
+#endif
   UsbTest_SetLineHandler(UsbCliCommand);
   if (!UsbTest_Start())
   {
@@ -756,16 +800,25 @@ Error_Handler();
       FuelGaugeTest_Service(!RadioRecorder_IsCapturing()));
     RUN_FOREGROUND(FOREGROUND_SERVICE_USB, UsbTest_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_WAV, WavTransfer_Service());
+#if defined(SPOOKY_LOGGER_LOAD_QUALIFICATION)
+    RUN_FOREGROUND(FOREGROUND_SERVICE_LOGGER, LoggerLoad_Service());
+#endif
     RUN_FOREGROUND(FOREGROUND_SERVICE_LOGGER, TargetLogger_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_DIAGNOSTICS, Diagnostics_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_UI,
       UiBoardTest_Service(RadioRecorder_IsCapturing()));
+    RUN_FOREGROUND(FOREGROUND_SERVICE_MATRIX, MatrixAdapter_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_SD_TEST, SdTest_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_POWER,
       PrototypePower_Service(SleepStopRadioAudio));
     RUN_FOREGROUND(FOREGROUND_SERVICE_MAGNETOMETER,
       MagnetometerTest_Service(!RadioRecorder_IsCapturing()));
+    RUN_FOREGROUND(FOREGROUND_SERVICE_ACTIVITY, RadioAdapter_ServiceActivity());
+    RUN_FOREGROUND(FOREGROUND_SERVICE_CLASSIC, ClassicAdapter_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_DISPATCH, AppDispatch_Service());
+#if defined(SPOOKY_DEMO)
+    RUN_FOREGROUND(FOREGROUND_SERVICE_DEMO, DemoField_Service());
+#endif
     HAL_Delay(5U);
   }
   /* USER CODE END 3 */
@@ -1077,7 +1130,13 @@ static void MX_I2C2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN I2C2_Init 2 */
-
+  /* Fast mode for the matrix writer (54w.8): about 360 kHz from the 36 MHz
+   * D2PCLK1 kernel clock, PRESC 0, SCLDEL 15, SDADEL 6, SCLH 31, SCLL 55.
+   * The .ioc keeps the generated 100 kHz value; see the CubeMX register. */
+  __HAL_I2C_DISABLE(&hi2c2);
+  hi2c2.Init.Timing = 0x00F61F37U;
+  hi2c2.Instance->TIMINGR = hi2c2.Init.Timing;
+  __HAL_I2C_ENABLE(&hi2c2);
   /* USER CODE END I2C2_Init 2 */
 
 }

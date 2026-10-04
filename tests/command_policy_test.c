@@ -42,7 +42,8 @@ static void every_policy_row_has_the_decision_0008_class(void)
 #else
         COMMAND_POLICY_REJECTED, /* in-band tuning: guard until 54w.6 qualifies it */
 #endif
-        COMMAND_POLICY_REJECTED  /* band change: guard until 54w.12 qualifies it */
+        COMMAND_POLICY_REJECTED, /* band change: guard until 54w.12 qualifies it */
+        COMMAND_POLICY_ALLOWED   /* Field engine parameters (C-103 to C-106, C-110) */
     };
     for (int action = COMMAND_ACTION_NONE; action < COMMAND_ACTION_COUNT; ++action) {
         const CommandPolicyRule *rule = CommandPolicy_GetRule((CommandAction)action);
@@ -51,6 +52,9 @@ static void every_policy_row_has_the_decision_0008_class(void)
         CHECK(CommandPolicy_Evaluate((CommandAction)action, SES_STATE_RECORDING) ==
               active[action]);
         CHECK(CommandPolicy_Evaluate((CommandAction)action, SES_STATE_FINALIZING) ==
+              active[action]);
+        /* Preparing a recording file (jjy.9) follows the recording rules. */
+        CHECK(CommandPolicy_Evaluate((CommandAction)action, SES_STATE_PREPARING) ==
               active[action]);
         CHECK(rule->recording == active[action]);
     }
@@ -80,14 +84,27 @@ static void current_cli_commands_map_to_the_shared_actions(void)
           COMMAND_ACTION_SESSION_START);
     CHECK(CommandPolicy_ActionFromCli("RECORD STOP") == COMMAND_ACTION_SESSION_STOP);
     CHECK(CommandPolicy_ActionFromCli("RECORD STATUS") == COMMAND_ACTION_STATUS_READ);
+    CHECK(CommandPolicy_ActionFromCli("RECORD RESULT") == COMMAND_ACTION_STATUS_READ);
     CHECK(CommandPolicy_ActionFromCli("SLEEP START") == COMMAND_ACTION_SLEEP);
     CHECK(CommandPolicy_ActionFromCli("WAV FETCH REC000.WAV") ==
           COMMAND_ACTION_WAV_TRANSFER);
     CHECK(CommandPolicy_ActionFromCli("SD STATUS") == COMMAND_ACTION_STATUS_READ);
     CHECK(CommandPolicy_ActionFromCli("SD REINIT") == COMMAND_ACTION_SD_MAINTENANCE);
+    CHECK(CommandPolicy_ActionFromCli("SD INFO") == COMMAND_ACTION_SD_MAINTENANCE);
+    CHECK(CommandPolicy_ActionFromCli("SD FORMAT") == COMMAND_ACTION_SD_MAINTENANCE);
+    CHECK(CommandPolicy_ActionFromCli("SD FORMAT CONFIRM") == COMMAND_ACTION_SD_MAINTENANCE);
     CHECK(CommandPolicy_ActionFromCli("UI LEDS") == COMMAND_ACTION_UI_TEST_PATTERN);
     CHECK(CommandPolicy_ActionFromCli("UI MATRIX ANIMATE") ==
           COMMAND_ACTION_UI_TEST_PATTERN);
+    CHECK(CommandPolicy_ActionFromCli("UI MATRIX ORIENT") ==
+          COMMAND_ACTION_UI_TEST_PATTERN);
+    /* Starting the matrix feedback needs I2C2; stopping, the trail setting and
+     * the status do not (54w.8). */
+    CHECK(CommandPolicy_ActionFromCli("UI MATRIX FEEDBACK ON") ==
+          COMMAND_ACTION_UI_TEST_PATTERN);
+    CHECK(CommandPolicy_ActionFromCli("UI MATRIX FEEDBACK OFF") == COMMAND_ACTION_NONE);
+    CHECK(CommandPolicy_ActionFromCli("UI MATRIX TRAIL OFF") == COMMAND_ACTION_NONE);
+    CHECK(CommandPolicy_ActionFromCli("UI MATRIX FEEDBACK") == COMMAND_ACTION_NONE);
     CHECK(CommandPolicy_ActionFromCli("UI DISPLAY TEST 2") ==
           COMMAND_ACTION_UI_TEST_PATTERN);
     CHECK(CommandPolicy_ActionFromCli("UI STATUS") == COMMAND_ACTION_NONE);
@@ -99,6 +116,10 @@ static void current_cli_commands_map_to_the_shared_actions(void)
     CHECK(CommandPolicy_ActionFromCli("UP") == COMMAND_ACTION_RADIO_TUNE);
     CHECK(CommandPolicy_ActionFromCli("DOWN") == COMMAND_ACTION_RADIO_TUNE);
     CHECK(CommandPolicy_ActionFromCli("STATUS") == COMMAND_ACTION_NONE);
+    CHECK(CommandPolicy_ActionFromCli("CLASSIC") == COMMAND_ACTION_STATUS_READ);
+    CHECK(CommandPolicy_ActionFromCli("CLASSIC PAUSE") == COMMAND_ACTION_SCAN_PARAMETER);
+    CHECK(CommandPolicy_ActionFromCli("CLASSIC RATE -2") == COMMAND_ACTION_SCAN_PARAMETER);
+    CHECK(CommandPolicy_ActionFromCli("CLASSICAL") == COMMAND_ACTION_NONE);
 }
 
 #define RUN(test)              \

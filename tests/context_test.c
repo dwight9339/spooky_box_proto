@@ -170,13 +170,15 @@ static void classic_page_bindings(void)
     CHECK(last_command_is(CTX_CMD_RUN_PAUSE, 0));
     click(1);
     CHECK(last_command_is(CTX_CMD_TOGGLE_DIRECTION, 0));
+    turn(2, -1);
+    CHECK(last_command_is(CTX_CMD_EDGE_BEHAVIOR, -1));
+    turn(3, 2);
+    CHECK(last_command_is(CTX_CMD_HOLD_TIME, 2));
     const unsigned before = fake.command_count;
-    turn(2, 1);
-    turn(3, 1);
     click(2);
     hold(0); /* no hold action: nothing happens (item 3) */
     CHECK(fake.command_count == before);
-    CHECK(status().unbound == 4u);
+    CHECK(status().unbound == 2u);
 }
 
 static void manual_page_bindings(void)
@@ -191,6 +193,8 @@ static void manual_page_bindings(void)
     CHECK(last_command_is(CTX_CMD_TOGGLE_WRAP, 0));
     const unsigned before = fake.command_count;
     turn(1, 1);
+    turn(2, 1); /* edge behavior and hold time are Classic only */
+    turn(3, 1);
     click(1);
     CHECK(fake.command_count == before);
 }
@@ -372,6 +376,8 @@ static void a_menu_ignores_page_and_shift_gestures(void)
     hold(2);
     clear_logs();
     turn(1, 1);
+    turn(2, 1);
+    turn(3, 1);
     click(3);
     hold(1);
     hold(3);

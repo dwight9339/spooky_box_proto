@@ -16,11 +16,20 @@ typedef enum AppEventType {
   APP_EVENT_SESSION_CARD_FULL,
   APP_EVENT_SESSION_FILE_LIMIT,
   APP_EVENT_SESSION_CAPTURE_FAULT,
+  APP_EVENT_SESSION_PREPARED,  /* arg0 1 if the file was preallocated */
   APP_EVENT_RADIO_COMMAND,     /* arg0 packed RadCommand fields; arg1 kHz or band */
   APP_EVENT_RADIO_STARTED,     /* arg0 1 if the radio started */
   APP_EVENT_RADIO_TUNE_DONE,
   APP_EVENT_RADIO_TUNE_FAILED,
-  APP_EVENT_RADIO_AUDIO_FAULT
+  APP_EVENT_RADIO_AUDIO_FAULT,
+  APP_EVENT_CLASSIC_COMMAND,   /* arg0 CtxCommand | RadSource << 8; arg1 signed argument */
+#if defined(SPOOKY_DEMO)
+  /* Demo-only Field on the M7 (decision 0011 item 12; demo_field.c). */
+  APP_EVENT_DEMO_INPUT,        /* arg0 InpInputKind | index << 8 | detents << 16; arg1 ms */
+  APP_EVENT_DEMO_GESTURE,      /* arg0 packed Gesture */
+  APP_EVENT_DEMO_TICK,         /* a hold threshold or menu timeout may be due */
+  APP_EVENT_DEMO_SESSION_CHANGED
+#endif
 } AppEventType;
 
 bool AppEvents_Post(EvqClass event_class, uint16_t type, uint32_t arg0, uint32_t arg1);

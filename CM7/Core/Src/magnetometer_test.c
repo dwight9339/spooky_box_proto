@@ -1,5 +1,7 @@
 #include "magnetometer_test.h"
 
+#include "emf_level.h"
+
 #include "usb_test.h"
 
 #include <stdio.h>
@@ -34,6 +36,11 @@
 #define MAGNETOMETER_MAX_PERIOD_MS       60000U
 #define EMF_BASELINE_UPDATE_PERIOD_MS    5000U
 #define EMF_BASELINE_FILTER_SHIFT        4U
+/* The baseline follows only a quiet field, so a nearby magnet cannot drag it
+ * and leave a false reading behind when it is taken away (54w.8 bench). */
+#define EMF_BASELINE_TRACK_LIMIT_UT      100U
+/* EMF samples for the matrix (decision 0013): well inside its 500 ms stale bound. */
+#define EMF_FEED_PERIOD_MS               100U
 
 typedef enum
 {
@@ -67,6 +74,9 @@ static uint8_t mag_device_id;
 static bool mag_ready;
 static bool mag_continuous;
 static bool mag_baseline_valid;
+static bool mag_emf_feed;
+static bool mag_feed_sleep_pending;
+static uint32_t mag_next_feed_ms;
 static MagnetometerStreamMode mag_stream_mode;
 
 static bool MagRead(uint8_t reg, uint8_t *data, uint16_t length)
@@ -591,6 +601,15 @@ bool MagnetometerTest_HandleCommand(const char *command)
   return true;
 }
 
+void MagnetometerTest_SetEmfFeed(bool enabled)
+{
+  /* No bus I/O here: the next service pass that allows it wakes the sensor
+   * or puts it back to sleep. */
+  mag_feed_sleep_pending = mag_emf_feed && !enabled;
+  mag_emf_feed = enabled && mag_ready;
+  mag_next_feed_ms = HAL_GetTick();
+}
+
 bool MagnetometerTest_Sleep(void)
 {
   mag_stream_mode = MAG_STREAM_NONE;
@@ -618,7 +637,7 @@ void MagnetometerTest_Service(bool allow_bus_io)
 
     if ((!was_continuous && MagSetContinuous(true)) || was_continuous)
     {
-      if (MagReadSample(&sample))
+      if (MagReadSample(&sample) && (sample.emf_uT < EMF_BASELINE_TRACK_LIMIT_UT))
       {
         MagSetBaseline(&sample, false);
         MagUpdateMetric(&sample);
@@ -629,6 +648,27 @@ void MagnetometerTest_Service(bool allow_bus_io)
       }
     }
     mag_next_baseline_ms = now + EMF_BASELINE_UPDATE_PERIOD_MS;
+  }
+  if (mag_feed_sleep_pending)
+  {
+    mag_feed_sleep_pending = false;
+    if ((mag_stream_mode == MAG_STREAM_NONE) && mag_continuous)
+    {
+      (void)MagSetContinuous(false);
+    }
+  }
+  if (mag_emf_feed && ((int32_t)(now - mag_next_feed_ms) >= 0))
+  {
+    /* The sensor stays in continuous mode while the feed runs. */
+    mag_next_feed_ms = now + EMF_FEED_PERIOD_MS;
+    if ((mag_continuous || MagSetContinuous(true)) && MagReadSample(&sample))
+    {
+      EmfLevel_OnSample(now, sample.emf_uT, mag_baseline_valid);
+    }
+    else
+    {
+      EmfLevel_OnSensorFault();
+    }
   }
   if ((mag_stream_mode == MAG_STREAM_NONE) || !mag_continuous ||
       ((int32_t)(now - mag_next_stream_ms) < 0))

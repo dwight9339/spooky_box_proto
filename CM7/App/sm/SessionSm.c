@@ -31,6 +31,16 @@ static void FINALIZING_block_written(SessionSm* sm);
 
 static void FINALIZING_stop(SessionSm* sm);
 
+static void PREPARING_enter(SessionSm* sm);
+
+static void PREPARING_exit(SessionSm* sm);
+
+static void PREPARING_capture_fault(SessionSm* sm);
+
+static void PREPARING_prepared(SessionSm* sm);
+
+static void PREPARING_stop(SessionSm* sm);
+
 static void RECORDING_enter(SessionSm* sm);
 
 static void RECORDING_exit(SessionSm* sm);
@@ -119,6 +129,19 @@ void SessionSm_dispatch_event(SessionSm* sm, SessionSm_EventId event_id)
             }
             break;
         
+        // STATE: Preparing
+        case SessionSm_StateId_PREPARING:
+            switch (event_id)
+            {
+                case SessionSm_EventId_PREPARED: PREPARING_prepared(sm); break;
+                case SessionSm_EventId_STOP: PREPARING_stop(sm); break;
+                case SessionSm_EventId_CAPTURE_FAULT: PREPARING_capture_fault(sm); break;
+                case SessionSm_EventId_START: ACTIVE_start(sm); break; // First ancestor handler for this event
+                
+                default: break; // to avoid "unused enumeration value in switch" warning
+            }
+            break;
+        
         // STATE: Recording
         case SessionSm_StateId_RECORDING:
             switch (event_id)
@@ -157,6 +180,8 @@ static void exit_up_to_state_handler(SessionSm* sm, SessionSm_StateId desired_st
             case SessionSm_StateId_ACTIVE: ACTIVE_exit(sm); break;
             
             case SessionSm_StateId_FINALIZING: FINALIZING_exit(sm); break;
+            
+            case SessionSm_StateId_PREPARING: PREPARING_exit(sm); break;
             
             case SessionSm_StateId_RECORDING: RECORDING_exit(sm); break;
             
@@ -317,6 +342,153 @@ static void FINALIZING_stop(SessionSm* sm)
 
 
 ////////////////////////////////////////////////////////////////////////////////
+// event handlers for state PREPARING
+////////////////////////////////////////////////////////////////////////////////
+
+static void PREPARING_enter(SessionSm* sm)
+{
+    sm->state_id = SessionSm_StateId_PREPARING;
+    
+    // Preparing behavior
+    // uml: enter / { ses_state_changed(); }
+    {
+        // Step 1: execute action `ses_state_changed();`
+        ses_state_changed();
+    } // end of behavior for Preparing
+}
+
+static void PREPARING_exit(SessionSm* sm)
+{
+    sm->state_id = SessionSm_StateId_ACTIVE;
+}
+
+static void PREPARING_capture_fault(SessionSm* sm)
+{
+    bool consume_event = false;
+    
+    // Preparing behavior
+    // uml: CAPTURE_FAULT / { ses_discard_file(); ses_publish(SES_PUB_RECORDING_REJECTED); } TransitionTo(Idle)
+    {
+        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
+        exit_up_to_state_handler(sm, SessionSm_StateId_ROOT);
+        
+        // Step 2: Transition action: `ses_discard_file(); ses_publish(SES_PUB_RECORDING_REJECTED);`.
+        ses_discard_file(); ses_publish(SES_PUB_RECORDING_REJECTED);
+        
+        // Step 3: Enter/move towards transition target `Idle`.
+        IDLE_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for Preparing
+    
+    // Check if event has been consumed before calling ancestor handler.
+    if (!consume_event)
+    {
+        ACTIVE_capture_fault(sm);
+    }
+}
+
+static void PREPARING_prepared(SessionSm* sm)
+{
+    // Preparing behavior
+    // uml: PREPARED TransitionTo(ROOT.<ChoicePoint>(PrepareResult))
+    {
+        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
+        exit_up_to_state_handler(sm, SessionSm_StateId_ROOT);
+        
+        // Step 2: Transition action: ``.
+        
+        // Step 3: Enter/move towards transition target `ROOT.<ChoicePoint>(PrepareResult)`.
+        // ROOT.<ChoicePoint>(PrepareResult) is a pseudo state and cannot have an `enter` trigger.
+        
+        // ROOT.<ChoicePoint>(PrepareResult) behavior
+        // uml: [ses_prepare_ok()] / { ses_start_capture(); } TransitionTo(ROOT.<ChoicePoint>(CaptureResult))
+        if (ses_prepare_ok())
+        {
+            // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
+            
+            // Step 2: Transition action: `ses_start_capture();`.
+            ses_start_capture();
+            
+            // Step 3: Enter/move towards transition target `ROOT.<ChoicePoint>(CaptureResult)`.
+            // ROOT.<ChoicePoint>(CaptureResult) is a pseudo state and cannot have an `enter` trigger.
+            
+            // ROOT.<ChoicePoint>(CaptureResult) behavior
+            // uml: [ses_capture_started()] / { ses_publish(SES_PUB_RECORDING_STARTED); } TransitionTo(Recording)
+            if (ses_capture_started())
+            {
+                // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
+                
+                // Step 2: Transition action: `ses_publish(SES_PUB_RECORDING_STARTED);`.
+                ses_publish(SES_PUB_RECORDING_STARTED);
+                
+                // Step 3: Enter/move towards transition target `Recording`.
+                ACTIVE_enter(sm);
+                RECORDING_enter(sm);
+                
+                // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+                return;
+            } // end of behavior for ROOT.<ChoicePoint>(CaptureResult)
+            
+            // ROOT.<ChoicePoint>(CaptureResult) behavior
+            // uml: else / { ses_finalize_file(); ses_publish(SES_PUB_RECORDING_ABORTED); } TransitionTo(Idle)
+            {
+                // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
+                
+                // Step 2: Transition action: `ses_finalize_file(); ses_publish(SES_PUB_RECORDING_ABORTED);`.
+                ses_finalize_file(); ses_publish(SES_PUB_RECORDING_ABORTED);
+                
+                // Step 3: Enter/move towards transition target `Idle`.
+                IDLE_enter(sm);
+                
+                // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+                return;
+            } // end of behavior for ROOT.<ChoicePoint>(CaptureResult)
+        } // end of behavior for ROOT.<ChoicePoint>(PrepareResult)
+        
+        // ROOT.<ChoicePoint>(PrepareResult) behavior
+        // uml: else / { ses_discard_file(); ses_publish(SES_PUB_RECORDING_REJECTED); } TransitionTo(Idle)
+        {
+            // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
+            
+            // Step 2: Transition action: `ses_discard_file(); ses_publish(SES_PUB_RECORDING_REJECTED);`.
+            ses_discard_file(); ses_publish(SES_PUB_RECORDING_REJECTED);
+            
+            // Step 3: Enter/move towards transition target `Idle`.
+            IDLE_enter(sm);
+            
+            // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+            return;
+        } // end of behavior for ROOT.<ChoicePoint>(PrepareResult)
+    } // end of behavior for Preparing
+    
+    // No ancestor handles this event.
+}
+
+static void PREPARING_stop(SessionSm* sm)
+{
+    // Preparing behavior
+    // uml: STOP / { ses_discard_file(); ses_publish(SES_PUB_RECORDING_CANCELLED); } TransitionTo(Idle)
+    {
+        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
+        exit_up_to_state_handler(sm, SessionSm_StateId_ROOT);
+        
+        // Step 2: Transition action: `ses_discard_file(); ses_publish(SES_PUB_RECORDING_CANCELLED);`.
+        ses_discard_file(); ses_publish(SES_PUB_RECORDING_CANCELLED);
+        
+        // Step 3: Enter/move towards transition target `Idle`.
+        IDLE_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for Preparing
+    
+    // No ancestor handles this event.
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
 // event handlers for state RECORDING
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -443,47 +615,19 @@ static void IDLE_start(SessionSm* sm)
         } // end of behavior for ROOT.<ChoicePoint>(OpenResult)
         
         // ROOT.<ChoicePoint>(OpenResult) behavior
-        // uml: else / { ses_start_capture(); } TransitionTo(ROOT.<ChoicePoint>(CaptureResult))
+        // uml: else / { ses_publish(SES_PUB_RECORDING_PREPARING); } TransitionTo(Preparing)
         {
             // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
             
-            // Step 2: Transition action: `ses_start_capture();`.
-            ses_start_capture();
+            // Step 2: Transition action: `ses_publish(SES_PUB_RECORDING_PREPARING);`.
+            ses_publish(SES_PUB_RECORDING_PREPARING);
             
-            // Step 3: Enter/move towards transition target `ROOT.<ChoicePoint>(CaptureResult)`.
-            // ROOT.<ChoicePoint>(CaptureResult) is a pseudo state and cannot have an `enter` trigger.
+            // Step 3: Enter/move towards transition target `Preparing`.
+            ACTIVE_enter(sm);
+            PREPARING_enter(sm);
             
-            // ROOT.<ChoicePoint>(CaptureResult) behavior
-            // uml: [ses_capture_started()] / { ses_publish(SES_PUB_RECORDING_STARTED); } TransitionTo(Recording)
-            if (ses_capture_started())
-            {
-                // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
-                
-                // Step 2: Transition action: `ses_publish(SES_PUB_RECORDING_STARTED);`.
-                ses_publish(SES_PUB_RECORDING_STARTED);
-                
-                // Step 3: Enter/move towards transition target `Recording`.
-                ACTIVE_enter(sm);
-                RECORDING_enter(sm);
-                
-                // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
-                return;
-            } // end of behavior for ROOT.<ChoicePoint>(CaptureResult)
-            
-            // ROOT.<ChoicePoint>(CaptureResult) behavior
-            // uml: else / { ses_finalize_file(); ses_publish(SES_PUB_RECORDING_ABORTED); } TransitionTo(Idle)
-            {
-                // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
-                
-                // Step 2: Transition action: `ses_finalize_file(); ses_publish(SES_PUB_RECORDING_ABORTED);`.
-                ses_finalize_file(); ses_publish(SES_PUB_RECORDING_ABORTED);
-                
-                // Step 3: Enter/move towards transition target `Idle`.
-                IDLE_enter(sm);
-                
-                // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
-                return;
-            } // end of behavior for ROOT.<ChoicePoint>(CaptureResult)
+            // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+            return;
         } // end of behavior for ROOT.<ChoicePoint>(OpenResult)
     } // end of behavior for Idle
     
@@ -510,6 +654,7 @@ char const * SessionSm_state_id_to_string(SessionSm_StateId id)
         case SessionSm_StateId_ROOT: return "ROOT";
         case SessionSm_StateId_ACTIVE: return "ACTIVE";
         case SessionSm_StateId_FINALIZING: return "FINALIZING";
+        case SessionSm_StateId_PREPARING: return "PREPARING";
         case SessionSm_StateId_RECORDING: return "RECORDING";
         case SessionSm_StateId_IDLE: return "IDLE";
         default: return "?";
@@ -523,6 +668,7 @@ char const * SessionSm_event_id_to_string(SessionSm_EventId id)
     {
         case SessionSm_EventId_BLOCK_WRITTEN: return "BLOCK_WRITTEN";
         case SessionSm_EventId_CAPTURE_FAULT: return "CAPTURE_FAULT";
+        case SessionSm_EventId_PREPARED: return "PREPARED";
         case SessionSm_EventId_START: return "START";
         case SessionSm_EventId_STOP: return "STOP";
         default: return "?";
@@ -538,6 +684,7 @@ SessionSm_StateId SessionSm_get_parent_id(SessionSm_StateId id)
         case SessionSm_StateId_ROOT: return SessionSm_StateId_ROOT;
         case SessionSm_StateId_ACTIVE: return SessionSm_StateId_ROOT;
         case SessionSm_StateId_FINALIZING: return SessionSm_StateId_ACTIVE;
+        case SessionSm_StateId_PREPARING: return SessionSm_StateId_ACTIVE;
         case SessionSm_StateId_RECORDING: return SessionSm_StateId_ACTIVE;
         case SessionSm_StateId_IDLE: return SessionSm_StateId_ROOT;
         default: return SessionSm_StateId_ROOT;

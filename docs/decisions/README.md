@@ -23,6 +23,12 @@ Each file records one design decision, following the Documentation Classes rules
 | [0011](0011-halloween-2026-demo-build.md) | Halloween 2026 demo build | Accepted |
 | [0012](0012-common-audio-sample-timeline.md) | Common audio sample timeline | Accepted |
 | [0013](0013-matrix-emf-radio-and-status-mapping.md) | LED matrix mapping for EMF, radio onsets and recording status | Accepted |
+| [0014](0014-sd-media-policy.md) | SD media policy for recording | Accepted |
+| [0015](0015-raw-radio-track-during-in-band-tunes.md) | Raw radio track during in-band tunes | Accepted |
+| [0016](0016-classic-scan-motion.md) | Classic scan motion, band edges and activity hold | Accepted |
+| [0017](0017-microphone-start-latency-uncompensated.md) | Microphone start latency stays uncompensated | Accepted |
+| [0018](0018-classic-am-lw-maximum-rate.md) | Classic maximum rate on AM and LW | Accepted |
+| [0019](0019-matrix-emf-four-buckets-and-quiet-baseline.md) | Four matrix EMF buckets, a quiet-field baseline and no trail by default | Accepted |
 
 ## Template
 
