@@ -491,6 +491,48 @@ DEMO TUNES BAND=FM CAPTURING=1 TUNES=401 FAILED=0 ISSUE_FAILED=0 MEAN_US=28394 M
 OK DEMO TUNES END
 ```
 
+The demo image keeps a rolling window of the last minute outside sessions
+(`full_spooky_proto-p04.5`, decision 0011 item 14, after decision 0010's shape).
+
+- **Where it writes.** The recorder streams its three-channel blocks into thirteen
+  reused 5.46 s WAV segments, `ROLL/SLOT00.WAV` to `SLOT12.WAV`. It always holds at least
+  the newest 704 blocks (60.07 s).
+- **Saving.** Shift plus Button 1 (C-009), or `ROLL SAVE`, saves the window. At the next
+  block boundary it closes the segment and pins the newest segments that cover the
+  window. The stream continues in a free segment without a gap. The pinned segments
+  are renamed into `CAPS/C001S00.WAV`, `C001S01.WAV` and so on, and the descriptor
+  `CAPS/C001.TXT` is written last. A capture is saved only once that descriptor is
+  committed.
+- **Outcomes.** A save is writing, saved, busy (one save at a time), unavailable (no
+  window held) or failed. The display and the `ROLL` reply show the outcome.
+- **The window after a save.** A save moves its segments out of the ring, so the next
+  window starts from the save point.
+- **During a session.** A session turns rolling capture off, and a save during a session
+  is rejected with its reason. Rolling starts again, with an empty window, when the
+  session ends.
+- **Sensor reads and the matrix.** EMF and the fuel gauge are read while the rolling
+  stream runs, and the matrix keeps its normal write budget. In the demo image their
+  guards follow session capture only.
+
+`ROLL` (or `ROLL STATUS`) reports the window and its counters. `ROLL OFF` stops it and
+frees the card for `SD` and `WAV` commands, and `ROLL ON` lets it start again. `ROLL
+OFF` is refused while a save is in progress.
+
+```text
+OK ROLL STATE=RUNNING ENABLED=1 RETAINED_MS=65536 SEGMENTS=14 ROTATIONS=13 ROTATE_MS_MAX=40 STEP_MS_MAX=31 WRITE_MS_MAX=27 QUEUES=1,1/8 BLOCKS=880 STARTS=1 FAULTS=0 RECLAIMED=1 ALLOC_FAIL=0 SAVE=SAVED SAVES=1 FAILED=0 BUSY=0 UNAVAILABLE=0 SAVE_MS_MAX=420 LAST=C001 LAST_FRAMES=2883584
+```
+
+| Field | Meaning |
+| --- | --- |
+| `STATE`, `ENABLED` | `RUNNING`, `WAITING` (no card, a session, or a retry pending), `FAULT` or `OFF`; whether it is turned on |
+| `RETAINED_MS` | Audio held for the window now |
+| `SEGMENTS`, `ROTATIONS`, `ROTATE_MS_MAX` | Segments started, segment changes, and the longest change (close plus open, across passes) |
+| `STEP_MS_MAX`, `WRITE_MS_MAX`, `QUEUES` | Longest single storage step, longest block write, and recorder queue high-water since the stream started |
+| `BLOCKS`, `STARTS`, `FAULTS` | Blocks in this stream; streams started since boot; faults (each discards the window and retries after 5 s) |
+| `RECLAIMED`, `ALLOC_FAIL` | Old segments overwritten; times no segment was free |
+| `SAVE`, `SAVES`, `FAILED`, `BUSY`, `UNAVAILABLE`, `SAVE_MS_MAX` | Latest outcome and the count of each; longest save from request to commit |
+| `LAST`, `LAST_FRAMES` | The newest capture committed since boot (`C000` for none) and its frames |
+
 `UI DISPLAY TEST` draws a static test image with the confirmed zero-column mapping
 and reports:
 
