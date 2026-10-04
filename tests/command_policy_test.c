@@ -37,8 +37,8 @@ static void every_policy_row_has_the_decision_0008_class(void)
         COMMAND_POLICY_ALLOWED,  /* status/diagnostic read */
         COMMAND_POLICY_REJECTED, /* UI test pattern */
         COMMAND_POLICY_REJECTED, /* EMF calibration */
-#if defined(SPOOKY_RADIO_TUNE_QUALIFICATION)
-        COMMAND_POLICY_ALLOWED,  /* in-band tuning: opt-in qualification build */
+#if defined(SPOOKY_RADIO_TUNE_QUALIFICATION) || defined(SPOOKY_DEMO)
+        COMMAND_POLICY_ALLOWED,  /* in-band tuning: qualification build or demo image */
 #else
         COMMAND_POLICY_REJECTED, /* in-band tuning: guard until 54w.6 qualifies it */
 #endif
