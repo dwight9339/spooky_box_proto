@@ -48,6 +48,12 @@ void MatrixService_OnRecordingFault(uint32_t now_ms);
  * then report with MatrixService_RunDone before the next pass. */
 bool MatrixService_Service(uint32_t now_ms, const MatrixServiceInput *input,
                            MatrixWriterRun *run);
+#if defined(SPOOKY_DEMO)
+/* Demo only (p04.7): one pass that writes a frame composed elsewhere instead of
+ * the feedback renderer's (the grain view in Instrument). frame is NULL when no
+ * new frame is due. The renderer composes afresh when Service runs again. */
+bool MatrixService_ServiceFrame(const MatrixFeedbackFrame *frame, MatrixWriterRun *run);
+#endif
 void MatrixService_RunDone(bool ok, uint32_t elapsed_us);
 void MatrixService_GetStatus(MatrixServiceStatus *status);
 

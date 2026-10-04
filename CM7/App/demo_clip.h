@@ -16,12 +16,17 @@
  * - A refused or failed save, or a failed load, ends in FAILED with its reason;
  *   only a fully loaded clip is READY, and only a READY clip plays (Principle II).
  *   Every outcome goes to DemoField_OnClipOutcome.
- * - The player (clip_player.c) runs in the monitor stage of the radio DMA
- *   interrupt; the raw capture is copied before it (Principle I).
+ * - A READY clip plays on the monitor while Instrument shows it, through the
+ *   granular voice (Common/Src/granular.c, p04.7) or the plain loop
+ *   (clip_player.c). Both render in the monitor stage of the radio DMA
+ *   interrupt, timed against CLIP_RENDER_BUDGET_US; the raw capture is copied
+ *   before it (Principle I).
  */
 
 #include <stdbool.h>
 #include <stdint.h>
+
+#include "granular.h"
 
 /* Source frames read and decimated per load step: 12,288 bytes. */
 #define CLIP_LOAD_CHUNK_FRAMES 2048U
@@ -60,7 +65,31 @@ typedef struct
   uint32_t loops;         /* passes of the current clip */
 } DemoClipStatus;
 
+/* What plays a READY clip on the monitor: the granular voice (p04.7), or the
+ * plain loop of p04.6 kept as the fallback. */
+typedef enum
+{
+  DEMO_VOICE_GRAIN = 0,
+  DEMO_VOICE_LOOP
+} DemoVoice;
+
+typedef struct
+{
+  uint8_t voice;              /* DemoVoice */
+  uint32_t renders;           /* monitor halves rendered by a voice */
+  uint32_t render_us_max;     /* longest voice render, in the radio interrupt */
+  uint32_t render_over_budget;/* renders longer than render_budget_us */
+  uint32_t render_budget_us;
+  uint32_t grains_started;
+  uint32_t grains_dropped;    /* due while all GRANULAR_MAX_GRAINS voices played */
+  uint32_t grains_active;
+  uint32_t grains_high_water;
+} DemoVoiceStatus;
+
 /* --- Control-facing (demo_field.c), foreground ------------------------------- */
+
+/* Before anything else here: seeds the granular voice. */
+void DemoClip_Init(void);
 
 /* The chord's save was accepted: the old clip stops and is gone. */
 void DemoClip_Expect(void);
@@ -69,6 +98,16 @@ void DemoClip_Fail(DemoClipFault fault);
 /* Whether Instrument shows the clip; it plays only while READY. */
 void DemoClip_SetPlaying(bool play);
 void DemoClip_GetStatus(DemoClipStatus *status);
+/* Switching voices stops the current one; SetPlaying starts the new one. */
+void DemoClip_SetVoice(DemoVoice voice);
+DemoVoice DemoClip_Voice(void);
+/* The granular voice's parameters, taken at its next render. */
+void DemoClip_SetGrainParams(const GranularParams *params);
+/* Sounding grains, for the matrix (Granular_GetGrains). */
+uint32_t DemoClip_GetGrains(uint16_t *position_permille, uint8_t *envelope, uint32_t capacity);
+void DemoClip_GetVoiceStatus(DemoVoiceStatus *status);
+/* Clears the render maximum and the over-budget count. */
+void DemoClip_ResetVoiceStats(void);
 const char *DemoClip_StateName(uint8_t state);
 const char *DemoClip_FaultName(uint8_t fault);
 

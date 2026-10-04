@@ -9,10 +9,12 @@
 #include "clip_decimator.h"
 #include "command_policy.h"
 #include "demo_clip.h"
+#include "demo_instrument.h"
 #include "demo_lights.h"
 #include "demo_rolling.h"
 #include "demo_view.h"
 #include "emf_level.h"
+#include "grain_matrix.h"
 #include "main.h"
 #include "matrix_service.h"
 #include "radio_adapter.h"
@@ -94,6 +96,12 @@ static uint8_t last_buffer_state;
 static uint8_t save_answer;
 /* A clip failure sends Instrument back to Field once (p04.6). */
 static bool clip_return_pending;
+/* The provisional Instrument pages (p04.7); kept across visits. */
+static DemoInstrument instrument;
+static uint32_t instrument_gestures; /* encoder gestures taken by the pages */
+static uint32_t matrix_grain_last_ms;
+/* The grain view's frame cadence: 25 frames per second. */
+#define DEMO_GRAIN_MATRIX_MS 40U
 
 /* Classic's tunes, from the Radio machine's tune start (command written) to its
  * answer, per band and split by whether the recorder was capturing at the start
@@ -143,6 +151,10 @@ void DemoField_Init(void)
   lights_valid = false;
   save_answer = (uint8_t)DEMO_SAVE_NONE;
   clip_return_pending = false;
+  instrument_gestures = 0U;
+  DemoClip_Init();
+  DemoInstrument_Init(&instrument);
+  DemoClip_SetGrainParams(&instrument.params);
   for (control = 0U; control < (uint8_t)INP_CONTROL_COUNT; ++control)
   {
     pressed[control] = UiBoardTest_DemoPressed(control);
@@ -200,6 +212,43 @@ void DemoField_OnDetents(uint8_t encoder, int32_t detents, uint32_t now_ms)
   }
 }
 
+/* Demo only (decision 0011 item 16): Context has no Instrument engine yet, so
+ * the provisional pages take the encoder turns and the Encoder 3 click (C-024)
+ * while Instrument has the controls. Everything else, Shift+B0 (C-028)
+ * included, goes to Context. */
+static bool InstrumentGesture(Gesture gesture)
+{
+  const bool page_gesture = (gesture.kind == (uint8_t)GESTURE_TURN) ||
+                            ((gesture.kind == (uint8_t)GESTURE_CLICK) && (gesture.encoder == 3U));
+  DemoClipStatus clip;
+  CtxStatus ctx;
+
+  Context_GetStatus(&ctx);
+  if ((ctx.state != (uint8_t)CTX_STATE_INSTRUMENT) || !page_gesture)
+  {
+    return false;
+  }
+  /* The pages change only what the display shows: with no clip, or the plain
+   * loop, there is no page, and the gesture does nothing. */
+  DemoClip_GetStatus(&clip);
+  if ((clip.state != (uint8_t)DEMO_CLIP_READY) || (DemoClip_Voice() != DEMO_VOICE_GRAIN))
+  {
+    return true;
+  }
+  if (gesture.kind == (uint8_t)GESTURE_TURN)
+  {
+    if (DemoInstrument_Turn(&instrument, gesture.encoder, gesture.detents))
+    {
+      DemoClip_SetGrainParams(&instrument.params);
+    }
+    ++instrument_gestures;
+    return true;
+  }
+  DemoInstrument_NextPage(&instrument);
+  ++instrument_gestures;
+  return true;
+}
+
 void DemoField_Dispatch(const EvqEvent *event)
 {
   InpInput input;
@@ -216,8 +265,15 @@ void DemoField_Dispatch(const EvqEvent *event)
       InputResolution_OnInput(&input);
       break;
     case APP_EVENT_DEMO_GESTURE:
-      Context_OnGesture(Gesture_Unpack(event->arg0));
+    {
+      const Gesture gesture = Gesture_Unpack(event->arg0);
+
+      if (!InstrumentGesture(gesture))
+      {
+        Context_OnGesture(gesture);
+      }
       break;
+    }
     case APP_EVENT_DEMO_TICK:
       tick_posted = false;
       Context_OnTick();
@@ -317,6 +373,15 @@ static void BuildModel(uint32_t now, const CtxStatus *ctx, const InpStatus *inp,
   model->clip_capture = clip.capture;
   model->clip_tenths = (clip.samples * 10U) / CLIP_RATE_HZ;
   model->clip_playing = clip.playing;
+  {
+    DemoVoiceStatus voice;
+
+    DemoClip_GetVoiceStatus(&voice);
+    model->voice_loop = voice.voice == (uint8_t)DEMO_VOICE_LOOP;
+    model->grains_active = (uint8_t)voice.grains_active;
+  }
+  model->instrument_page = instrument.page;
+  model->grain = instrument.params;
   model->notice = notice;
   model->notice_arg = notice_arg;
 }
@@ -466,6 +531,37 @@ void DemoField_Service(void)
   BuildModel(now, &ctx, &inp, &model);
   ServiceDisplay(now, &model);
   ServiceLights(now, &ctx, &model);
+}
+
+bool DemoField_InstrumentMatrix(uint32_t now_ms, MatrixFeedbackFrame *frame, bool *due)
+{
+  uint16_t positions[GRANULAR_MAX_GRAINS];
+  uint8_t envelopes[GRANULAR_MAX_GRAINS];
+  DemoClipStatus clip;
+  GrainMatrixInput input;
+
+  *due = false;
+  if (mode != CTX_MODE_INSTRUMENT)
+  {
+    return false;
+  }
+  if ((now_ms - matrix_grain_last_ms) < DEMO_GRAIN_MATRIX_MS)
+  {
+    return true;
+  }
+  matrix_grain_last_ms = now_ms;
+  DemoClip_GetStatus(&clip);
+  input.clip_ready = clip.state == (uint8_t)DEMO_CLIP_READY;
+  input.recording = Session_IsActive();
+  input.position_permille = instrument.params.position_permille;
+  input.grain_permille = positions;
+  input.grain_envelope = envelopes;
+  input.grains = (input.clip_ready && clip.playing &&
+                  (DemoClip_Voice() == DEMO_VOICE_GRAIN))
+                   ? DemoClip_GetGrains(positions, envelopes, GRANULAR_MAX_GRAINS) : 0U;
+  GrainMatrix_Compose(&input, frame);
+  *due = true;
+  return true;
 }
 
 bool DemoField_ClassicActive(void)
@@ -1091,6 +1187,57 @@ static bool HandleClip(const char *command)
   return true;
 }
 
+/* `DEMO GRAIN`: the Instrument voice, its page and parameters, and its render
+ * cost in the radio interrupt; `DEMO GRAIN RESET` clears the render maximum.
+ * `DEMO VOICE GRAIN|LOOP` picks the voice (LOOP is p04.6's plain loop). */
+static bool HandleGrain(const char *command)
+{
+  static char response[448];
+  DemoVoiceStatus voice;
+  const GranularParams *params = &instrument.params;
+
+  if (strcmp(command, "DEMO VOICE GRAIN") == 0)
+  {
+    DemoClip_SetVoice(DEMO_VOICE_GRAIN);
+  }
+  else if (strcmp(command, "DEMO VOICE LOOP") == 0)
+  {
+    DemoClip_SetVoice(DEMO_VOICE_LOOP);
+  }
+  else if (strcmp(command, "DEMO GRAIN RESET") == 0)
+  {
+    DemoClip_ResetVoiceStats();
+  }
+  else if (strcmp(command, "DEMO GRAIN") != 0)
+  {
+    if ((strncmp(command, "DEMO VOICE", 10U) == 0) || (strncmp(command, "DEMO GRAIN", 10U) == 0))
+    {
+      (void)UsbTest_SendText("ERR usage: DEMO GRAIN [RESET] | DEMO VOICE GRAIN|LOOP\r\n");
+      return true;
+    }
+    return false;
+  }
+  DemoClip_GetVoiceStatus(&voice);
+  (void)snprintf(response, sizeof(response),
+                 "OK DEMO GRAIN VOICE=%s PAGE=%u POS=%u SIZE_MS=%u DENSITY=%u PITCH=%d "
+                 "SPRAY=%u SLICES=%u ENV=%u LEVEL=%u ACTIVE=%lu HIGH=%lu/%u STARTED=%lu "
+                 "DROPPED=%lu RENDERS=%lu RENDER_US_MAX=%lu OVER_BUDGET=%lu BUDGET_US=%lu "
+                 "GESTURES=%lu\r\n",
+                 (voice.voice == (uint8_t)DEMO_VOICE_LOOP) ? "LOOP" : "GRAIN",
+                 (unsigned)instrument.page + 1U, (unsigned)params->position_permille,
+                 (unsigned)params->size_ms, (unsigned)params->density,
+                 (int)params->pitch_semitones, (unsigned)params->spray_permille,
+                 (unsigned)params->slices, (unsigned)params->envelope_percent,
+                 (unsigned)params->level_percent, (unsigned long)voice.grains_active,
+                 (unsigned long)voice.grains_high_water, (unsigned)GRANULAR_MAX_GRAINS,
+                 (unsigned long)voice.grains_started, (unsigned long)voice.grains_dropped,
+                 (unsigned long)voice.renders, (unsigned long)voice.render_us_max,
+                 (unsigned long)voice.render_over_budget,
+                 (unsigned long)voice.render_budget_us, (unsigned long)instrument_gestures);
+  (void)UsbTest_SendText(response);
+  return true;
+}
+
 bool DemoField_HandleCommand(const char *command)
 {
   static const char *const screens[DEMO_SCREEN_COUNT] = {
@@ -1105,7 +1252,7 @@ bool DemoField_HandleCommand(const char *command)
   char response[384];
 
   if (HandleLights(command) || HandleTunes(command) || HandleRoll(command) ||
-      HandleClip(command))
+      HandleClip(command) || HandleGrain(command))
   {
     return true;
   }

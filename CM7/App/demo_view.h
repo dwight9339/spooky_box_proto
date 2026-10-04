@@ -20,6 +20,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "granular.h"
+
 #define DEMO_VIEW_WIDTH 128U
 #define DEMO_VIEW_HEIGHT 64U
 #define DEMO_VIEW_PAGES 8U
@@ -136,6 +138,10 @@ typedef struct
   uint32_t clip_capture;   /* Cnnn of the clip or the load, 0 for none */
   uint32_t clip_tenths;    /* clip length in tenths of a second, while ready */
   bool clip_playing;
+  bool voice_loop;         /* the plain loop plays the clip, not the grains */
+  uint8_t grains_active;   /* sounding grains */
+  uint8_t instrument_page; /* 0 or 1 (demo_instrument.h) */
+  GranularParams grain;    /* the provisional Instrument parameters */
   uint8_t notice;          /* DemoNotice */
   uint8_t notice_arg;      /* band for the band notices, reason for CLIP_FAILED */
 } DemoViewModel;

@@ -11,6 +11,9 @@
 #include "radio_recorder.h"
 #include "ui_board_test.h"
 #include "usb_test.h"
+#if defined(SPOOKY_DEMO)
+#include "demo_field.h"
+#endif
 
 /* Consecutive failed writes before the matrix is given up. */
 #define MATRIX_ADAPTER_MAX_FAILURES 3U
@@ -84,6 +87,27 @@ static bool Start(void)
   return true;
 }
 
+#if defined(SPOOKY_DEMO)
+static bool instrument;
+static const MatrixFeedbackFrame *grain_pending;
+#endif
+
+/* The next run to write: from the feedback renderer, or in the demo's
+ * Instrument from the grain view, whose frame is handed over once. */
+static bool NextRun(uint32_t now, const MatrixServiceInput *input, MatrixWriterRun *run)
+{
+#if defined(SPOOKY_DEMO)
+  if (instrument)
+  {
+    const MatrixFeedbackFrame *frame = grain_pending;
+
+    grain_pending = NULL;
+    return MatrixService_ServiceFrame(frame, run);
+  }
+#endif
+  return MatrixService_Service(now, input, run);
+}
+
 void MatrixAdapter_Service(void)
 {
   MatrixServiceInput input;
@@ -135,7 +159,17 @@ void MatrixAdapter_Service(void)
   input.emf_bucket = emf.bucket;
   input.onset = RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_MATRIX);
   pass_start = DWT->CYCCNT;
-  while (MatrixService_Service(now, &input, &run))
+#if defined(SPOOKY_DEMO)
+  /* Instrument shows grain activity instead (p04.7), within the same budget. */
+  {
+    static MatrixFeedbackFrame grain_frame;
+    bool due = false;
+
+    instrument = DemoField_InstrumentMatrix(now, &grain_frame, &due);
+    grain_pending = due ? &grain_frame : NULL;
+  }
+#endif
+  while (NextRun(now, &input, &run))
   {
     const uint32_t start = DWT->CYCCNT;
     const bool ok = UiBoardTest_MatrixWriteRun(run.page, run.reg, run.bytes, run.length);
