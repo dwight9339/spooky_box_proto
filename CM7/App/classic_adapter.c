@@ -6,6 +6,9 @@
 #include "app_events.h"
 #include "audio_path_service.h"
 #include "classic_service.h"
+#if defined(SPOOKY_DEMO)
+#include "demo_field.h"
+#endif
 #include "main.h"
 #include "radio_activity_feed.h"
 #include "radio_adapter.h"
@@ -44,9 +47,14 @@ static void ReadWorld(ClassicWorld *world)
   world->radio_state = (uint8_t)Radio_GetState();
   world->radio_command_pending = RadioAdapter_CliCommandPending();
   world->session_state = (uint8_t)Session_GetState();
+#if defined(SPOOKY_DEMO)
+  /* The demo's Context machine selects the Field engine (p04.3). */
+  world->active = DemoField_ClassicActive();
+#else
   /* Classic is the only Field engine in firmware until Context is wired
    * (full_spooky_proto-54w.4, 54w.5; p04.3 for the demo). */
   world->active = true;
+#endif
   world->activity_valid = RadioActivityFeed_Valid(HAL_GetTick());
   world->onset = 0U; /* onsets go to the service pass only */
 }
@@ -94,6 +102,24 @@ bool ClassicAdapter_RequestCommand(CtxCommand command, int32_t arg)
                         ((uint32_t)RAD_SOURCE_CLI << CLASSIC_SOURCE_SHIFT),
                         (uint32_t)arg);
 }
+
+#if defined(SPOOKY_DEMO)
+bool ClassicAdapter_RequestInternalCommand(CtxCommand command, int32_t arg)
+{
+  return AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_CLASSIC_COMMAND,
+                        ((uint32_t)command & CLASSIC_COMMAND_MASK) |
+                        ((uint32_t)RAD_SOURCE_INTERNAL << CLASSIC_SOURCE_SHIFT),
+                        (uint32_t)arg);
+}
+
+bool ClassicAdapter_GetState(ClassicState *state)
+{
+  ClassicWorld world;
+
+  ReadWorld(&world);
+  return ClassicService_GetState(&world, state);
+}
+#endif
 
 void ClassicAdapter_Dispatch(const EvqEvent *event)
 {

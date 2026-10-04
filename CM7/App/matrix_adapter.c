@@ -48,9 +48,10 @@ void MatrixAdapter_Init(void)
   {
     printf("[matrix] FAIL: configuration rejected; feedback unavailable\r\n");
   }
-#if defined(SPOOKY_MATRIX_RECORDING_QUALIFICATION)
+#if defined(SPOOKY_MATRIX_RECORDING_QUALIFICATION) || defined(SPOOKY_DEMO)
   /* The recording regression flashes and reboots the board, so the
-   * qualification image starts the feedback itself. */
+   * qualification image starts the feedback itself; the demo image boots into
+   * Field with the matrix on (decision 0011 item 12). */
   else if (!Start())
   {
     printf("[matrix] FAIL: feedback did not start at boot\r\n");
@@ -100,9 +101,12 @@ void MatrixAdapter_Service(void)
     Stop(false, "matrix released (UI OFF)");
     return;
   }
-#if !defined(SPOOKY_MATRIX_RECORDING_QUALIFICATION)
+#if !defined(SPOOKY_MATRIX_RECORDING_QUALIFICATION) && !defined(SPOOKY_DEMO)
   /* No I2C2 I/O while the recorder captures (Principle VI guard): the enable
-   * pin is a GPIO, and the whole frame is rewritten afterwards. */
+   * pin is a GPIO, and the whole frame is rewritten afterwards. The demo image
+   * keeps the qualification build's behavior: the matrix runs during sessions
+   * within the pass budget below, so its frame rate drops under capture load
+   * (decision 0011 item 12; measured by DEMO STATUS). */
   if (RadioRecorder_IsCapturing())
   {
     if (!suspended)
@@ -147,6 +151,13 @@ void MatrixAdapter_Service(void)
     {
       return;
     }
+#if defined(SPOOKY_DEMO)
+    /* Capture outranks presentation: one run per pass while capturing. */
+    if (RadioRecorder_IsCapturing())
+    {
+      return;
+    }
+#endif
     input.onset = 0U;
   }
 }

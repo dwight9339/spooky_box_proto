@@ -6,6 +6,9 @@
 #include "audio_path_service.h"
 #include "classic_adapter.h"
 #include "codec_volume_service.h"
+#if defined(SPOOKY_DEMO)
+#include "demo_field.h"
+#endif
 #include "main.h"
 #include "radio_activity_feed.h"
 #include "radio_control_service.h"
@@ -36,9 +39,30 @@ static bool PostCommand(RadCommandKind kind, bool up, bool wrap, uint32_t arg)
   return true;
 }
 
+#if defined(SPOOKY_DEMO)
+/* Band changes from the band menu, posted and not yet answered. */
+static uint32_t internal_band_pending;
+
+bool RadioAdapter_RequestInternalBand(uint32_t band)
+{
+  if ((band >= (uint32_t)RADIO_BAND_COUNT) ||
+      !AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_RADIO_COMMAND,
+                      PackCommand(RAD_CMD_BAND, RAD_SOURCE_INTERNAL, false, false), band))
+  {
+    return false;
+  }
+  ++internal_band_pending;
+  return true;
+}
+#endif
+
 bool RadioAdapter_CliCommandPending(void)
 {
+#if defined(SPOOKY_DEMO)
+  return (cli_commands_pending != 0U) || (internal_band_pending != 0U);
+#else
   return cli_commands_pending != 0U;
+#endif
 }
 
 bool RadioAdapter_RequestInternalTune(uint32_t frequency_khz)
@@ -301,6 +325,15 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
   {
     --cli_commands_pending; /* every other event with a command answers it */
   }
+#if defined(SPOOKY_DEMO)
+  if ((command != NULL) && (command->source == (uint8_t)RAD_SOURCE_INTERNAL) &&
+      (command->kind == (uint8_t)RAD_CMD_BAND) && (event != RAD_PUB_TUNE_STARTED) &&
+      (internal_band_pending != 0U))
+  {
+    --internal_band_pending;
+  }
+  DemoField_OnRadioAnswer(event, command);
+#endif
   switch (event)
   {
     case RAD_PUB_TUNED:

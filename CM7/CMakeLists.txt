@@ -202,6 +202,18 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
 include("../cmake/ipc_smoke.cmake")
 include("../cmake/demo.cmake")
+if(SPOOKY_DEMO)
+    # Field on the M7 without product IPC (decision 0011 item 12, p04.3).
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/sm/InputResolutionSm.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/sm/input_resolution_port.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/sm/ContextSm.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/sm/context_port.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_view.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_lights.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_field.c
+    )
+endif()
 
 # Use the same FatFs R0.12c release as the passing sibling SDMMC tests.
 set(STM32CUBE_H7_ROOT

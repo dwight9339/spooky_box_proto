@@ -21,7 +21,14 @@ bool RadioAdapter_RequestBand(uint32_t band); /* radio_control_service RadioBand
 /* Post a scan engine's in-band tune (RAD_SOURCE_INTERNAL). Its answer goes to
  * ClassicAdapter_OnRadioAnswer, not to the CLI. False if the queue refused it. */
 bool RadioAdapter_RequestInternalTune(uint32_t frequency_khz);
-/* A CLI radio command was posted and the Radio machine has not answered it. */
+#if defined(SPOOKY_DEMO)
+/* Demo-only (p04.3): a band change from the band menu (C-101). Its answer goes
+ * to DemoField_OnRadioAnswer, not to the CLI. False if the queue refused it. */
+bool RadioAdapter_RequestInternalBand(uint32_t band);
+#endif
+/* A CLI radio command was posted and the Radio machine has not answered it. In
+ * the demo image this includes band changes from the band menu, so Classic does
+ * not compute a jump in a band that is about to change. */
 bool RadioAdapter_CliCommandPending(void);
 
 /* The boot sequence finished; called once after the dispatcher is initialized. */

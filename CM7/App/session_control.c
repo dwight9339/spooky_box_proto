@@ -5,6 +5,9 @@
 #include "app_events.h"
 #include "diagnostics.h"
 #include "matrix_adapter.h"
+#if defined(SPOOKY_DEMO)
+#include "demo_field.h"
+#endif
 #include "radio_recorder.h"
 #include "sm/session_port.h"
 
@@ -159,6 +162,9 @@ void ses_integration_publish(SesPublished event)
 {
   RadioRecorder_PublishSessionEvent(event);
   MatrixAdapter_OnSessionEvent(event);
+#if defined(SPOOKY_DEMO)
+  DemoField_OnSessionEvent(event);
+#endif
 }
 
 void ses_integration_state_changed(SesState state)
@@ -169,4 +175,7 @@ void ses_integration_state_changed(SesState state)
   printf("[session] authority state=%s\r\n",
          ((unsigned int)state < (sizeof(names) / sizeof(names[0])))
            ? names[state] : "?");
+#if defined(SPOOKY_DEMO)
+  DemoField_OnSessionStateChanged();
+#endif
 }

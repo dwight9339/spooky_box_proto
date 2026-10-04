@@ -5,6 +5,9 @@
 #include "ui_input_service.h"
 #include "ui_render_service.h"
 #include "usb_test.h"
+#if defined(SPOOKY_DEMO)
+#include "demo_field.h"
+#endif
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -352,6 +355,20 @@ static void UiServiceSwitches(uint32_t now_ms)
                                    ui_switches[index].pin);
   }
   UiInputService_UpdateSwitches(raw_switches, now_ms, &events);
+#if defined(SPOOKY_DEMO)
+  for (index = 0U; index < UI_SWITCH_COUNT; ++index)
+  {
+    const uint8_t mask = (uint8_t)(1U << index);
+
+    if (((events.high_mask | events.low_mask) & mask) != 0U)
+    {
+      const bool raw = (events.high_mask & mask) != 0U;
+
+      DemoField_OnControl((uint8_t)index,
+                          ui_switches[index].active_high ? raw : !raw, now_ms);
+    }
+  }
+#endif
   if (!ui_watch_enabled)
   {
     return;
@@ -386,6 +403,15 @@ static void UiServiceEncoderEvents(void)
   {
     UiEncoder *encoder = &ui_encoders[index];
     uint8_t current_ab;
+
+#if defined(SPOOKY_DEMO)
+    if (events[index].clockwise != events[index].counterclockwise)
+    {
+      DemoField_OnDetents((uint8_t)index,
+                          (int32_t)events[index].clockwise -
+                          (int32_t)events[index].counterclockwise, HAL_GetTick());
+    }
+#endif
 
     if (!ui_watch_enabled ||
         ((events[index].clockwise == 0U) &&
@@ -716,10 +742,8 @@ static void UiDisplayHardwareOff(void)
   ui_display_on = false;
 }
 
-static bool UiDisplayRunTest(uint8_t column_offset)
+static const uint8_t ui_display_init_commands[] =
 {
-  static const uint8_t init_commands[] =
-  {
     0xAEU,             /* display off */
     0xD5U, 0xA0U,      /* clock divide / oscillator */
     0xA8U, 0x3FU,      /* 64-row multiplex */
@@ -735,7 +759,10 @@ static bool UiDisplayRunTest(uint8_t column_offset)
     0x2EU,             /* deactivate scroll */
     0xA4U,             /* show GDDRAM */
     0xA6U              /* normal (not inverted) display */
-  };
+};
+
+static bool UiDisplayRunTest(uint8_t column_offset)
+{
   const uint8_t *display_buffer;
 
   UiDisplayHardwareOff();
@@ -744,7 +771,8 @@ static bool UiDisplayRunTest(uint8_t column_offset)
   HAL_Delay(100U);
 
   display_buffer = UiRenderService_BuildDisplayTestPattern();
-  if (!UiDisplayTransfer(false, init_commands, sizeof(init_commands)) ||
+  if (!UiDisplayTransfer(false, ui_display_init_commands,
+                         sizeof(ui_display_init_commands)) ||
       !UiDisplayWriteBuffer(column_offset, display_buffer) ||
       !UiDisplayCommand(0xAFU))
   {
@@ -1167,3 +1195,125 @@ void UiBoardTest_SafeOff(void)
   UiMatrixHardwareOff();
   UiDisplayHardwareOff();
 }
+
+#if defined(SPOOKY_DEMO)
+/* --- Demo-only surfaces (decision 0011 item 12, p04.3) ----------------------- */
+
+/* Button LED PWM: PF6 is TIM16_CH1 and PF7 TIM17_CH1 (AF1). The demo image
+ * gives both timers to the M7; the M4 sleeps. Duty is in permille. */
+#define UI_DEMO_PWM_PRESCALER 2U
+#define UI_DEMO_PWM_PERIOD 1000U
+
+static bool ui_demo_pwm_ready;
+
+static void UiDemoPwmTimerStart(TIM_TypeDef *timer)
+{
+  timer->CR1 = 0U;
+  timer->PSC = UI_DEMO_PWM_PRESCALER;
+  timer->ARR = UI_DEMO_PWM_PERIOD - 1U;
+  timer->CCR1 = 0U;
+  timer->CCMR1 = TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1PE; /* PWM 1 */
+  timer->CCER = TIM_CCER_CC1E;
+  timer->BDTR = TIM_BDTR_MOE;
+  timer->EGR = TIM_EGR_UG;
+  timer->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
+}
+
+bool UiBoardTest_DemoLightsStart(void)
+{
+  GPIO_InitTypeDef gpio = {0};
+
+  if (!ui_ready)
+  {
+    return false;
+  }
+  __HAL_RCC_TIM16_CLK_ENABLE();
+  __HAL_RCC_TIM17_CLK_ENABLE();
+  UiDemoPwmTimerStart(TIM16);
+  UiDemoPwmTimerStart(TIM17);
+  gpio.Pin = ui_leds[0].pin;
+  gpio.Mode = GPIO_MODE_AF_PP;
+  gpio.Pull = GPIO_NOPULL;
+  gpio.Speed = GPIO_SPEED_FREQ_LOW;
+  gpio.Alternate = GPIO_AF1_TIM16;
+  HAL_GPIO_Init(ui_leds[0].port, &gpio);
+  gpio.Pin = ui_leds[1].pin;
+  gpio.Alternate = GPIO_AF1_TIM17;
+  HAL_GPIO_Init(ui_leds[1].port, &gpio);
+  ui_demo_pwm_ready = true;
+  return true;
+}
+
+void UiBoardTest_DemoSetLights(const uint16_t button_duty[2], const uint8_t encoder_rgb[4])
+{
+  uint32_t encoder;
+
+  if (!ui_demo_pwm_ready || (button_duty == NULL) || (encoder_rgb == NULL))
+  {
+    return;
+  }
+  TIM16->CCR1 = (button_duty[0] > UI_DEMO_PWM_PERIOD) ? UI_DEMO_PWM_PERIOD : button_duty[0];
+  TIM17->CCR1 = (button_duty[1] > UI_DEMO_PWM_PERIOD) ? UI_DEMO_PWM_PERIOD : button_duty[1];
+  /* ui_leds[2..13]: ENCn_R, _G, _B for encoders 0 to 3. */
+  for (encoder = 0U; encoder < 4U; ++encoder)
+  {
+    uint32_t channel;
+
+    for (channel = 0U; channel < 3U; ++channel)
+    {
+      const UiLed *led = &ui_leds[2U + (encoder * 3U) + channel];
+      const bool on = (encoder_rgb[encoder] & (4U >> channel)) != 0U;
+
+      HAL_GPIO_WritePin(led->port, led->pin, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    }
+  }
+}
+
+bool UiBoardTest_DemoDisplayStart(void)
+{
+  static const uint8_t blank[UI_DISPLAY_WIDTH * UI_DISPLAY_PAGES];
+
+  if (!ui_display_spi_ready)
+  {
+    return false;
+  }
+  UiDisplayHardwareOff();
+  HAL_Delay(100U);
+  HAL_GPIO_WritePin(DISP_RST_GPIO_Port, DISP_RST_Pin, GPIO_PIN_SET);
+  HAL_Delay(100U);
+  if (!UiDisplayTransfer(false, ui_display_init_commands,
+                         sizeof(ui_display_init_commands)) ||
+      !UiDisplayWriteBuffer(UI_DISPLAY_DEFAULT_OFFSET, blank) ||
+      !UiDisplayCommand(0xAFU))
+  {
+    UiDisplayHardwareOff();
+    return false;
+  }
+  ui_display_on = true;
+  return true;
+}
+
+bool UiBoardTest_DemoDisplayWritePage(uint8_t page, const uint8_t *bytes)
+{
+  const uint8_t commands[3] =
+  {
+    (uint8_t)(0xB0U | page),
+    (uint8_t)(UI_DISPLAY_DEFAULT_OFFSET & 0x0FU),
+    (uint8_t)(0x10U | (UI_DISPLAY_DEFAULT_OFFSET >> 4U))
+  };
+
+  if (!ui_display_on || (page >= UI_DISPLAY_PAGES) || (bytes == NULL))
+  {
+    return false;
+  }
+  return UiDisplayTransfer(false, commands, sizeof(commands)) &&
+         UiDisplayTransfer(true, bytes, UI_DISPLAY_WIDTH);
+}
+
+bool UiBoardTest_DemoPressed(uint8_t control)
+{
+  return (control < UI_SWITCH_COUNT) &&
+         (UiReadPin(ui_switches[control].port, ui_switches[control].pin) ==
+          ui_switches[control].active_high);
+}
+#endif

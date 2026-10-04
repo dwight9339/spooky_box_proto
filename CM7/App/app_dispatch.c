@@ -2,6 +2,9 @@
 
 #include "app_events.h"
 #include "classic_adapter.h"
+#if defined(SPOOKY_DEMO)
+#include "demo_field.h"
+#endif
 #include "radio_adapter.h"
 #include "radio_recorder.h"
 #include "session_control.h"
@@ -33,7 +36,17 @@ static void Route(void *context, const EvqEvent *event)
     case APP_EVENT_CLASSIC_COMMAND:
       ClassicAdapter_Dispatch(event);
       break;
+#if defined(SPOOKY_DEMO)
+    case APP_EVENT_RECONCILE:
+    case APP_EVENT_DEMO_INPUT:
+    case APP_EVENT_DEMO_GESTURE:
+    case APP_EVENT_DEMO_TICK:
+    case APP_EVENT_DEMO_SESSION_CHANGED:
+      DemoField_Dispatch(event); /* Context, then InputResolution */
+      break;
+#else
     case APP_EVENT_RECONCILE: /* no wired machine tracks held controls yet */
+#endif
     default:
       break;
   }

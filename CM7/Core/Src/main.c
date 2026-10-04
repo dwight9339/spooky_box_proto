@@ -46,6 +46,9 @@
 #if defined(SPOOKY_IPC_SMOKE)
 #include "ipc_smoke.h"
 #endif
+#if defined(SPOOKY_DEMO)
+#include "demo_field.h"
+#endif
 #include "prototype_power.h"
 #include "fuel_gauge_test.h"
 #include "magnetometer_test.h"
@@ -375,6 +378,12 @@ static void UsbCliCommand(const char *line)
   {
     return;
   }
+#if defined(SPOOKY_DEMO)
+  if (DemoField_HandleCommand(command))
+  {
+    return;
+  }
+#endif
   if (UiBoardTest_HandleCommand(command))
   {
     return;
@@ -751,6 +760,9 @@ Error_Handler();
     BSP_LED_On(LED_RED);
   }
   MatrixAdapter_Init();
+#if defined(SPOOKY_DEMO)
+  DemoField_Init();
+#endif
   UsbTest_SetLineHandler(UsbCliCommand);
   if (!UsbTest_Start())
   {
@@ -804,6 +816,9 @@ Error_Handler();
     RUN_FOREGROUND(FOREGROUND_SERVICE_ACTIVITY, RadioAdapter_ServiceActivity());
     RUN_FOREGROUND(FOREGROUND_SERVICE_CLASSIC, ClassicAdapter_Service());
     RUN_FOREGROUND(FOREGROUND_SERVICE_DISPATCH, AppDispatch_Service());
+#if defined(SPOOKY_DEMO)
+    RUN_FOREGROUND(FOREGROUND_SERVICE_DEMO, DemoField_Service());
+#endif
     HAL_Delay(5U);
   }
   /* USER CODE END 3 */

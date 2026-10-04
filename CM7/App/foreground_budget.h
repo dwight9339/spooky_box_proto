@@ -30,6 +30,9 @@ typedef enum
   FOREGROUND_SERVICE_CLASSIC,
   FOREGROUND_SERVICE_ACTIVITY,
   FOREGROUND_SERVICE_MATRIX,
+#if defined(SPOOKY_DEMO)
+  FOREGROUND_SERVICE_DEMO,     /* demo_field.c: display page, lights, ticks */
+#endif
   FOREGROUND_SERVICE_COUNT
 } ForegroundService;
 

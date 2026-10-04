@@ -438,6 +438,45 @@ OK UI MATRIX FEEDBACK=1 TRAIL=0 SUSPENDED=0 EMF=VALID BUCKET=0 EMF_UT=21 FRAMES=
 kept while feedback stops and starts. Three consecutive failed runs stop the feedback
 with `[matrix] feedback off: I2C2 writes failed`.
 
+### Demo image (demo branch only)
+
+The `Demo` preset on `demo/halloween-2026` boots into Field with the physical controls
+resolved on the M7 ([decision 0011](../decisions/0011-halloween-2026-demo-build.md)
+item 12, `full_spooky_proto-p04.3`). This is demo-only behavior and not proven product
+behavior. The OLED, the button and encoder lights and the matrix render published
+state. Matrix feedback starts at boot and keeps writing during a capture as in the
+qualification build, but at most one run per pass while capturing. The `UI` test
+commands still exist; they share the surfaces with the demo and are for bring-up
+only.
+
+`DEMO` or `DEMO STATUS` reports the demo's counters:
+
+```text
+OK DEMO SCREEN=CLASSIC INP=0 SHIFT=0 INPUTS=42 REFUSED=0 GESTURES=30/0 UNBOUND=0 RECONCILES=0 TICKS=12 CMD_REJECTED=0 CMD_REFUSED=0 QUEUE_HIGH=4 OLED=1 FRAMES=900 PAGES=310 PAGE_FAIL=0 PAGE_US_MAX=180 LIGHTS=1 MATRIX_REC_MS=20040 MATRIX_REC_FRAMES=190 MATRIX_REC_SUPERSEDED=3
+```
+
+| Field | Meaning |
+| --- | --- |
+| `SCREEN`, `INP`, `SHIFT` | What has the controls; the InputResolution state number; Shift held |
+| `INPUTS`, `REFUSED` | Switch edges and detent counts the queue admitted and refused (a refusal reconciles) |
+| `GESTURES` | Gestures posted to the Context machine, and those the queue refused |
+| `UNBOUND`, `RECONCILES`, `TICKS` | Gestures with no binding; reconcile events; threshold and timeout ticks |
+| `CMD_REJECTED`, `CMD_REFUSED` | Commands the policy rejected (shown on the display), and those the queue refused |
+| `QUEUE_HIGH` | Event queue high-water mark |
+| `OLED`, `FRAMES`, `PAGES`, `PAGE_FAIL`, `PAGE_US_MAX` | Display started; frames composed (every 50 ms, 100 ms while capturing); 128-byte pages written and failed; longest page write |
+| `LIGHTS` | Button LED PWM (TIM16, TIM17) started |
+| `MATRIX_REC_MS`, `MATRIX_REC_FRAMES`, `MATRIX_REC_SUPERSEDED` | Time the matrix ran while capturing, frames composed in it, and frames replaced before fully written: the matrix frame rate under capture |
+
+`DEMO LIGHTS` reports the button LEDs' idle level, and `DEMO LIGHTS IDLE <0-1000>`
+sets it, in permille of perceived lightness (CIE L*). The reply gives the level and
+its PWM duty in permille; a pressed button is always at full duty, and Button 0
+breathes from off up to a fixed peak during a session. The level resets to 400 at
+boot.
+
+```text
+OK DEMO LIGHTS IDLE=400 DUTY=113 PRESSED_DUTY=1000
+```
+
 `UI DISPLAY TEST` draws a static test image with the confirmed zero-column mapping
 and reports:
 
