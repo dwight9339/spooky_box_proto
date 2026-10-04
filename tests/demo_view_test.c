@@ -228,6 +228,49 @@ static void test_unknown_and_unable_are_honest(void)
     CHECK(memcmp(known + 5u * WIDTH, DemoView_Frame() + 5u * WIDTH, WIDTH) != 0);
 }
 
+/* Each clip state draws its own Instrument body, and only a loaded clip shows a
+ * length (p04.6, Principle II). */
+static void test_instrument_clip_states(void)
+{
+    static uint8_t frames[DEMO_CLIP_VIEW_FAILED + 1u][DEMO_VIEW_FRAME_BYTES];
+    DemoViewModel model = classic_model();
+
+    DemoView_Init();
+    model.screen = DEMO_SCREEN_INSTRUMENT;
+    model.clip_capture = 12u;
+    model.clip_tenths = 30u;
+    for (unsigned clip = 0u; clip <= DEMO_CLIP_VIEW_FAILED; ++clip) {
+        model.clip = (uint8_t)clip;
+        DemoView_Compose(&model);
+        memcpy(frames[clip], DemoView_Frame(), DEMO_VIEW_FRAME_BYTES);
+    }
+    for (unsigned a = 0u; a <= DEMO_CLIP_VIEW_FAILED; ++a) {
+        for (unsigned b = a + 1u; b <= DEMO_CLIP_VIEW_FAILED; ++b) {
+            CHECK(memcmp(frames[a], frames[b], DEMO_VIEW_FRAME_BYTES) != 0);
+        }
+    }
+    /* The length is drawn from the clip only while it is ready. */
+    model.clip = DEMO_CLIP_VIEW_FAILED;
+    model.clip_tenths = 7u;
+    DemoView_Compose(&model);
+    CHECK(memcmp(DemoView_Frame(), frames[DEMO_CLIP_VIEW_FAILED], DEMO_VIEW_FRAME_BYTES) == 0);
+    model.clip = DEMO_CLIP_VIEW_READY;
+    DemoView_Compose(&model);
+    CHECK(memcmp(DemoView_Frame(), frames[DEMO_CLIP_VIEW_READY], DEMO_VIEW_FRAME_BYTES) != 0);
+    /* Looping and stopped differ. */
+    model.clip_tenths = 30u;
+    model.clip_playing = true;
+    DemoView_Compose(&model);
+    CHECK(memcmp(DemoView_Frame(), frames[DEMO_CLIP_VIEW_READY], DEMO_VIEW_FRAME_BYTES) != 0);
+    /* Every clip notice has text on the bottom line. */
+    for (unsigned reason = 0u; reason <= DEMO_CLIP_REASON_LOAD_FAILED; ++reason) {
+        model.notice = DEMO_NOTICE_CLIP_FAILED;
+        model.notice_arg = (uint8_t)reason;
+        DemoView_Compose(&model);
+        CHECK(byte_at(7u, 0u) == 0xFFu);
+    }
+}
+
 static void test_wide_values_are_clipped(void)
 {
     DemoViewModel model = classic_model();
@@ -246,6 +289,13 @@ static void test_wide_values_are_clipped(void)
     model.notice_arg = 250u;
     DemoView_Compose(&model);
     CHECK(flush() == 0xFFu);
+    model.screen = DEMO_SCREEN_INSTRUMENT;
+    model.clip = DEMO_CLIP_VIEW_READY;
+    model.clip_capture = 4294967295u;
+    model.clip_tenths = 4294967295u;
+    model.notice = DEMO_NOTICE_CLIP_FAILED;
+    DemoView_Compose(&model);
+    CHECK(flush() != 0u);
 }
 
 int main(void)
@@ -257,6 +307,7 @@ int main(void)
     test_band_menu_highlight();
     test_screens_differ();
     test_unknown_and_unable_are_honest();
+    test_instrument_clip_states();
     test_wide_values_are_clipped();
     if (failures != 0u) {
         printf("%u failure(s)\n", failures);

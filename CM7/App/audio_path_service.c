@@ -6,6 +6,9 @@
 #include "main.h"
 #include "radio_activity_feed.h"
 #include "radio_recorder.h"
+#if defined(SPOOKY_DEMO)
+#include "demo_clip.h"
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -243,6 +246,14 @@ bool AudioPath_StartCapture(void)
 static void RenderMonitor(const uint16_t *raw, uint16_t *monitor,
                           uint32_t sample_count)
 {
+#if defined(SPOOKY_DEMO)
+  /* Demo only (decision 0011 item 15, p04.6): Instrument's loaded clip replaces
+   * the radio in the monitor. The raw capture above is unchanged. */
+  if (DemoClip_RenderMonitor(monitor, sample_count / 2U))
+  {
+    return;
+  }
+#endif
   memcpy(monitor, raw, sample_count * sizeof(uint16_t));
 }
 

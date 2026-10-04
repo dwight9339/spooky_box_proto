@@ -379,6 +379,23 @@ static const char *NoticeText(const DemoViewModel *model, char *text, size_t siz
       return "NOT WHILE RECORDING";
     case DEMO_NOTICE_BUSY:
       return "BUSY, TRY AGAIN";
+    case DEMO_NOTICE_CLIP_LOADED:
+      return "CLIP LOADED";
+    case DEMO_NOTICE_CLIP_FAILED:
+      switch (model->notice_arg)
+      {
+        case DEMO_CLIP_REASON_SAVE_BUSY:
+          return "CLIP: SAVE BUSY";
+        case DEMO_CLIP_REASON_SAVE_UNAVAILABLE:
+          return "CLIP: NO BUFFER";
+        case DEMO_CLIP_REASON_SAVE_FAILED:
+          return "CLIP: SAVE FAILED";
+        case DEMO_CLIP_REASON_LOAD_FAILED:
+        default:
+          return "CLIP LOAD FAILED";
+      }
+    case DEMO_NOTICE_SESSION_IN_INSTRUMENT:
+      return "SESSION: FIELD ONLY";
     default:
       return NULL;
   }
@@ -460,11 +477,45 @@ static void PromptScreen(const DemoViewModel *model, bool start)
   TextCentred(6U, "RELEASE B0: CANCEL");
 }
 
+/* The clip as it saves, loads and plays (p04.6). Only a loaded clip is named
+ * with a length; a failed one is never shown as loaded (Principle II). */
 static void InstrumentScreen(const DemoViewModel *model)
 {
+  char text[LINE_CHARS + 8U];
+
   Header(model, "INSTRUMENT");
-  TextCentred(3U, "NOT IN THIS BUILD");
-  TextCentred(5U, "SHIFT+B0: FIELD");
+  switch (model->clip)
+  {
+    case DEMO_CLIP_VIEW_SAVING:
+      BigTextCentred(2U, "SAVING");
+      TextCentred(5U, "CAPTURE FOR CLIP");
+      break;
+    case DEMO_CLIP_VIEW_LOADING:
+      BigTextCentred(2U, "LOADING");
+      (void)snprintf(text, sizeof(text), "CLIP FROM C%03lu",
+                     (unsigned long)(model->clip_capture % 1000U));
+      TextCentred(5U, text);
+      break;
+    case DEMO_CLIP_VIEW_READY:
+      (void)snprintf(text, sizeof(text), "%lu.%luS",
+                     (unsigned long)((model->clip_tenths / 10U) % 100U),
+                     (unsigned long)(model->clip_tenths % 10U));
+      BigTextCentred(2U, text);
+      (void)snprintf(text, sizeof(text), "C%03lu %s", (unsigned long)(model->clip_capture % 1000U),
+                     model->clip_playing ? "LOOPING" : "STOPPED");
+      TextCentred(5U, text);
+      break;
+    case DEMO_CLIP_VIEW_FAILED:
+      BigTextCentred(2U, "NO CLIP");
+      TextCentred(5U, "LAST CLIP FAILED");
+      break;
+    case DEMO_CLIP_VIEW_NONE:
+    default:
+      BigTextCentred(2U, "NO CLIP");
+      TextCentred(5U, "SHIFT+B0+B1 IN FIELD");
+      break;
+  }
+  TextCentred(6U, "SHIFT+B0: FIELD");
 }
 
 static void UtilityScreen(const DemoViewModel *model)

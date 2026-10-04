@@ -6,7 +6,9 @@
 #include "app_events.h"
 #include "audio_path_service.h"
 #include "classic_adapter.h"
+#include "clip_decimator.h"
 #include "command_policy.h"
+#include "demo_clip.h"
 #include "demo_lights.h"
 #include "demo_rolling.h"
 #include "demo_view.h"
@@ -25,6 +27,17 @@
 _Static_assert((uint32_t)INP_CONTROL_COUNT == 6U, "controls follow the UI switch order");
 _Static_assert((uint32_t)CTX_BAND_COUNT == (uint32_t)RADIO_BAND_COUNT,
                "the band menu lists the receiver's bands in RadioBand order");
+_Static_assert(((uint32_t)DEMO_CLIP_VIEW_FAILED == (uint32_t)DEMO_CLIP_FAILED) &&
+               ((uint32_t)DEMO_CLIP_VIEW_READY == (uint32_t)DEMO_CLIP_READY) &&
+               ((uint32_t)DEMO_CLIP_VIEW_LOADING == (uint32_t)DEMO_CLIP_LOADING) &&
+               ((uint32_t)DEMO_CLIP_VIEW_SAVING == (uint32_t)DEMO_CLIP_SAVING),
+               "the view shows the clip in DemoClipState order");
+_Static_assert(((uint32_t)DEMO_CLIP_REASON_LOAD_FAILED == (uint32_t)DEMO_CLIP_FAULT_LOAD_FAILED) &&
+               ((uint32_t)DEMO_CLIP_REASON_SAVE_FAILED == (uint32_t)DEMO_CLIP_FAULT_SAVE_FAILED) &&
+               ((uint32_t)DEMO_CLIP_REASON_SAVE_UNAVAILABLE ==
+                (uint32_t)DEMO_CLIP_FAULT_SAVE_UNAVAILABLE) &&
+               ((uint32_t)DEMO_CLIP_REASON_SAVE_BUSY == (uint32_t)DEMO_CLIP_FAULT_SAVE_BUSY),
+               "the view names clip faults in DemoClipFault order");
 
 /* View cadence: the frame is composed at most this often, and less often while
  * the recorder captures (PRES-R5). One OLED page is written per pass. */
@@ -46,6 +59,9 @@ typedef struct
   uint32_t commands_refused; /* commands the queue refused (BUSY notice) */
   uint32_t commands_rejected;/* commands the policy rejected */
   uint32_t session_changes_refused;
+  uint32_t clip_returns;         /* Shift+B0 gestures posted after a clip failure */
+  uint32_t clip_returns_refused; /* refused by the queue, posted again later */
+  uint32_t prompts_refused;      /* session prompts refused in Instrument */
   uint32_t display_us_max;   /* longest OLED page write */
   uint32_t matrix_capture_ms;          /* time observed while capturing */
   uint32_t matrix_capture_frames;      /* frames composed while capturing */
@@ -73,6 +89,11 @@ static uint32_t matrix_last_frames;
 static uint32_t matrix_last_superseded;
 static DemoCounters counters;
 static uint8_t last_buffer_state;
+/* The answer to the latest save request, for the chord's load that follows it
+ * in the same Context action (C-010). */
+static uint8_t save_answer;
+/* A clip failure sends Instrument back to Field once (p04.6). */
+static bool clip_return_pending;
 
 /* Classic's tunes, from the Radio machine's tune start (command written) to its
  * answer, per band and split by whether the recorder was capturing at the start
@@ -120,6 +141,8 @@ void DemoField_Init(void)
   session_started = false;
   composed_once = false;
   lights_valid = false;
+  save_answer = (uint8_t)DEMO_SAVE_NONE;
+  clip_return_pending = false;
   for (control = 0U; control < (uint8_t)INP_CONTROL_COUNT; ++control)
   {
     pressed[control] = UiBoardTest_DemoPressed(control);
@@ -220,7 +243,9 @@ void DemoField_Dispatch(const EvqEvent *event)
 
 static DemoScreen Screen(const CtxStatus *ctx, const InpStatus *inp)
 {
-  if (inp->state == (uint8_t)INP_STATE_START_PROMPT)
+  /* The start prompt is refused in Instrument (p04.6): it stays on Instrument. */
+  if ((inp->state == (uint8_t)INP_STATE_START_PROMPT) &&
+      (ctx->state != (uint8_t)CTX_STATE_INSTRUMENT))
   {
     return DEMO_SCREEN_PROMPT_START;
   }
@@ -254,6 +279,7 @@ static void BuildModel(uint32_t now, const CtxStatus *ctx, const InpStatus *inp,
   ClassicState classic;
   EmfLevelReading emf;
   DemoRollStatus rolling;
+  DemoClipStatus clip;
   const RadState radio_state = Radio_GetState();
 
   (void)memset(model, 0, sizeof(*model));
@@ -286,6 +312,11 @@ static void BuildModel(uint32_t now, const CtxStatus *ctx, const InpStatus *inp,
   DemoRolling_GetStatus(&rolling);
   model->buffer = rolling.state;
   model->buffer_seconds = rolling.retained_ms / 1000U;
+  DemoClip_GetStatus(&clip);
+  model->clip = clip.state;
+  model->clip_capture = clip.capture;
+  model->clip_tenths = (clip.samples * 10U) / CLIP_RATE_HZ;
+  model->clip_playing = clip.playing;
   model->notice = notice;
   model->notice_arg = notice_arg;
 }
@@ -336,7 +367,9 @@ static void ServiceLights(uint32_t now, const CtxStatus *ctx, const DemoViewMode
   input.button_pressed[0] = pressed[INP_BUTTON0];
   input.button_pressed[1] = pressed[INP_BUTTON1];
   input.shift_mode_switch = !Session_IsActive();
-  input.shift_save = !Session_IsActive() && (model->buffer == DEMO_BUFFER_RUNNING);
+  /* Shift+B1 saves on Field pages only; Instrument has no Shift+B1 action. */
+  input.shift_save = !Session_IsActive() && (model->buffer == DEMO_BUFFER_RUNNING) &&
+                     (mode == CTX_MODE_FIELD);
   input.shift_quick_jump = (ctx->state == (uint8_t)CTX_STATE_CLASSIC) ||
                            (ctx->state == (uint8_t)CTX_STATE_MANUAL_QUICK_JUMP);
   DemoLights_Compute(&input, now, &output);
@@ -364,6 +397,39 @@ static void MeasureMatrix(uint32_t now)
   matrix_last_ms = now;
   matrix_last_frames = matrix.frames;
   matrix_last_superseded = matrix.frames_superseded;
+}
+
+/* The clip plays while Instrument has it. After a clip failure, a Shift+B0
+ * gesture takes Instrument back to Field (C-028, decision 0011 item 15); it is
+ * posted again only if the queue refused it. */
+static void ServiceClip(void)
+{
+  if (clip_return_pending)
+  {
+    if (mode != CTX_MODE_INSTRUMENT)
+    {
+      clip_return_pending = false;
+    }
+    else
+    {
+      Gesture gesture;
+
+      (void)memset(&gesture, 0, sizeof(gesture));
+      gesture.kind = (uint8_t)GESTURE_SHIFT_BUTTON0;
+      if (AppEvents_Post(EVQ_CLASS_INTERNAL, APP_EVENT_DEMO_GESTURE, Gesture_Pack(gesture),
+                         0U))
+      {
+        clip_return_pending = false;
+        ++counters.clip_returns;
+        printf("[demo] t=%lu clip failed: back to Field\r\n", (unsigned long)Now());
+      }
+      else
+      {
+        ++counters.clip_returns_refused;
+      }
+    }
+  }
+  DemoClip_SetPlaying(mode == CTX_MODE_INSTRUMENT);
 }
 
 void DemoField_Service(void)
@@ -394,6 +460,7 @@ void DemoField_Service(void)
     }
     last_buffer_state = rolling.state;
   }
+  ServiceClip();
   Context_GetStatus(&ctx);
   InputResolution_GetStatus(&inp);
   BuildModel(now, &ctx, &inp, &model);
@@ -585,6 +652,13 @@ void inp_integration_issue(InpCommand command)
                                      : COMMAND_ACTION_SESSION_STOP;
   bool posted;
 
+  /* Demo narrowing of C-091 (decision 0011 item 15): no session from Instrument. */
+  if (start && (mode == CTX_MODE_INSTRUMENT))
+  {
+    ++counters.commands_rejected;
+    Notify(DEMO_NOTICE_SESSION_IN_INSTRUMENT, 0U, DEMO_NOTICE_MS);
+    return;
+  }
   if (CommandPolicy_Evaluate(action, Session_GetState()) != COMMAND_POLICY_ALLOWED)
   {
     ++counters.commands_rejected;
@@ -613,6 +687,11 @@ void inp_integration_publish(InpPublished event)
 
   printf("[demo] t=%lu inp %s\r\n", (unsigned long)Now(),
          ((uint32_t)event < (sizeof(names) / sizeof(names[0]))) ? names[event] : "?");
+  if ((event == INP_PUB_PROMPT_OPENED_START) && (mode == CTX_MODE_INSTRUMENT))
+  {
+    ++counters.prompts_refused;
+    Notify(DEMO_NOTICE_SESSION_IN_INSTRUMENT, 0U, DEMO_NOTICE_MS);
+  }
 }
 
 /* --- Context integration ---------------------------------------------------- */
@@ -681,12 +760,14 @@ static void Posted(bool posted)
  * so a save is rejected there with its reason (decision 0011 item 14). */
 static void RequestSave(void)
 {
+  save_answer = (uint8_t)DEMO_SAVE_NONE;
   if (Session_IsActive())
   {
     Notify(DEMO_NOTICE_SAVE_IN_SESSION, 0U, DEMO_NOTICE_MS);
     return;
   }
-  switch (DemoRolling_RequestSave())
+  save_answer = (uint8_t)DemoRolling_RequestSave();
+  switch ((DemoSaveOutcome)save_answer)
   {
     case DEMO_SAVE_WRITING:
       Notify(DEMO_NOTICE_SAVE_WRITING, 0U, DEMO_FAULT_NOTICE_MS); /* until the outcome */
@@ -719,6 +800,38 @@ void DemoField_OnSaveOutcome(uint8_t outcome)
   }
 }
 
+/* The load half of C-010, right after its save in the same Context action.
+ * Only the save just accepted can feed the clip; otherwise the clip fails with
+ * the save's reason and Instrument goes back to Field. */
+static void RequestLoad(void)
+{
+  switch ((DemoSaveOutcome)save_answer)
+  {
+    case DEMO_SAVE_WRITING:
+      DemoClip_Expect();
+      break;
+    case DEMO_SAVE_BUSY:
+      DemoClip_Fail(DEMO_CLIP_FAULT_SAVE_BUSY);
+      break;
+    case DEMO_SAVE_UNAVAILABLE:
+    default:
+      DemoClip_Fail(DEMO_CLIP_FAULT_SAVE_UNAVAILABLE);
+      break;
+  }
+  save_answer = (uint8_t)DEMO_SAVE_NONE;
+}
+
+void DemoField_OnClipOutcome(uint8_t state, uint8_t fault)
+{
+  if (state == (uint8_t)DEMO_CLIP_READY)
+  {
+    Notify(DEMO_NOTICE_CLIP_LOADED, 0U, DEMO_NOTICE_MS);
+    return;
+  }
+  Notify(DEMO_NOTICE_CLIP_FAILED, fault, DEMO_FAULT_NOTICE_MS);
+  clip_return_pending = true;
+}
+
 void ctx_integration_command(CtxCommand command, int32_t arg)
 {
   switch (command)
@@ -749,10 +862,12 @@ void ctx_integration_command(CtxCommand command, int32_t arg)
     case CTX_CMD_CAPTURE_SAVE:
       RequestSave();
       break;
+    case CTX_CMD_LOAD_CAPTURE:
+      RequestLoad();
+      break;
     case CTX_CMD_MONITOR_PTT:  /* no monitor stage yet: full_spooky_proto-54w.9 */
     case CTX_CMD_SELECT_ENGINE:/* followed by CTX_PUB_ENGINE_CHANGED */
     case CTX_CMD_SET_MODE:     /* followed by CTX_PUB_MODE_CHANGED */
-    case CTX_CMD_LOAD_CAPTURE: /* p04.6 */
     case CTX_CMD_TUNE:         /* Manual is not in the demo */
     case CTX_CMD_TOGGLE_WRAP:
     case CTX_CMD_UTILITY_OPEN: /* no utility service in the demo */
@@ -948,6 +1063,34 @@ static bool HandleRoll(const char *command)
   return true;
 }
 
+/* `DEMO CLIP`: the Instrument clip and its loads (p04.6). */
+static bool HandleClip(const char *command)
+{
+  char response[320];
+  DemoClipStatus clip;
+
+  if (strcmp(command, "DEMO CLIP") != 0)
+  {
+    return false;
+  }
+  DemoClip_GetStatus(&clip);
+  (void)snprintf(response, sizeof(response),
+                 "OK DEMO CLIP STATE=%s FAULT=%s CAPTURE=C%03lu SAMPLES=%lu MS=%lu "
+                 "PLAYING=%u LOOPS=%lu LOADS=%lu FAILURES=%lu LOAD_MS=%lu LOAD_MS_MAX=%lu "
+                 "STEP_MS_MAX=%lu RETURNS=%lu RETURNS_REFUSED=%lu PROMPTS_REFUSED=%lu\r\n",
+                 DemoClip_StateName(clip.state), DemoClip_FaultName(clip.fault),
+                 (unsigned long)clip.capture, (unsigned long)clip.samples,
+                 (unsigned long)((clip.samples * 1000U) / CLIP_RATE_HZ),
+                 clip.playing ? 1U : 0U, (unsigned long)clip.loops,
+                 (unsigned long)clip.loads, (unsigned long)clip.failures,
+                 (unsigned long)clip.load_ms, (unsigned long)clip.load_ms_max,
+                 (unsigned long)clip.step_ms_max, (unsigned long)counters.clip_returns,
+                 (unsigned long)counters.clip_returns_refused,
+                 (unsigned long)counters.prompts_refused);
+  (void)UsbTest_SendText(response);
+  return true;
+}
+
 bool DemoField_HandleCommand(const char *command)
 {
   static const char *const screens[DEMO_SCREEN_COUNT] = {
@@ -961,7 +1104,8 @@ bool DemoField_HandleCommand(const char *command)
   EvqStats queue;
   char response[384];
 
-  if (HandleLights(command) || HandleTunes(command) || HandleRoll(command))
+  if (HandleLights(command) || HandleTunes(command) || HandleRoll(command) ||
+      HandleClip(command))
   {
     return true;
   }

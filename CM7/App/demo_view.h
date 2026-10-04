@@ -48,6 +48,26 @@ typedef enum
   DEMO_BUFFER_FAULT
 } DemoBuffer;
 
+/* The Instrument clip (demo_clip.h DemoClipState order). */
+typedef enum
+{
+  DEMO_CLIP_VIEW_NONE = 0,
+  DEMO_CLIP_VIEW_SAVING,
+  DEMO_CLIP_VIEW_LOADING,
+  DEMO_CLIP_VIEW_READY,
+  DEMO_CLIP_VIEW_FAILED
+} DemoClipView;
+
+/* Why the clip failed (demo_clip.h DemoClipFault order), the CLIP_FAILED arg. */
+typedef enum
+{
+  DEMO_CLIP_REASON_NONE = 0,
+  DEMO_CLIP_REASON_SAVE_BUSY,
+  DEMO_CLIP_REASON_SAVE_UNAVAILABLE,
+  DEMO_CLIP_REASON_SAVE_FAILED,
+  DEMO_CLIP_REASON_LOAD_FAILED
+} DemoClipReason;
+
 /* Published Session state (SesState order). */
 typedef enum
 {
@@ -83,6 +103,9 @@ typedef enum
   DEMO_NOTICE_BUFFER_FAULT,      /* rolling capture stopped by a fault */
   DEMO_NOTICE_NOT_WHILE_RECORDING,
   DEMO_NOTICE_BUSY,              /* the event queue refused a command */
+  DEMO_NOTICE_CLIP_LOADED,       /* the C-010 clip is ready */
+  DEMO_NOTICE_CLIP_FAILED,       /* arg is the DemoClipReason; back to Field */
+  DEMO_NOTICE_SESSION_IN_INSTRUMENT, /* the session prompt is refused there */
   DEMO_NOTICE_COUNT
 } DemoNotice;
 
@@ -109,8 +132,12 @@ typedef struct
   uint32_t buffer_seconds; /* rolling window held, while running */
   bool emf_known;          /* emf_level VALID */
   uint32_t emf_uT;
+  uint8_t clip;            /* DemoClipView */
+  uint32_t clip_capture;   /* Cnnn of the clip or the load, 0 for none */
+  uint32_t clip_tenths;    /* clip length in tenths of a second, while ready */
+  bool clip_playing;
   uint8_t notice;          /* DemoNotice */
-  uint8_t notice_arg;      /* band for the band notices */
+  uint8_t notice_arg;      /* band for the band notices, reason for CLIP_FAILED */
 } DemoViewModel;
 
 typedef struct
