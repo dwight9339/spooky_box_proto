@@ -1,6 +1,8 @@
 # 0011. Halloween 2026 demo build
 
-- **Status:** Accepted 2026-09-30
+- **Status:** Accepted 2026-09-30; slice quantization in item 16 and the checkpoint 3
+  fallback in item 21 superseded by
+  [0020](0020-halloween-demo-slicer-and-sequencers.md)
 - **Date:** 2026-09-30
 - **Supersedes:** none
 - **Beads:** demo epic and tasks to be created on acceptance (label `track-demo`);

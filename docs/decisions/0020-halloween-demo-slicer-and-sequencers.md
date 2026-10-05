@@ -1,16 +1,12 @@
 # 0020. Halloween demo Instrument scope: Slicer, sequencers and a tempo matrix
 
-- **Status:** Proposed
+- **Status:** Accepted 2026-10-05
 - **Date:** 2026-10-05
 - **Supersedes:** [0011](0011-halloween-2026-demo-build.md) item 16 in part (slice
   quantization; its grain-activity matrix stays for Granular) and the checkpoint 3
-  fallback in item 21, and adds gates to checkpoint 2, if accepted. The rest of 0011
+  fallback in item 21, and adds gates to checkpoint 2. The rest of 0011
   stands.
 - **Beads:** `full_spooky_proto-p04.13` (decision); epic `full_spooky_proto-p04`
-
-Items marked *(user 2026-10-05)* were agreed in conversation. Items marked *(agent)* are
-proposals awaiting the user's call. The Open questions section is removed before
-acceptance.
 
 ## Context
 
@@ -52,7 +48,7 @@ Facts that shape the scope:
 ## Decision
 
 **Scope, in delivery order.** Each step is a shootable fallback if the next misses the
-freeze. *(user 2026-10-05)*
+freeze.
 
 1. Granular alone, as in p04.7, minus slice quantization (item 6).
 2. The transport and sequencer shell (items 4, 5 and 7), proven on Granular with its
@@ -64,59 +60,57 @@ freeze. *(user 2026-10-05)*
 **Shared demo behavior**
 
 4. One transport for Instrument: BPM and run/stop, kept across engine and view switches.
-   Each engine keeps its own pattern. No swing in the demo. *(user 2026-10-05, S1)*
+   Each engine keeps its own pattern. No swing in the demo.
 5. Sequencer and parameter editing happen on the OLED only. The step view follows C-072
    to C-077: Encoder 0 browses steps, a press edits one, Encoder 0 turns its value,
-   Encoder 1 button toggles it on or off. 16 steps. *(user 2026-10-05, S2 as revised)*
+   Encoder 1 button toggles it on or off. 16 steps.
 6. Slice quantization is removed from Granular. The portable core in `Common/` carries no
-   slice parameter. *(user 2026-10-05, G1)*
+   slice parameter.
 7. While a sequence drives a parameter, the live knob for that parameter offsets the
-   sequence instead of overriding it. *(user 2026-10-05, S3)*
+   sequence instead of overriding it.
 
 **Granular sequencer**
 
 8. A step's value is a playback position in the clip. Grains continue between steps; a
-   step that is off keeps the previous position. *(user 2026-10-05, G2)*
+   step that is off keeps the previous position.
 
 **Slicer**
 
 9. On load: 16 equal slices, identity pattern (step n plays slice n), and BPM set so the
    clip spans one bar. The loaded clip first sounds like itself looping.
-   *(user 2026-10-05, L1)*
 10. One voice. A new step cuts the previous slice with a short crossfade. A slice plays
     until its end or the next step, whichever comes first. BPM changes truncate slices
-    or leave gaps; no time-stretch. *(user 2026-10-05, L2, L3)*
+    or leave gaps; no time-stretch.
 11. Slicer page as in [0022](0022-slicer-engine.md) items 4 to 6: slice count at engine
     level; Encoder 0 selects a slice and a press opens its pitch, gate, level and length.
-    *(user 2026-10-05, L4 as revised)* If time runs short, controls are cut in this
-    order: length editing, audition on select, gate, level, pitch, slice count. The floor
-    is 16 fixed slices driven by the sequencer alone. 0022 items 7 to 9 apply to the demo
-    only for the controls that remain. *(user 2026-10-05)*
+    If time runs short, controls are cut in this order: length editing, audition on
+    select, gate, level, pitch, slice count. The floor is 16 fixed slices driven by the
+    sequencer alone. 0022 items 7 to 9 apply to the demo only for the controls that
+    remain.
 
 **Navigation and display**
 
 12. Granular and Slicer are switched with the engine selector (C-018 to C-020). Its
     commit and cancel behavior is provisional and does not settle D-005.
-    *(user 2026-10-05, D1)*
-13. The matrix follows the active engine. *(user 2026-10-05)*
+13. The matrix follows the active engine.
     - Granular keeps the grain-activity view of 0011 item 16 as built in p04.7: the
       columns are the clip, and each sounding grain lights the column it is reading.
     - Slicer shows one solid color rotating through the spectrum, one full cycle per bar.
-      The color freezes while the transport is stopped. *(user 2026-10-05, M1, M2)*
+      The color freezes while the transport is stopped.
     - With no clip loaded, the matrix is dark.
     - Neither view shows EMF, so the Field-to-Instrument sensor policy is not exercised
       (0011 item 16, Principle II).
     - Instrument never records in the demo: mode switches are blocked during a session
       and the session prompt is refused in Instrument (0011 item 15). The recording-ring
-      guard in p04.7 stays as a guard. *(user 2026-10-05, replaces M3)*
+      guard in p04.7 stays as a guard.
 14. If C-008 enters Instrument with no clip, the OLED shows the empty state p04.6 already
     draws ("NO CLIP", with the C-010 chord as the hint) and engines are silent. A failed
     clip load still returns to Field (0011 item 15); the failure behavior proposed in
     [0023](0023-clip-selection-and-region-editing.md) is not used in the demo. No
-    browser is built for the demo. *(user 2026-10-05)*
+    browser is built for the demo.
 15. The clip stays mono radio (0011 item 15).
 
-**Schedule.** The checkpoint dates in 0011 item 21 stand. *(user 2026-10-05)*
+**Schedule.** The checkpoint dates in 0011 item 21 stand.
 
 16. Checkpoint 2 (2026-10-14) adds a gate: Granular (step 1) runs on hardware.
 17. Slicer work (step 3) starts only after step 2 runs on hardware.
@@ -126,11 +120,6 @@ freeze. *(user 2026-10-05)*
 **Principles.** 0011 items 17 to 20 apply unchanged. The added departure from the
 milestone sequence is items 1 to 15; Slicer and sequencers are post-M5 product scope
 (roadmap "After M5"). The rejected alternative that keeps the sequence is option 1.
-
-## Open questions
-
-None remain. The user's calls of 2026-10-05 are recorded in items 1 to 3, 11, 13, 14
-and 16 to 18.
 
 ## Consequences
 
