@@ -2,8 +2,10 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-05
-- **Supersedes:** [0011](0011-halloween-2026-demo-build.md) item 16 and the checkpoint 3
-  fallback in item 21, if accepted. The rest of 0011 stands.
+- **Supersedes:** [0011](0011-halloween-2026-demo-build.md) item 16 in part (slice
+  quantization; its grain-activity matrix stays for Granular) and the checkpoint 3
+  fallback in item 21, and adds gates to checkpoint 2, if accepted. The rest of 0011
+  stands.
 - **Beads:** `full_spooky_proto-p04.13` (decision); epic `full_spooky_proto-p04`
 
 Items marked *(user 2026-10-05)* were agreed in conversation. Items marked *(agent)* are
@@ -50,10 +52,13 @@ Facts that shape the scope:
 ## Decision
 
 **Scope, in delivery order.** Each step is a shootable fallback if the next misses the
-freeze. *(agent)*
+freeze. *(user 2026-10-05)*
 
 1. Granular alone, as in p04.7, minus slice quantization (item 6).
-2. Granular plus its sequencer view (item 8).
+2. The transport and sequencer shell (items 4, 5 and 7), proven on Granular with its
+   sequencer view (item 8). The Slicer needs the same shell, since its first sound is
+   the identity pattern running on the transport (item 9). Building the Slicer first
+   saves no shared work and delays the first fallback that has a sequencer.
 3. Slicer plus its sequencer view (items 9 to 11).
 
 **Shared demo behavior**
@@ -81,22 +86,42 @@ freeze. *(agent)*
 10. One voice. A new step cuts the previous slice with a short crossfade. A slice plays
     until its end or the next step, whichever comes first. BPM changes truncate slices
     or leave gaps; no time-stretch. *(user 2026-10-05, L2, L3)*
-11. Slicer page as in [0022](0022-slicer-engine.md) items 4 to 7, cut down for the demo
-    if time requires: slice count at engine level; Encoder 0 selects a slice and a press
-    opens its pitch, gate, level and length. *(user 2026-10-05, L4 as revised)*
+11. Slicer page as in [0022](0022-slicer-engine.md) items 4 to 6: slice count at engine
+    level; Encoder 0 selects a slice and a press opens its pitch, gate, level and length.
+    *(user 2026-10-05, L4 as revised)* If time runs short, controls are cut in this
+    order: length editing, audition on select, gate, level, pitch, slice count. The floor
+    is 16 fixed slices driven by the sequencer alone. 0022 items 7 to 9 apply to the demo
+    only for the controls that remain. *(user 2026-10-05)*
 
 **Navigation and display**
 
 12. Granular and Slicer are switched with the engine selector (C-018 to C-020). Its
     commit and cancel behavior is provisional and does not settle D-005.
     *(user 2026-10-05, D1)*
-13. The matrix shows one solid color rotating through the spectrum, replacing the grain
-    activity view of 0011 item 16. *(user 2026-10-05)* One full cycle per bar; the color
-    freezes while the transport is stopped; the recording ring stays drawn over it during
-    an Instrument session. *(agent, M1 to M3)*
-14. If C-008 enters Instrument with no clip, the OLED shows an empty state
-    ("No clip") and engines are silent. No browser is built for the demo. *(agent)*
+13. The matrix follows the active engine. *(user 2026-10-05)*
+    - Granular keeps the grain-activity view of 0011 item 16 as built in p04.7: the
+      columns are the clip, and each sounding grain lights the column it is reading.
+    - Slicer shows one solid color rotating through the spectrum, one full cycle per bar.
+      The color freezes while the transport is stopped. *(user 2026-10-05, M1, M2)*
+    - With no clip loaded, the matrix is dark.
+    - Neither view shows EMF, so the Field-to-Instrument sensor policy is not exercised
+      (0011 item 16, Principle II).
+    - Instrument never records in the demo: mode switches are blocked during a session
+      and the session prompt is refused in Instrument (0011 item 15). The recording-ring
+      guard in p04.7 stays as a guard. *(user 2026-10-05, replaces M3)*
+14. If C-008 enters Instrument with no clip, the OLED shows the empty state p04.6 already
+    draws ("NO CLIP", with the C-010 chord as the hint) and engines are silent. A failed
+    clip load still returns to Field (0011 item 15); the failure behavior proposed in
+    [0023](0023-clip-selection-and-region-editing.md) is not used in the demo. No
+    browser is built for the demo. *(user 2026-10-05)*
 15. The clip stays mono radio (0011 item 15).
+
+**Schedule.** The checkpoint dates in 0011 item 21 stand. *(user 2026-10-05)*
+
+16. Checkpoint 2 (2026-10-14) adds a gate: Granular (step 1) runs on hardware.
+17. Slicer work (step 3) starts only after step 2 runs on hardware.
+18. The freeze image (checkpoint 3, 2026-10-21) carries the last step proven on
+    hardware. This replaces the checkpoint 3 fallback in 0011 item 21.
 
 **Principles.** 0011 items 17 to 20 apply unchanged. The added departure from the
 milestone sequence is items 1 to 15; Slicer and sequencers are post-M5 product scope
@@ -104,21 +129,17 @@ milestone sequence is items 1 to 15; Slicer and sequencers are post-M5 product s
 
 ## Open questions
 
-- Is the delivery order in items 1 to 3 right, or should Slicer come before the Granular
-  sequencer, since Slicer is the stronger "clip into music" moment?
-- Does the matrix hue rotation keep any EMF meaning in Instrument, or is EMF absent there
-  in the demo (as 0011 item 16 already has it)?
-- Which slice-page controls are cut first if time runs short (length editing is the most
-  work)?
-- The checkpoint dates in 0011 item 21 stand. Is a mid-point check (for example
-  2026-10-14) on Granular-plus-sequencer wanted?
+None remain. The user's calls of 2026-10-05 are recorded in items 1 to 3, 11, 13, 14
+and 16 to 18.
 
 ## Consequences
 
-- p04.7 changes before merge: drop `slices` from `Common/Inc/granular.h` and its tests,
-  replace the grain-activity matrix with the hue rotation, add the transport.
-- New demo tasks under `full_spooky_proto-p04` after acceptance: transport and Granular
-  sequencer; Slicer engine and its page; Slicer sequencer. Portable logic (slice map,
+- p04.7 changes before merge: drop `slices` from `Common/Inc/granular.h`, from page 2
+  and from their tests. The grain-activity matrix stays. p04.6 and p04.7 can then go to
+  the bench without waiting for the rest of this record.
+- New demo tasks under `full_spooky_proto-p04` after acceptance: the transport and
+  sequencer shell, proven on Granular; the Slicer engine, its page and its hue-rotation
+  matrix; the Slicer sequencer. Portable logic (slice map,
   step remap, sequencer stepping) goes in `Common/` with host tests where it may become
   product code; the rest is demo-only behind the `Demo` preset.
 - Demo tasks never close product tasks; notes go to `v7l.1` and to whatever product task

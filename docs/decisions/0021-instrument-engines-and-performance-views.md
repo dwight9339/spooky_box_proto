@@ -89,8 +89,9 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
 
 ## Open questions
 
-- What does the matrix show in Instrument for the product? The demo uses a tempo hue
-  rotation ([0020](0020-halloween-demo-slicer-and-sequencers.md) item 13).
+- What does the matrix show in Instrument for the product? The demo shows grain
+  activity for Granular and a tempo hue rotation for Slicer
+  ([0020](0020-halloween-demo-slicer-and-sequencers.md) item 13).
 - Does EMF keep a role in Instrument (for example as a modulation source), and how does
   the Field-to-Instrument sensor policy (fixed baseline) show on the matrix?
 - Which gestures must be identical across engines (item 6), stated as a list in the
