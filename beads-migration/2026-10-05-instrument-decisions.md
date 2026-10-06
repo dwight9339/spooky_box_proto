@@ -49,3 +49,5 @@ Pulled from `refs/dolt/data` at the start of the session (2026-10-05).
 5. **Created** `p04.16`, "Demo: Slicer sequencer view": P2, child of `p04`; labels
    interaction, off-bench, roadmap, track-demo. Depends on `p04.15`; relates to `v7l.9`.
 6. `v7l.8` and `v7l.9` carry only the reverse `relates-to` rows from items 3 to 5.
+7. `v7l.8` (Decide 0021): appended a 2026-10-06 note recording which open questions
+   were resolved and what remains.
