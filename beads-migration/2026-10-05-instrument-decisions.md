@@ -56,3 +56,7 @@ Pulled from `refs/dolt/data` at the start of the session (2026-10-05).
 10. `v7l.8`: appended a 2026-10-06 note on the External MIDI items 18 to 20.
 11. `v7l.9` (Decide 0022): appended a 2026-10-06 note pointing at the Slicer MIDI key
     map in 0021 item 19.
+12. `v7l.8` **closed**: "User accepted decision 0021 on 2026-10-06".
+13. **Created** `v7l.12`, "Propose the spec/product changes from decisions 0021-0024 as
+    one set": P2, child of `v7l`; labels decision, interaction, m5, off-bench, roadmap.
+    Relates to `v7l.8`. Check this ID is still unused before importing.

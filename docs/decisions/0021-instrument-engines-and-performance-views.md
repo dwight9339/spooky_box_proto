@@ -1,13 +1,9 @@
 # 0021. Instrument engines own their performance-view semantics
 
-- **Status:** Proposed
+- **Status:** Accepted 2026-10-06
 - **Date:** 2026-10-05
 - **Supersedes:** none
 - **Beads:** `full_spooky_proto-v7l.8` (decision); epic `full_spooky_proto-v7l`
-
-Items marked *(user 2026-10-05)* were agreed in conversation. Items marked *(agent)* are
-proposals awaiting the user's call. The Open questions section is removed before
-acceptance.
 
 ## Context
 
@@ -47,30 +43,26 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
 
 **Engines**
 
-1. Instrument engines are Granular, Slicer and One-shot. *(user 2026-10-05)*
+1. Instrument engines are Granular, Slicer and One-shot.
 2. Exactly one engine runs at a time. Running several engines together, and other
    cross-engine interactions, are experiments for a post-M5 milestone.
-   *(user 2026-10-05)*
 3. One-shot is tone-based: it plays the clip as pitched notes, driven by the sequencer or
    by external MIDI (item 18). It has no dedicated performance trigger on the panel.
-   *(user 2026-10-05)*
 
 **Ownership**
 
 4. An engine owns its playback or synthesis semantics, the meaning of its sequencer
    steps, and which of its parameters macros and modulation may target.
-   *(user 2026-10-05; Effects removed by item 14, user 2026-10-06)*
 5. Shared infrastructure: clip storage and access, the transport and clock, BPM and
    timing primitives, swing math, pattern and preset persistence, parameter IDs, the
    slice map type ([0022](0022-slicer-engine.md)), modulation sources (item 13) and the
-   effects chain (item 14). *(user 2026-10-05, 2026-10-06)*
+   effects chain (item 14).
 6. Every engine keeps these gestures identical: the engine selector (C-018 to C-020),
    the view selector (C-021 to C-023), page advance (C-024), Shift (C-026), the utility
    root (C-027), the mode switch (C-028), the session prompt (C-091), the returns to the
    view selector and to the engine (C-083, C-084), step browse and edit (C-072 to
    C-077) and transport run/stop (item 7). An engine may differ only in its parameter
    assignments (C-025), its Button 1 action (C-029) and the meaning of a step's value.
-   *(user 2026-10-06)*
 
 **Sequencer shell**
 
@@ -79,22 +71,19 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
    An Encoder 0 click on the main engine page runs or stops it, echoing the Classic
    scan's run and pause (C-103). Inside a performance view, where Encoder 0 click
    browses and selects, an Encoder 2 click runs or stops it. The split is provisional,
-   to be revisited after hands-on use. *(user 2026-10-05, S1; swing and controls user
-   2026-10-06)*
+   to be revisited after hands-on use.
 8. Every engine's sequencer is a row of steps on the OLED. Each step has an on/off flag
    and one primary value, edited with C-072 to C-077. The engine defines the value's
    meaning and range: a note for One-shot, a slice for Slicer, a position for Granular.
    Per-step extras (ratchet, reverse, probability and so on) belong to the engine.
-   *(user 2026-10-05, S2 as revised)*
 9. While a sequence drives a parameter, the live knob for it offsets the sequence rather
-   than overriding it. *(user 2026-10-05, S3)*
+   than overriding it.
 10. A pattern belongs to its engine and survives engine switches. Loading a new clip keeps
     the pattern. Division, length and scale are pattern settings.
-    *(user 2026-10-05, S4; pattern settings user 2026-10-06)*
 11. Every engine's sequencer is also a stepped modulation source, routable like any other
-    source (item 13). Per-step parameter locks are deferred. *(user 2026-10-06)*
+    source (item 13). Per-step parameter locks are deferred.
 12. A standard pattern setting, **engine drive**, sets what the sequencer sends to the
-    engine. *(user 2026-10-06)*
+    engine.
     - **Value and trigger** (default): each step's value goes to the engine's primary
       parameter and each step that is on fires the engine.
     - **Trigger only**: steps fire the engine, and the value feeds only the modulation
@@ -110,23 +99,22 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
 
 13. Modulation sources are shared: encoders, macros, LFOs, envelopes, sequencer lanes,
     EMF level, radio activity and external MIDI (velocity, CCs, mod wheel and
-    aftertouch; MIDI user 2026-10-06). Targets are the active engine's parameters and the
+    aftertouch). Targets are the active engine's parameters and the
     effect parameters. Each engine has its own macro slots and modulation routes, saved
     in its preset as the control map's preset scope already lists. Slot and route counts
-    stay open (modes and interaction, open decision 10). *(user 2026-10-06)*
+    stay open (modes and interaction, open decision 10).
 14. One effects chain follows whichever engine runs and is kept across engine switches.
-    Engine presets do not include it. *(user 2026-10-06)*
+    Engine presets do not include it.
 
 **Display**
 
 15. All parameter and sequence editing happens on the OLED. The matrix gives glanceable
     feedback (activity, motion, intensity, identity) and never shows editing detail.
-    *(user 2026-10-05)*
 16. The active engine owns the matrix body. Two layers are shared by every engine: the
     recording ring whenever a session records, and EMF level while EMF is routed as a
     modulation source. EMF is measured against the fixed Instrument baseline and drawn
     as the outline buckets of [0019](0019-matrix-emf-four-buckets-and-quiet-baseline.md),
-    so it keeps its Field meaning (Principle II). *(user 2026-10-06)*
+    so it keeps its Field meaning (Principle II).
 
 **Recording**
 
@@ -134,16 +122,16 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
     parameters and sequencer events are stored alongside it as metadata, as
     [modes and interaction](../../spec/product/modes-and-interaction.md) (Instrument
     Sessions) already states. M5 replay plays the audio; re-rendering a performance
-    through an engine is later work. *(user 2026-10-06)*
+    through an engine is later work.
 
 **External MIDI**
 
 18. Every engine can be played from external MIDI notes, and each engine's record
     defines its key map. No engine may need MIDI: the Field-to-Instrument workflow, the
-    panel and the sequencer work fully with nothing connected. *(user 2026-10-06)*
+    panel and the sequencer work fully with nothing connected.
 19. Key-map directions for the engine records. Notes are given as MIDI note numbers,
     because octave names differ between manufacturers (note 36 is C1 in some, C2 in
-    others). *(user 2026-10-06)*
+    others).
     - **Slicer:** one slice per note, counting up from a base note (36 by default,
       adjustable), so 16 slices fill a 4×4 pad grid. Velocity sets the slice's level.
       Note-off is one-shot by default (the slice plays to its end, as from a sequencer
@@ -159,11 +147,7 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
       feature spec.
     - **One-shot:** chromatic around its root note; the detail belongs in its record.
 20. While the sequencer runs, its steps and MIDI notes both fire the engine. On a
-    one-voice engine the most recent event wins. *(user 2026-10-06)*
-
-## Open questions
-
-None remain. The user's calls of 2026-10-06 are recorded in items 4 to 7 and 10 to 20.
+    one-voice engine the most recent event wins.
 
 ## Product document changes on acceptance
 
