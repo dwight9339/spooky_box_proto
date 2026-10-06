@@ -66,3 +66,4 @@ Pulled from `refs/dolt/data` at the start of the session (2026-10-05).
 16. `hpq.3` (session formats): appended a 2026-10-06 note requiring a peak track
     (0023 item 21) and clip references by asset ID plus window (0023 item 20).
 17. `v7l.10` (Decide 0023): appended a 2026-10-06 note on how 0023 was resolved.
+18. `v7l.10` **closed**: "User accepted decision 0023 on 2026-10-06".

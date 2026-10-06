@@ -32,7 +32,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0020](0020-halloween-demo-slicer-and-sequencers.md) | Halloween demo Instrument scope: Slicer, sequencers and a tempo matrix | Accepted |
 | [0021](0021-instrument-engines-and-performance-views.md) | Instrument engines own their performance-view semantics | Accepted |
 | [0022](0022-slicer-engine.md) | Slicer engine: slice map, slice page and sequencer | Accepted |
-| [0023](0023-clip-selection-and-region-editing.md) | Clip selection, region editing and the empty Instrument | Proposed |
+| [0023](0023-clip-selection-and-region-editing.md) | Clip selection, region editing and the empty Instrument | Accepted |
 | [0024](0024-clip-sources-and-track-mixing.md) | Clip sources, track mixing and maximum clip length | Proposed |
 
 ## Template
