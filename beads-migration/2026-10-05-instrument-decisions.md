@@ -51,3 +51,5 @@ Pulled from `refs/dolt/data` at the start of the session (2026-10-05).
 6. `v7l.8` and `v7l.9` carry only the reverse `relates-to` rows from items 3 to 5.
 7. `v7l.8` (Decide 0021): appended a 2026-10-06 note recording which open questions
    were resolved and what remains.
+8. `p04.14`: appended a 2026-10-06 note on the demo transport controls (0021 item 7).
+9. `v7l.8`: appended a second 2026-10-06 note saying no open questions remain.

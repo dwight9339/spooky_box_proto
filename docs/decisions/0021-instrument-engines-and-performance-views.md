@@ -70,15 +70,17 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
    view selector and to the engine (C-083, C-084), step browse and edit (C-072 to
    C-077) and transport run/stop (item 7). An engine may differ only in its parameter
    assignments (C-025), its Button 1 action (C-029) and the meaning of a step's value.
-   *(agent)*
+   *(user 2026-10-06)*
 
 **Sequencer shell**
 
 7. One Instrument-wide transport keeps running across engine and view switches. Tempo
    and swing are transport settings, so switching engines does not change the groove.
    An Encoder 0 click on the main engine page runs or stops it, echoing the Classic
-   scan's run and pause (C-103). *(user 2026-10-05, S1; swing user 2026-10-06; the
-   control user 2026-10-06)*
+   scan's run and pause (C-103). Inside a performance view, where Encoder 0 click
+   browses and selects, an Encoder 2 click runs or stops it. The split is provisional,
+   to be revisited after hands-on use. *(user 2026-10-05, S1; swing and controls user
+   2026-10-06)*
 8. Every engine's sequencer is a row of steps on the OLED. Each step has an on/off flag
    and one primary value, edited with C-072 to C-077. The engine defines the value's
    meaning and range: a note for One-shot, a slice for Slicer, a position for Granular.
@@ -90,13 +92,19 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
     the pattern. Division, length and scale are pattern settings.
     *(user 2026-10-05, S4; pattern settings user 2026-10-06)*
 11. Every engine's sequencer is also a stepped modulation source, routable like any other
-    source (item 13). A standard pattern setting, on by default, sends the step value to
-    the engine's primary parameter; turned off, the sequencer acts purely as a
-    modulation source. Per-step parameter locks are deferred. *(user 2026-10-06)*
-12. With that routing off, step on/off still triggers engines that have triggers. Each
-    engine's own record defines what it plays then: Granular follows its position knob,
-    Slicer replays the slice selected on its page, One-shot plays its root note.
-    *(agent)*
+    source (item 13). Per-step parameter locks are deferred. *(user 2026-10-06)*
+12. A standard pattern setting, **engine drive**, sets what the sequencer sends to the
+    engine. *(user 2026-10-06)*
+    - **Value and trigger** (default): each step's value goes to the engine's primary
+      parameter and each step that is on fires the engine.
+    - **Trigger only**: steps fire the engine, and the value feeds only the modulation
+      source. The engine plays from its own controls: for example Granular follows its
+      position knob, Slicer replays the slice selected on its page and One-shot plays
+      its root note.
+    - **None**: the sequencer is purely a modulation source. The engine plays only from
+      its own controls or, for One-shot, external MIDI.
+
+    Each engine's own record defines what a trigger means for it.
 
 **Macros, modulation and effects**
 
@@ -129,13 +137,7 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
 
 ## Open questions
 
-- Item 7 assigns transport run/stop only on the main engine page. In every performance
-  view Encoder 0 click is already taken (browse and select), yet the Sequencer must keep
-  "immediate access to start, stop" (modes and interaction, Sequencer). Which control
-  runs or stops the transport inside the Sequencer view?
-- Confirm the list in item 6.
-- Confirm the routing-off behavior in item 12, or leave it entirely to each engine's
-  record.
+None remain. The user's calls of 2026-10-06 are recorded in items 4 to 7 and 10 to 17.
 
 ## Product document changes on acceptance
 
@@ -153,11 +155,11 @@ These are proposals to protected documents and need separate approval.
 - [Control map](../../spec/product/control-map.md) C-072 to C-076: generalize "note bar"
   and "note value" to "step" and "step value (engine-defined)", keeping "within current
   scale" for pitched engines.
-- Control map: a new row for item 7 (Instrument, main engine page, Normal, Encoder 0
-  button, Click, run or stop the transport), and a row for the Sequencer-view control
-  once chosen.
+- Control map: new rows for item 7: Instrument, main engine page, Normal, Encoder 0
+  button, Click, run or stop the transport; and Instrument, every performance view,
+  Normal, Encoder 2 button, Click, run or stop the transport.
 - Control map C-080: the setting list becomes pattern settings (division, length, scale,
-  primary routing) and transport settings (tempo, swing).
+  engine drive) and transport settings (tempo, swing).
 - Control map preset scope: the Effects chain row becomes Exclude. D-008 is resolved by
   item 14; whether separate FX presets exist is left to the preset work.
 - [Roadmap](../../spec/product/roadmap.md), After M5: add "Slicer and One-shot engines"
