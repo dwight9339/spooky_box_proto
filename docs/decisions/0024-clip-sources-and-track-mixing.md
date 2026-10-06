@@ -22,6 +22,28 @@ Memory bounds the clip. The demo clip is mono radio, 24 kHz, 16-bit, at most 3 s
 positions, so the clip must sit in RAM. Radio plus microphone at the same rate and
 length is 288,000 bytes, which does not fit there.
 
+A link-map check on 2026-10-06 measured what is free:
+
+| Image | Region | Size | Used |
+|---|---|---|---|
+| `Release`, main tree `1ff22e9` | AXI `RAM_DMA` | 524,288 B | 327,680 B |
+| `Demo`, p04.7 branch `4f5935a` | AXI `RAM_DMA` | 524,288 B | 471,680 B, including the 144,000 B clip |
+| `Demo`, M7 | DTCM | 131,072 B | 89,728 B |
+| Both, M7 | ITCM | 65,536 B | 0 B |
+| Both, M4 | D2 SRAM1 to SRAM3 (linker `RAM`) | 294,912 B | about 1.6 KB: data, BSS and minimum heap and stack |
+| Both | D3 SRAM4 | 65,536 B | 256 B IPC block |
+
+Clips can have at most 196,608 bytes of AXI. Mono 16-bit lengths in that space:
+
+| Source layout | 24 kHz | 16 kHz |
+|---|---|---|
+| One source | 4.10 s | 6.14 s |
+| Two sources | 2.05 s | 3.07 s |
+
+D2 SRAM is almost unused, but the M4's linker region claims all of it. Taking part of it
+for the M7 is a build-time ownership transfer (Principle III), and 0010's Context declines
+it because the M4 will own input and rendering.
+
 How Granular works now (p04.7): each grain is a short window read from the clip at the
 position plus random spray, played at the pitch rate under a trapezoid envelope, with up
 to 16 grains overlapping. The render runs in the radio interrupt with a 1.5 ms budget.
@@ -52,14 +74,15 @@ For Granular's source control:
    *(agent, candidate)*
 6. Maximum clip length is set from measured free memory per source layout, not chosen
    for UX. *(agent)*
+7. Whether product clips may use D2 SRAM is decided at M4 bring-up
+   (`full_spooky_proto-54w.5`), once the M4's memory budget is known. Until then the
+   product budget is AXI only. *(user 2026-10-06)*
 
 ## Open questions
 
-- Memory: how much SRAM outside AXI (D2 SRAM1 to SRAM3, D3 SRAM4) is free once the M4
-  image and DMA buffers are placed? A link-map check decides whether a two-source clip
-  fits at all.
-- If it does not fit, which lever: shorter clips, a lower sample rate (for example
-  16 kHz), a compressed sample format, or microphone only when chosen at load time?
+- Within AXI, which lever for two-source clips: shorter clips, a lower sample rate (for
+  example 16 kHz), a compressed sample format, or microphone only when chosen at load
+  time?
 - Is the source layout chosen at load time (radio, microphone or both), so a one-source
   clip gets the full length?
 - Does Blend fit the interrupt budget? It needs a measurement before it is offered.
@@ -69,10 +92,12 @@ For Granular's source control:
 ## Consequences
 
 - The demo stays mono radio ([0020](0020-halloween-demo-slicer-and-sequencers.md)
-  item 15).
+  item 15). [0025](0025-demo-clip-in-d2-sram.md) moves the demo clip to D2 SRAM in the
+  `Demo` image pair only; it does not settle item 7.
 - Clip preparation (decimation, summing) belongs to the shared clip infrastructure
   ([0021](0021-instrument-engines-and-performance-views.md) item 5).
 
 ## Evidence
 
 - Free AXI SRAM: [0010](0010-sd-backed-rolling-capture.md) and 0011 item 15.
+- Link-map measurements: `full_spooky_proto-v7l.11` notes, 2026-10-06.
