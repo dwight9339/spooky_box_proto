@@ -34,6 +34,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0022](0022-slicer-engine.md) | Slicer engine: slice map, slice page and sequencer | Accepted |
 | [0023](0023-clip-selection-and-region-editing.md) | Clip selection, region editing and the empty Instrument | Accepted |
 | [0024](0024-clip-sources-and-track-mixing.md) | Clip sources, track mixing and maximum clip length | Proposed |
+| [0025](0025-demo-clip-in-d2-sram.md) | Demo clip in D2 SRAM, up to 5 s | Accepted |
 
 ## Template
 
