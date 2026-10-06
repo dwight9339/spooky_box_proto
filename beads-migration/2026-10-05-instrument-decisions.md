@@ -60,3 +60,4 @@ Pulled from `refs/dolt/data` at the start of the session (2026-10-05).
 13. **Created** `v7l.12`, "Propose the spec/product changes from decisions 0021-0024 as
     one set": P2, child of `v7l`; labels decision, interaction, m5, off-bench, roadmap.
     Relates to `v7l.8`. Check this ID is still unused before importing.
+14. `v7l.9`: appended a 2026-10-06 note on how 0022 was resolved and what remains.

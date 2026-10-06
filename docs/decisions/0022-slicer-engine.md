@@ -53,11 +53,12 @@ The clip it reads is defined in [0023](0023-clip-selection-and-region-editing.md
 6. Per-slice parameters: pitch, gate, level and length. Length moves the slice's end,
    which is also the next slice's start. *(user 2026-10-05)*
 7. Length has a minimum (about 10 ms) so a slice cannot shrink to a click. The last
-   slice's end is the clip end and is not edited here. *(agent, L7)*
-8. Selecting a slice auditions it once while the transport is stopped. *(agent, L7)*
+   slice's end is the clip end and is not edited here. *(user 2026-10-06, L7)*
+8. Selecting a slice auditions it once while the transport is stopped.
+   *(user 2026-10-06, L7)*
 9. A slice-count change is confirmed: turn to choose, press to apply. If boundaries or
    per-slice parameters were edited, the OLED asks before discarding them.
-   *(agent, L5)*
+   *(user 2026-10-06, L5)*
 
 **Sequencer**
 
@@ -66,29 +67,84 @@ The clip it reads is defined in [0023](0023-clip-selection-and-region-editing.md
 11. When the slice map changes, the sequencer follows it automatically. When the slice
     count changes, each step moves to the new slice that contains the start of its old
     slice (nearest-neighbor by time, not by index). *(user 2026-10-05; time-based rule
-    agent, L6)*
+    user 2026-10-06, L6)*
 12. Per-step extras beyond on/off and slice are engine-owned and open: rests, mute,
     probability, ratchets, pitch, reverse, swing, per-step parameter overrides.
-    *(user 2026-10-05, as candidates)*
+    *(user 2026-10-05, as candidates)* Item 18 orders them.
+
+**Slice detail**
+
+13. A disabled slice is silent wherever it would play, from a sequencer step or a MIDI
+    note. It is not skipped, so the timing does not shift. This mutes a slice
+    throughout the pattern, which a step's off flag cannot do. *(user 2026-10-06)*
+14. The slice map is part of the Slicer's state and is saved in its preset with a
+    reference to its clip, as the control map's preset scope lists ("slice markers and
+    sample trim metadata"). Loading a new clip keeps the slice count, the per-slice
+    parameters and the pattern ([0021](0021-instrument-engines-and-performance-views.md)
+    item 10) and resets the boundaries to equal slices. The replace warning of
+    [0023](0023-clip-selection-and-region-editing.md) item 7 appears only when the
+    boundaries had been customized. *(user 2026-10-06)*
+15. Pitch changes the playback rate, so a slice played higher is also shorter. The range
+    is ±12 semitones. Rate change is the only option within the render budget, and
+    item 3 rules out time-stretch. *(user 2026-10-06)*
+16. A slice's start is editable as well as its length. Start moves the boundary shared
+    with the previous slice; length moves the one shared with the next. The first
+    slice's start is the clip start, mirroring item 7. The slice-selected state has two
+    pages (C-024): Sound (pitch, gate, level) and Boundaries (start, length). The demo
+    page follows [0020](0020-halloween-demo-slicer-and-sequencers.md) item 11 and has no
+    start control. *(user 2026-10-06)*
+17. Gate is a fraction of the slice's own pitched length: it trims the slice's tail
+    whatever the tempo. A gate relative to the step would be a per-step extra.
+    *(user 2026-10-06)*
+
+**Sequencer extras**
+
+18. After the demo, per-step extras come in this order: probability and ratchets, then
+    reverse. Swing is a transport setting (0021 item 7), a rest is a step that is off,
+    per-step parameter overrides are deferred (0021 item 11), and per-step pitch is
+    left out because slices carry their own pitch (item 15). *(user 2026-10-06)*
+    - **Probability:** each step has a chance (0 to 100 %, default 100 %) of firing each
+      time the playhead reaches it, rolled independently on every pass. A step that is
+      off never fires. *(agent)*
+    - **Ratchets:** a count from 1 to 4 (default 1). A step that fires retriggers its
+      slice that many times, evenly spaced within the step. Each retrigger restarts the
+      slice with the usual crossfade, so a repeat is cut by the next. Probability decides
+      whether the step fires; ratchets apply only when it does. Swing moves only the
+      step's start. *(agent)*
+    - **Editing:** in step edit (C-074), Encoder 0 sets the slice, Encoder 1 turns
+      probability and Encoder 2 turns the ratchet count. An Encoder 3 turn is kept for
+      reverse. *(agent)*
+19. Shuffle is an action row in the sequencer settings (C-078 to C-082) and belongs to
+    the sequencer shell, so every engine has it. *(user 2026-10-06)* Pressing it
+    rearranges the values of the steps that are on, leaving each step's on/off flag
+    and extras where they are: the rhythm stays, and every slice is used as often as
+    before, in a new order. Each press reshuffles. The first press keeps a copy of the
+    pattern, and a Restore row returns to it until the pattern is edited by hand. The
+    copy is held in RAM only. *(agent)*
+
+**External MIDI**
+
+20. The MIDI key map of [0021](0021-instrument-engines-and-performance-views.md) item 19:
+    one slice per note counting up from a base note (36 by default, adjustable);
+    velocity sets the slice's level; note-off is one-shot by default (the slice plays to
+    its end) or gated (releasing the key stops it with a short fade, and the gate of
+    item 17 is then the shortest it plays); notes past the last slice are ignored; one
+    voice, and a new note cuts the current slice with the usual crossfade.
+    *(user 2026-10-06)*
 
 ## Open questions
 
-- Pitch per slice: playback-rate change (pitch and length change together) or something
-  else? Rate change is the only option that fits the time budget now.
-- Should a slice's start be editable directly, or only through the previous slice's
-  length?
-- Gate: fraction of the slice, or of the step?
-- Which per-step extras come first after the demo (item 12)?
-- Does a disabled slice (item 1) mean silent when stepped, or skipped?
-- A "shuffle the pattern" gesture: worth a control, and which one?
-- Per-slice source overrides ([0024](0024-clip-sources-and-track-mixing.md)).
-- Is the slice map stored with the clip, the engine, or the preset?
+- Confirm the probability, ratchet and editing details in item 18.
+- Confirm the shuffle details in item 19.
 
 ## Consequences
 
 - The slice map, the time-based remap and the sequencer stepping are portable logic and
   belong in `Common/` with host tests.
-- The Slicer is post-M5 product scope; a roadmap proposal is needed to place it.
+- The Slicer is post-M5 product scope; its roadmap line is part of the proposal tracked
+  in `full_spooky_proto-v7l.12` (0021).
+- Per-slice source overrides are settled in
+  [0024](0024-clip-sources-and-track-mixing.md) (item 3).
 
 ## Evidence
 
