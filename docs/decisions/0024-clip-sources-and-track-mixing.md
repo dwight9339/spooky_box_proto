@@ -1,13 +1,9 @@
 # 0024. Clip sources, track mixing and maximum clip length
 
-- **Status:** Proposed
+- **Status:** Accepted 2026-10-06
 - **Date:** 2026-10-05
 - **Supersedes:** none
 - **Beads:** `full_spooky_proto-v7l.11` (decision)
-
-Items marked *(user 2026-10-05)* were agreed in conversation. Items marked *(agent)* are
-proposals awaiting the user's call. The Open questions section is removed before
-acceptance.
 
 ## Context
 
@@ -57,37 +53,28 @@ For Granular's source control:
    clip; it becomes interesting only when moved by a macro, modulation or the sequencer.
 2. **Probability (Scatter):** each new grain picks one source. Same cost as now, and it
    makes a sound a pre-mix cannot: two materials scattered through one cloud.
-3. **Proposed: both, as one control with a style setting** (item 4).
+3. **Chosen: both, as one control with a style setting** (items 4 and 9).
 
 ## Decision
 
 1. A clip carries two sources: radio (left and right summed to mono) and microphone.
-   *(agent)*
 2. Source mixing is an engine-level control set. It never changes the stored recording.
-   *(user 2026-10-05)*
 3. Slicer and One-shot provide an independent level per source. Slicer adds optional
-   per-slice overrides. *(user 2026-10-05)*
+   per-slice overrides.
 4. Granular provides a **Source** control (all radio to all microphone) and a style
    setting: **Scatter** (each grain picks a source with that probability) or **Blend**
-   (each grain mixes both). Scatter is the default. *(agent)*
+   (each grain mixes both). Scatter is the default.
 5. In Scatter, each source may be panned to its own side of the stereo output.
-   *(agent, candidate)*
 6. Maximum clip length is set from measured free memory per source layout, not chosen
-   for UX. *(agent)*
+   for UX.
 7. Whether product clips may use D2 SRAM is decided at M4 bring-up
    (`full_spooky_proto-54w.5`), once the M4's memory budget is known. Until then the
-   product budget is AXI only. *(user 2026-10-06)*
-
-## Open questions
-
-- Within AXI, which lever for two-source clips: shorter clips, a lower sample rate (for
-  example 16 kHz), a compressed sample format, or microphone only when chosen at load
-  time?
-- Is the source layout chosen at load time (radio, microphone or both), so a one-source
-  clip gets the full length?
-- Does Blend fit the interrupt budget? It needs a measurement before it is offered.
-- Is PTT-aware muting (Field Playback) applied when a clip is cut from a session?
-- Does the radio need to stay stereo for any engine, or is the mono sum enough?
+   product budget is AXI only.
+8. The source layout is chosen when a clip is loaded: radio, microphone or both. A
+   one-source clip gets the full length for its layout (item 6).
+9. Blend is offered only after a hardware measurement shows it fits the render's
+   interrupt budget. Until then Granular offers Scatter only.
+10. The radio source is the mono sum of left and right for every engine (item 1).
 
 ## Consequences
 
@@ -96,6 +83,13 @@ For Granular's source control:
   `Demo` image pair only; it does not settle item 7.
 - Clip preparation (decimation, summing) belongs to the shared clip infrastructure
   ([0021](0021-instrument-engines-and-performance-views.md) item 5).
+- How two-source clips fit in AXI (shorter clips, a lower sample rate or a compressed
+  format) is decided with item 7 in `full_spooky_proto-v7l.13`, since a D2 transfer would
+  change the answer.
+- Whether PTT-aware muting (Field Playback) applies when a clip is cut from a session is
+  decided with clip preparation in `full_spooky_proto-v7l.2`.
+- The Blend measurement in item 9 belongs to the Granular engine work in
+  `full_spooky_proto-v7l.1`.
 
 ## Evidence
 
