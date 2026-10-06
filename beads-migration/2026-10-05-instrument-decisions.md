@@ -53,3 +53,6 @@ Pulled from `refs/dolt/data` at the start of the session (2026-10-05).
    were resolved and what remains.
 8. `p04.14`: appended a 2026-10-06 note on the demo transport controls (0021 item 7).
 9. `v7l.8`: appended a second 2026-10-06 note saying no open questions remain.
+10. `v7l.8`: appended a 2026-10-06 note on the External MIDI items 18 to 20.
+11. `v7l.9` (Decide 0022): appended a 2026-10-06 note pointing at the Slicer MIDI key
+    map in 0021 item 19.

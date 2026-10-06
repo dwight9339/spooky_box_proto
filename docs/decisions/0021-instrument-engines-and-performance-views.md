@@ -51,8 +51,8 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
 2. Exactly one engine runs at a time. Running several engines together, and other
    cross-engine interactions, are experiments for a post-M5 milestone.
    *(user 2026-10-05)*
-3. One-shot is tone-based: it plays the clip as pitched notes, driven by external MIDI or
-   by the sequencer. It has no dedicated performance trigger on the panel.
+3. One-shot is tone-based: it plays the clip as pitched notes, driven by the sequencer or
+   by external MIDI (item 18). It has no dedicated performance trigger on the panel.
    *(user 2026-10-05)*
 
 **Ownership**
@@ -102,14 +102,15 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
       position knob, Slicer replays the slice selected on its page and One-shot plays
       its root note.
     - **None**: the sequencer is purely a modulation source. The engine plays only from
-      its own controls or, for One-shot, external MIDI.
+      its own controls or external MIDI (item 18).
 
     Each engine's own record defines what a trigger means for it.
 
 **Macros, modulation and effects**
 
 13. Modulation sources are shared: encoders, macros, LFOs, envelopes, sequencer lanes,
-    EMF level and radio activity. Targets are the active engine's parameters and the
+    EMF level, radio activity and external MIDI (velocity, CCs, mod wheel and
+    aftertouch; MIDI user 2026-10-06). Targets are the active engine's parameters and the
     effect parameters. Each engine has its own macro slots and modulation routes, saved
     in its preset as the control map's preset scope already lists. Slot and route counts
     stay open (modes and interaction, open decision 10). *(user 2026-10-06)*
@@ -135,9 +136,34 @@ All three read the same clip ([0023](0023-clip-selection-and-region-editing.md),
     Sessions) already states. M5 replay plays the audio; re-rendering a performance
     through an engine is later work. *(user 2026-10-06)*
 
+**External MIDI**
+
+18. Every engine can be played from external MIDI notes, and each engine's record
+    defines its key map. No engine may need MIDI: the Field-to-Instrument workflow, the
+    panel and the sequencer work fully with nothing connected. *(user 2026-10-06)*
+19. Key-map directions for the engine records. Notes are given as MIDI note numbers,
+    because octave names differ between manufacturers (note 36 is C1 in some, C2 in
+    others). *(user 2026-10-06)*
+    - **Slicer:** one slice per note, counting up from a base note (36 by default,
+      adjustable), so 16 slices fill a 4×4 pad grid. Velocity sets the slice's level.
+      Note-off is one-shot by default (the slice plays to its end, as from a sequencer
+      step) or gated (releasing the key stops it with a short fade). Notes outside the
+      slice range are ignored. One voice: a new note cuts the current slice with the
+      usual crossfade. The detail belongs in [0022](0022-slicer-engine.md).
+    - **Granular:** a key-map setting, pitch by default. In pitch, a note sets grain
+      pitch relative to root note 60 (the recorded pitch); note-on opens the cloud and
+      note-off releases it; velocity sets level or density. In position, 16 keys from
+      the base note cover the clip from start to end. One voice at first, legato, with
+      the last note taking priority; polyphony waits for a measured render budget,
+      since voices would share the grain pool. The detail belongs in the Granular
+      feature spec.
+    - **One-shot:** chromatic around its root note; the detail belongs in its record.
+20. While the sequencer runs, its steps and MIDI notes both fire the engine. On a
+    one-voice engine the most recent event wins. *(user 2026-10-06)*
+
 ## Open questions
 
-None remain. The user's calls of 2026-10-06 are recorded in items 4 to 7 and 10 to 17.
+None remain. The user's calls of 2026-10-06 are recorded in items 4 to 7 and 10 to 20.
 
 ## Product document changes on acceptance
 
@@ -151,6 +177,8 @@ These are proposals to protected documents and need separate approval.
   and that each engine defines the meaning of a step's value and that editing happens on
   the OLED (items 8 and 15).
 - Same document, Display and LED Matrix Roles: state item 16.
+- Same document, Instrument Mode: a paragraph stating items 18 to 20 (every engine
+  playable from external MIDI, none dependent on it).
 - Same document, Open Decisions 7: resolved by this record (separate engines).
 - [Control map](../../spec/product/control-map.md) C-072 to C-076: generalize "note bar"
   and "note value" to "step" and "step value (engine-defined)", keeping "within current
@@ -163,7 +191,7 @@ These are proposals to protected documents and need separate approval.
 - Control map preset scope: the Effects chain row becomes Exclude. D-008 is resolved by
   item 14; whether separate FX presets exist is left to the preset work.
 - [Roadmap](../../spec/product/roadmap.md), After M5: add "Slicer and One-shot engines"
-  beside "Seek and Orbit engines".
+  beside "Seek and Orbit engines", and "external MIDI input".
 
 ## Consequences
 
@@ -172,9 +200,11 @@ These are proposals to protected documents and need separate approval.
 - Spec work follows: a Granular feature spec for M5 via `/speckit-specify`; Slicer and
   One-shot stay as intent plus open questions until the roadmap admits them.
 - M5's minimal effects chain is built as the shared chain of item 14.
-- Deferred to a One-shot record, written when One-shot is admitted: the MIDI input path
+- Deferred to a MIDI input record, as shared infrastructure (item 18): the input path
   (USB belongs to the M7, so USB MIDI means a composite device beside the CDC port;
-  `docs/design/usb-cli.md` already names it as a later option), polyphony and voice
+  `docs/design/usb-cli.md` already names it as a later option; or a serial MIDI port),
+  and how MIDI events are stored with Instrument sessions (item 17).
+- Deferred to a One-shot record, written when One-shot is admitted: polyphony and voice
   stealing, and scale handling.
 - Deferred to each engine's record: microphone injection (C-029), which stays in the
   P4 backlog until after M5 (roadmap, After M5).
