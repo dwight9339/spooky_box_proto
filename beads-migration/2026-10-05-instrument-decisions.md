@@ -11,7 +11,8 @@ From the repository root, on a machine where `bd dolt push` works:
 
 ```text
 bd dolt pull
-bd show full_spooky_proto-p04.7 full_spooky_proto-v7l.8 full_spooky_proto-v7l.9
+bd show full_spooky_proto-p04.7 full_spooky_proto-v7l.8 full_spooky_proto-v7l.9 \
+  full_spooky_proto-v7l.10 full_spooky_proto-hpq.3
 bd import beads-migration/2026-10-05-instrument-decisions.jsonl
 bd show full_spooky_proto-p04.14 full_spooky_proto-p04.15 full_spooky_proto-p04.16
 bd dolt push
@@ -20,8 +21,8 @@ bd dolt push
 `bd import` upserts whole rows by ID. Before importing, check that:
 
 - `p04.14` to `p04.16` are still unused IDs;
-- `p04.7`, `v7l.8` and `v7l.9` have not changed since the cloud session pulled them
-  (2026-10-05). Any such changes would be overwritten.
+- `p04.7`, `v7l.8`, `v7l.9`, `v7l.10` and `hpq.3` have not changed since the cloud
+  session pulled them (2026-10-05). Any such changes would be overwritten.
 
 After importing, check that the dependencies listed below are present.
 
@@ -62,3 +63,6 @@ Pulled from `refs/dolt/data` at the start of the session (2026-10-05).
     Relates to `v7l.8`. Check this ID is still unused before importing.
 14. `v7l.9`: appended a 2026-10-06 note on how 0022 was resolved and what remains.
 15. `v7l.9` **closed**: "User accepted decision 0022 on 2026-10-06".
+16. `hpq.3` (session formats): appended a 2026-10-06 note requiring a peak track
+    (0023 item 21) and clip references by asset ID plus window (0023 item 20).
+17. `v7l.10` (Decide 0023): appended a 2026-10-06 note on how 0023 was resolved.
