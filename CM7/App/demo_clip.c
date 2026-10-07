@@ -14,14 +14,17 @@
 
 #define CLIP_HEADER_BYTES RECORDING_LIMIT_WAV_HEADER_BYTES
 #define CLIP_FRAME_BYTES (CLIP_SOURCE_CHANNELS * sizeof(int16_t))
-/* A radio half is 512 frames, 10,667 us; the rest of the half's interrupt work
- * took about 1.2 ms in the Debug image while recording (full_spooky_proto-akw).
- * A voice render over this is counted, not cut short. */
-#define CLIP_RENDER_BUDGET_US 1500U
 /* Grains that may sound at once. At the 64 MHz, cache-off clock a grain costs
- * about 0.43 ms per radio half, and 16 grains (6.8 ms) overran the radio queue
- * (p04.7 bench, 2026-10-07). Provisional until the bench sweep sets it. */
-#define CLIP_GRAIN_LIMIT 3U
+ * about 0.42 ms per radio half (a half is 512 frames, 10,667 us). On the p04.7
+ * bench (2026-10-07, docs/evidence/2026-10-07-granular-voice-demo.md) 16 grains
+ * took 6.8 ms and overran the radio queue; limits 3 to 6 held with rolling
+ * capture running, the longest loop pass reaching 72 ms at 6. 4 keeps a step of
+ * margin below the 75 ms loop budget. */
+#define CLIP_GRAIN_LIMIT 4U
+/* The worst render measured at CLIP_GRAIN_LIMIT was 1,945 us. A render over this
+ * budget is counted, not cut short: a count above zero means the limit no longer
+ * bounds the work. */
+#define CLIP_RENDER_BUDGET_US 2000U
 
 _Static_assert(CLIP_RATE_HZ == GRANULAR_SOURCE_RATE_HZ, "the voice reads the 24 kHz clip");
 
