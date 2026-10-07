@@ -23,10 +23,12 @@
  * capture running, the longest loop pass reaching 72 ms at 6. 4 keeps a step of
  * margin below the 75 ms loop budget. */
 #define CLIP_GRAIN_LIMIT 4U
-/* The worst render measured at CLIP_GRAIN_LIMIT was 1,945 us. A render over this
- * budget is counted, not cut short: a count above zero means the limit no longer
- * bounds the work. */
-#define CLIP_RENDER_BUDGET_US 2000U
+/* The worst render measured at CLIP_GRAIN_LIMIT, with the render aligned to the
+ * flash line and the transport running, was 2,068 us at every setting (p04.14
+ * bench, 2026-10-07); unaligned builds measured 1,945 to 2,459 us. This budget is
+ * about 10 % above it. A render over it is counted, not cut short: a count above
+ * zero means the limit no longer bounds the work. */
+#define CLIP_RENDER_BUDGET_US 2300U
 
 _Static_assert(CLIP_RATE_HZ == GRANULAR_SOURCE_RATE_HZ, "the voice reads the 24 kHz clip");
 
