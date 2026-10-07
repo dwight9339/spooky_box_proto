@@ -104,7 +104,8 @@ spooky_test(classic_service_test classic_service_test.c ../CM7/App/classic_servi
     ../CM7/App/classic_scan.c ../CM7/App/command_policy.c)
 # Demo branch only: the Demo image's OLED view and lights (decision 0011, p04.3).
 spooky_test(demo_view_test demo_view_test.c ../CM7/App/demo_view.c
-    ../CM7/App/demo_instrument.c ../Common/Src/granular.c)
+    ../CM7/App/demo_instrument.c ../Common/Src/granular.c ../CM7/App/demo_sequencer.c
+    ../Common/Src/transport.c ../Common/Src/step_pattern.c)
 spooky_test(demo_lights_test demo_lights_test.c ../CM7/App/demo_lights.c)
 spooky_test(rolling_catalog_test rolling_catalog_test.c ../CM7/App/rolling_catalog.c)
 # The Instrument clip: range, decimation and the plain loop (p04.6).
@@ -119,6 +120,11 @@ spooky_test(demo_instrument_test demo_instrument_test.c ../CM7/App/demo_instrume
     ../Common/Src/granular.c)
 spooky_test(grain_matrix_test grain_matrix_test.c ../CM7/App/grain_matrix.c
     ../Common/Src/matrix_feedback.c)
+# The Instrument transport and step pattern (p04.14).
+spooky_test(transport_test transport_test.c ../Common/Src/transport.c
+    ../Common/Src/step_pattern.c)
+spooky_test(demo_sequencer_test demo_sequencer_test.c ../CM7/App/demo_sequencer.c
+    ../Common/Src/transport.c ../Common/Src/step_pattern.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)

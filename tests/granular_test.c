@@ -191,6 +191,41 @@ static void test_grain_limit(void)
     CHECK(status.active == 2u);
 }
 
+/* An override replaces the position parameter as the grain start until it is
+ * released or the voice restarts (p04.14). */
+static void test_position_override(void)
+{
+    GranularParams params = params_with(100u, 10u, 0u);
+    GranularStatus status;
+
+    params.position_permille = 600u;
+    Granular_Init(&engine, 7u);
+    Granular_SetParams(&engine, &params);
+    CHECK(Granular_Start(&engine, clip, 1000u));
+    Granular_Render(&engine, stereo, 480u);
+    Granular_GetStatus(&engine, &status);
+    CHECK(status.last_start == 600u);
+    Granular_OverridePosition(&engine, 250u);
+    for (unsigned half = 0u; half < 10u; ++half) {
+        Granular_Render(&engine, stereo, 480u);
+        Granular_GetStatus(&engine, &status);
+        CHECK(status.last_start == 250u);
+    }
+    Granular_OverridePosition(&engine, 1000u); /* the clip end, held inside the clip */
+    Granular_Render(&engine, stereo, 480u);
+    Granular_GetStatus(&engine, &status);
+    CHECK(status.last_start == 999u);
+    Granular_ReleasePosition(&engine);
+    Granular_Render(&engine, stereo, 480u);
+    Granular_GetStatus(&engine, &status);
+    CHECK(status.last_start == 600u);
+    Granular_OverridePosition(&engine, 100u);
+    CHECK(Granular_Start(&engine, clip, 1000u)); /* a restart drops the override */
+    Granular_Render(&engine, stereo, 480u);
+    Granular_GetStatus(&engine, &status);
+    CHECK(status.last_start == 600u);
+}
+
 /* Without spray every grain starts at position. Spray stays within its share
  * of the clip around position; a full spray reaches every part of the clip. */
 static void test_position_and_spray(void)
@@ -316,6 +351,7 @@ int main(void)
     test_known_sample_pitch();
     test_bounded_grains();
     test_grain_limit();
+    test_position_override();
     test_position_and_spray();
     test_chunks_match();
     test_params_take_effect_at_render();

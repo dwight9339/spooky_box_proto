@@ -26,6 +26,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "step_pattern.h"
+
 #include "granular.h"
 
 /* Source frames read and decimated per load step: 12,288 bytes. */
@@ -87,6 +89,19 @@ typedef struct
   uint32_t grains_high_water;
 } DemoVoiceStatus;
 
+/* The Instrument transport and Granular's pattern (p04.14). */
+typedef struct
+{
+  bool running;
+  uint32_t bpm_x100;
+  uint8_t steps_per_beat;  /* Granular's pattern: 4 (1/16), 2 (1/8) or 1 (1/4) */
+  uint32_t playhead;       /* the step the transport is on; 0xFFFFFFFF stopped */
+  uint32_t held_step;      /* the latest step that fired on; 0xFFFFFFFF none */
+  uint32_t steps_fired;
+  uint32_t fits;           /* fits on load applied */
+  bool fit_pending;
+} DemoTransportStatus;
+
 /* --- Control-facing (demo_field.c), foreground ------------------------------- */
 
 /* Before anything else here: seeds the granular voice. */
@@ -111,6 +126,17 @@ void DemoClip_GetVoiceStatus(DemoVoiceStatus *status);
 void DemoClip_ResetVoiceStats(void);
 /* The granular voice's grain limit (Granular_SetMaxGrains). */
 void DemoClip_SetMaxGrains(uint32_t max_grains);
+/* Transport (p04.14). Run state and tempo take effect at the next radio half; a
+ * clip load fits the tempo and division (decision 0026 items 2 to 4). While
+ * running, each on step pins the grain start to its value, offset by the
+ * position knob around 50 %. */
+void DemoClip_SetRunning(bool run);
+bool DemoClip_RunTarget(void);
+void DemoClip_SetTempo(uint32_t bpm_x100);
+uint32_t DemoClip_TempoTarget(void);
+/* Granular's pattern: the foreground edits steps and the division in place. */
+StepPattern *DemoClip_GrainPattern(void);
+void DemoClip_GetTransportStatus(DemoTransportStatus *status);
 const char *DemoClip_StateName(uint8_t state);
 const char *DemoClip_FaultName(uint8_t fault);
 

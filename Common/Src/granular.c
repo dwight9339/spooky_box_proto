@@ -223,6 +223,7 @@ bool Granular_Start(GranularEngine *engine, const int16_t *samples, uint32_t cou
   }
   Convert(&engine->params, count, &engine->control);
   engine->pending = false;
+  engine->position_override = false;
   engine->until_next = 0U;
   engine->status.active = 0U;
   engine->active = true;
@@ -250,6 +251,28 @@ void Granular_SetMaxGrains(GranularEngine *engine, uint32_t max_grains)
 uint32_t Granular_MaxGrains(const GranularEngine *engine)
 {
   return (engine != NULL) ? engine->max_grains : 0U;
+}
+
+void Granular_OverridePosition(GranularEngine *engine, uint16_t position_permille)
+{
+  uint32_t position;
+
+  if ((engine == NULL) || (engine->count == 0U))
+  {
+    return;
+  }
+  position = (uint32_t)(((uint64_t)((position_permille > 1000U) ? 1000U : position_permille) *
+                         engine->count) / 1000U);
+  engine->override_position = (position >= engine->count) ? (engine->count - 1U) : position;
+  engine->position_override = true;
+}
+
+void Granular_ReleasePosition(GranularEngine *engine)
+{
+  if (engine != NULL)
+  {
+    engine->position_override = false;
+  }
 }
 
 bool Granular_Active(const GranularEngine *engine)
@@ -288,8 +311,10 @@ static uint32_t Wrap(int64_t value, uint32_t modulus)
 static uint32_t GrainStart(GranularEngine *engine, uint32_t count)
 {
   const GranularControl *control = &engine->control;
+  const uint32_t base = engine->position_override ? engine->override_position
+                                                  : control->position;
 
-  return Wrap((int64_t)control->position + Spread(engine, control->spray), count);
+  return Wrap((int64_t)base + Spread(engine, control->spray), count);
 }
 
 static void StartGrain(GranularEngine *engine, uint32_t count)

@@ -11,6 +11,7 @@
 #include "command_policy.h"
 #include "demo_clip.h"
 #include "demo_instrument.h"
+#include "demo_sequencer.h"
 #include "demo_lights.h"
 #include "demo_rolling.h"
 #include "demo_view.h"
@@ -100,6 +101,8 @@ static bool clip_return_pending;
 /* The provisional Instrument pages (p04.7); kept across visits. */
 static DemoInstrument instrument;
 static uint32_t instrument_gestures; /* encoder gestures taken by the pages */
+/* The view menu and the step view (p04.14). */
+static DemoSequencer seq;
 static uint32_t matrix_grain_last_ms;
 /* The grain view's frame cadence: 25 frames per second. */
 #define DEMO_GRAIN_MATRIX_MS 40U
@@ -155,6 +158,7 @@ void DemoField_Init(void)
   instrument_gestures = 0U;
   DemoClip_Init();
   DemoInstrument_Init(&instrument);
+  DemoSequencer_Init(&seq);
   DemoClip_SetGrainParams(&instrument.params);
   for (control = 0U; control < (uint8_t)INP_CONTROL_COUNT; ++control)
   {
@@ -214,27 +218,53 @@ void DemoField_OnDetents(uint8_t encoder, int32_t detents, uint32_t now_ms)
 }
 
 /* Demo only (decision 0011 item 16): Context has no Instrument engine yet, so
- * the provisional pages take the encoder turns and the Encoder 3 click (C-024)
- * while Instrument has the controls. Everything else, Shift+B0 (C-028)
- * included, goes to Context. */
+ * while Instrument has the controls the view menu and the step view
+ * (demo_sequencer.c, p04.14) take their encoder gestures first, then the
+ * provisional pages take the turns and the Encoder 3 click (C-024). Everything
+ * else, Shift+B0 (C-028) included, goes to Context. */
 static bool InstrumentGesture(Gesture gesture)
 {
+  const bool encoder_gesture = (gesture.kind == (uint8_t)GESTURE_TURN) ||
+                               (gesture.kind == (uint8_t)GESTURE_CLICK) ||
+                               (gesture.kind == (uint8_t)GESTURE_HOLD);
   const bool page_gesture = (gesture.kind == (uint8_t)GESTURE_TURN) ||
                             ((gesture.kind == (uint8_t)GESTURE_CLICK) && (gesture.encoder == 3U));
+  DemoSeqTarget target;
   DemoClipStatus clip;
   CtxStatus ctx;
 
   Context_GetStatus(&ctx);
-  if ((ctx.state != (uint8_t)CTX_STATE_INSTRUMENT) || !page_gesture)
+  if ((ctx.state != (uint8_t)CTX_STATE_INSTRUMENT) || !encoder_gesture)
   {
     return false;
   }
-  /* The pages change only what the display shows: with no clip, or the plain
-   * loop, there is no page, and the gesture does nothing. */
+  /* The pages and views change only what the display shows: with no clip, or
+   * the plain loop, there is none, and a page gesture does nothing. */
   DemoClip_GetStatus(&clip);
   if ((clip.state != (uint8_t)DEMO_CLIP_READY) || (DemoClip_Voice() != DEMO_VOICE_GRAIN))
   {
+    return page_gesture;
+  }
+  target.pattern = DemoClip_GrainPattern();
+  target.tempo_x100 = DemoClip_TempoTarget();
+  target.toggle_run = false;
+  target.tempo_changed = false;
+  if (DemoSequencer_OnGesture(&seq, gesture, &target, Now()))
+  {
+    if (target.toggle_run)
+    {
+      DemoClip_SetRunning(!DemoClip_RunTarget());
+    }
+    if (target.tempo_changed)
+    {
+      DemoClip_SetTempo(target.tempo_x100);
+    }
+    ++instrument_gestures;
     return true;
+  }
+  if (!page_gesture)
+  {
+    return false;
   }
   if (gesture.kind == (uint8_t)GESTURE_TURN)
   {
@@ -383,6 +413,33 @@ static void BuildModel(uint32_t now, const CtxStatus *ctx, const InpStatus *inp,
   }
   model->instrument_page = instrument.page;
   model->grain = instrument.params;
+  {
+    const StepPattern *pattern = DemoClip_GrainPattern();
+    DemoTransportStatus transport;
+    uint32_t step;
+
+    DemoClip_GetTransportStatus(&transport);
+    model->seq_view = seq.view;
+    model->seq_focus = seq.focus;
+    model->seq_step = seq.step;
+    model->seq_setting = seq.setting;
+    model->seq_item = seq.item;
+    model->seq_running = transport.running;
+    model->seq_bpm_x100 = DemoClip_TempoTarget();
+    model->seq_steps_per_beat = pattern->steps_per_beat;
+    model->seq_playhead = (transport.running && (transport.playhead < STEP_PATTERN_MAX_STEPS))
+                            ? (uint8_t)transport.playhead : 0xFFU;
+    model->seq_length = pattern->length;
+    model->seq_on_mask = 0U;
+    for (step = 0U; step < STEP_PATTERN_MAX_STEPS; ++step)
+    {
+      model->seq_values[step] = pattern->steps[step].value;
+      if (pattern->steps[step].on)
+      {
+        model->seq_on_mask = (uint16_t)(model->seq_on_mask | (1U << step));
+      }
+    }
+  }
   model->notice = notice;
   model->notice_arg = notice_arg;
 }
@@ -527,6 +584,10 @@ void DemoField_Service(void)
     last_buffer_state = rolling.state;
   }
   ServiceClip();
+  if (mode == CTX_MODE_INSTRUMENT)
+  {
+    (void)DemoSequencer_Tick(&seq, now); /* the view menu's inactivity timeout */
+  }
   Context_GetStatus(&ctx);
   InputResolution_GetStatus(&inp);
   BuildModel(now, &ctx, &inp, &model);
@@ -988,6 +1049,10 @@ void ctx_integration_publish(CtxPublished event, int32_t arg)
   {
     case CTX_PUB_MODE_CHANGED:
       mode = (CtxMode)arg;
+      if (mode == CTX_MODE_INSTRUMENT)
+      {
+        DemoSequencer_Reset(&seq); /* Instrument opens on the main page (0027 item 4) */
+      }
       break;
     case CTX_PUB_ENGINE_CHANGED:
       field_engine = (CtxEngine)arg;
@@ -1188,9 +1253,144 @@ static bool HandleClip(const char *command)
   return true;
 }
 
+/* `DEMO SEQ`: the transport, Granular's pattern and the step view (p04.14);
+ * `DEMO SEQ RUN` and `DEMO SEQ STOP` run or stop the transport. */
+static bool HandleSeq(const char *command)
+{
+  static const char *const views[] = {"ENGINE", "MENU", "STEPS"};
+  static const char *const focuses[] = {"STEPS", "STEP_EDIT", "SETTINGS", "SETTING_EDIT"};
+  static char response[448];
+  const StepPattern *pattern = DemoClip_GrainPattern();
+  DemoTransportStatus transport;
+  size_t used;
+  uint32_t step;
+
+  if (strcmp(command, "DEMO SEQ RUN") == 0)
+  {
+    DemoClip_SetRunning(true);
+  }
+  else if (strcmp(command, "DEMO SEQ STOP") == 0)
+  {
+    DemoClip_SetRunning(false);
+  }
+  else if (strcmp(command, "DEMO SEQ") != 0)
+  {
+    if (strncmp(command, "DEMO SEQ", 8U) == 0)
+    {
+      (void)UsbTest_SendText("ERR usage: DEMO SEQ [RUN | STOP]\r\n");
+      return true;
+    }
+    return false;
+  }
+  DemoClip_GetTransportStatus(&transport);
+  used = (size_t)snprintf(response, sizeof(response),
+                          "OK DEMO SEQ RUN=%u TARGET=%u BPM_X100=%lu DIV=%s STEP=%ld HELD=%ld "
+                          "FIRED=%lu FITS=%lu FIT_PENDING=%u VIEW=%s FOCUS=%s SELECTED=%u STEPS=",
+                          transport.running ? 1U : 0U, DemoClip_RunTarget() ? 1U : 0U,
+                          (unsigned long)transport.bpm_x100,
+                          DemoSequencer_DivisionName(pattern->steps_per_beat),
+                          (transport.playhead < STEP_PATTERN_MAX_STEPS) ? (long)transport.playhead
+                                                                        : -1L,
+                          (transport.held_step < STEP_PATTERN_MAX_STEPS) ? (long)transport.held_step
+                                                                         : -1L,
+                          (unsigned long)transport.steps_fired, (unsigned long)transport.fits,
+                          transport.fit_pending ? 1U : 0U,
+                          (seq.view < 3U) ? views[seq.view] : "?",
+                          (seq.focus < 4U) ? focuses[seq.focus] : "?", (unsigned)seq.step + 1U);
+  for (step = 0U; (step < pattern->length) && (used < (sizeof(response) - 12U)); ++step)
+  {
+    used += (size_t)snprintf(&response[used], sizeof(response) - used, "%s%u:%u",
+                             (step == 0U) ? "" : ",", pattern->steps[step].on ? 1U : 0U,
+                             (unsigned)pattern->steps[step].value);
+  }
+  (void)snprintf(&response[used], sizeof(response) - used, "\r\n");
+  (void)UsbTest_SendText(response);
+  return true;
+}
+
+/* `DEMO GRAIN SET NAME=value ...`: sets grain parameters from the console, for
+ * bench sweeps (p04.14). Names: POS, SIZE, DENS, PITCH, SPRAY, ENV, LEVEL, as
+ * DEMO GRAIN reports them; values are clamped as the pages clamp them. False if
+ * a token is not NAME=value with a known name. */
+static bool SetGrainFromCommand(const char *arguments)
+{
+  GranularParams params = instrument.params;
+  const char *cursor = arguments;
+
+  while (*cursor != '\0')
+  {
+    char name[8];
+    size_t length = 0U;
+    char *end;
+    long value;
+
+    while (*cursor == ' ')
+    {
+      ++cursor;
+    }
+    if (*cursor == '\0')
+    {
+      break;
+    }
+    while ((cursor[length] != '=') && (cursor[length] != '\0') && (length < (sizeof(name) - 1U)))
+    {
+      name[length] = cursor[length];
+      ++length;
+    }
+    if (cursor[length] != '=')
+    {
+      return false;
+    }
+    name[length] = '\0';
+    value = strtol(&cursor[length + 1U], &end, 10);
+    if ((end == &cursor[length + 1U]) || ((*end != ' ') && (*end != '\0')))
+    {
+      return false;
+    }
+    if (strcmp(name, "POS") == 0)
+    {
+      params.position_permille = (uint16_t)((value < 0) ? 0 : value);
+    }
+    else if (strcmp(name, "SIZE") == 0)
+    {
+      params.size_ms = (uint16_t)((value < 0) ? 0 : value);
+    }
+    else if (strcmp(name, "DENS") == 0)
+    {
+      params.density = (uint16_t)((value < 0) ? 0 : value);
+    }
+    else if (strcmp(name, "PITCH") == 0)
+    {
+      params.pitch_semitones = (int8_t)((value < -100) ? -100 : (value > 100) ? 100 : value);
+    }
+    else if (strcmp(name, "SPRAY") == 0)
+    {
+      params.spray_permille = (uint16_t)((value < 0) ? 0 : value);
+    }
+    else if (strcmp(name, "ENV") == 0)
+    {
+      params.envelope_percent = (uint8_t)((value < 0) ? 0 : (value > 255) ? 255 : value);
+    }
+    else if (strcmp(name, "LEVEL") == 0)
+    {
+      params.level_percent = (uint8_t)((value < 0) ? 0 : (value > 255) ? 255 : value);
+    }
+    else
+    {
+      return false;
+    }
+    cursor = end;
+  }
+  (void)Granular_ClampParams(&params);
+  instrument.params = params;
+  DemoClip_SetGrainParams(&instrument.params);
+  return true;
+}
+
 /* `DEMO GRAIN`: the Instrument voice, its page and parameters, and its render
  * cost in the radio interrupt; `DEMO GRAIN RESET` clears the render maximum;
- * `DEMO GRAIN MAX <n>` sets the grain limit (1 to 16), for bench sweeps.
+ * `DEMO GRAIN MAX <n>` sets the grain limit (1 to 16) and `DEMO GRAIN SET ...`
+ * the parameters, for bench sweeps.
  * `DEMO VOICE GRAIN|LOOP` picks the voice (LOOP is p04.6's plain loop). */
 static bool HandleGrain(const char *command)
 {
@@ -1215,11 +1415,20 @@ static bool HandleGrain(const char *command)
   {
     DemoClip_SetMaxGrains((uint32_t)strtoul(&command[15], NULL, 10));
   }
+  else if (strncmp(command, "DEMO GRAIN SET ", 15U) == 0)
+  {
+    if (!SetGrainFromCommand(&command[15]))
+    {
+      (void)UsbTest_SendText("ERR usage: DEMO GRAIN SET NAME=value ... "
+                             "(POS SIZE DENS PITCH SPRAY ENV LEVEL)\r\n");
+      return true;
+    }
+  }
   else if (strcmp(command, "DEMO GRAIN") != 0)
   {
     if ((strncmp(command, "DEMO VOICE", 10U) == 0) || (strncmp(command, "DEMO GRAIN", 10U) == 0))
     {
-      (void)UsbTest_SendText("ERR usage: DEMO GRAIN [RESET | MAX <n>] | DEMO VOICE GRAIN|LOOP\r\n");
+      (void)UsbTest_SendText("ERR usage: DEMO GRAIN [RESET | MAX <n> | SET ...] | DEMO VOICE GRAIN|LOOP\r\n");
       return true;
     }
     return false;
@@ -1259,7 +1468,7 @@ bool DemoField_HandleCommand(const char *command)
   char response[384];
 
   if (HandleLights(command) || HandleTunes(command) || HandleRoll(command) ||
-      HandleClip(command) || HandleGrain(command))
+      HandleClip(command) || HandleGrain(command) || HandleSeq(command))
   {
     return true;
   }

@@ -218,14 +218,25 @@ if(SPOOKY_DEMO)
         ${CMAKE_CURRENT_SOURCE_DIR}/App/clip_player.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_clip.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_instrument.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_sequencer.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/grain_matrix.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/transport.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/step_pattern.c
     )
-    # The granular voice renders in the radio DMA interrupt; the Demo image is a
-    # Debug (-O0) build, so its render is optimized to keep that work small
-    # (p04.7; measured by DEMO GRAIN RENDER_US_MAX).
-    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
+    # The granular voice and the sequencer run in the radio DMA interrupt; the
+    # Demo image is a Debug (-O0) build, so that work is optimized to keep it small
+    # (p04.7 and p04.14; measured by DEMO GRAIN RENDER_US_MAX).
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/transport.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/step_pattern.c
         PROPERTIES COMPILE_OPTIONS "-O2")
+    # The grain render runs from flash with no instruction cache, and its speed
+    # moved about 20 % between builds as the linker shifted it within a 32-byte
+    # flash line (p04.14 bench, 2026-10-07). Aligning its functions and loops to
+    # the line keeps its timing the same in every build.
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
+        PROPERTIES COMPILE_OPTIONS "-O2;-falign-functions=32;-falign-loops=32")
 endif()
 
 # Use the same FatFs R0.12c release as the passing sibling SDMMC tests.

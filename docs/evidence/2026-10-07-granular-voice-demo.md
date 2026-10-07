@@ -115,3 +115,19 @@ sent, a 180 s run read:
 - The worst case at limit 4 for longer than 180 s, and the matrix and pages on image c
   (unchanged from image a apart from the limit).
 - Host WAV inspection.
+
+## Addendum, 2026-10-07 (p04.14 bench)
+
+The p04.14 bench ([sequencer shell](2026-10-07-sequencer-shell-demo.md)) found that the
+render's cost at a fixed grain count depends on the build's code layout, not mainly on
+the settings. The render runs from flash with no instruction cache, and its speed moved
+by about 25 % between builds that differed only in foreground code: 4 grains took
+1,945 µs in the sweep above, 1,902 µs in the soak above, about 2,000 µs on one later
+image and up to 2,459 µs on another. The worst-case settings used above (+24 semitones,
+500 ms grains) are no costlier than others: pitch, envelope, size, spray and density
+move the cost by a few percent. The sweep's limits therefore held for these builds'
+layouts only.
+
+From `p0414-demo-20261007c`, `granular.c` is aligned to the 32-byte flash line, and 4
+grains cost 2,038 to 2,071 µs at every setting tested, with no overrun or fault in two
+180 s soaks. The limit of 4 stands, with its render budget raised to 2,300 µs.

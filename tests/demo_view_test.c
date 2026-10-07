@@ -1,6 +1,8 @@
 /* Demo-only OLED view (demo_view.c, full_spooky_proto-p04.3). */
 #include "demo_view.h"
 
+#include "demo_sequencer.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -308,6 +310,70 @@ static void test_grain_pages(void)
     CHECK(byte_at(0u, 0u) == (0x00u | 0x80u)); /* "INSTRUMENT": 'I' column 0 is 0x00 */
 }
 
+/* The step view (p04.14): bars as tall as the step values, hollow when off,
+ * the playhead above them and the selection below; an edit inverts the bottom
+ * line. The view menu inverts its highlighted item, and while the transport runs
+ * the position knob reads as an offset. */
+static void test_step_view(void)
+{
+    static uint8_t grain[DEMO_VIEW_FRAME_BYTES];
+    DemoViewModel model = classic_model();
+
+    DemoView_Init();
+    model.screen = DEMO_SCREEN_INSTRUMENT;
+    model.clip = DEMO_CLIP_VIEW_READY;
+    model.clip_playing = true;
+    Granular_DefaultParams(&model.grain);
+    model.seq_length = 16u;
+    model.seq_bpm_x100 = 9650u;
+    model.seq_steps_per_beat = 2u;
+    model.seq_playhead = 0xFFu;
+    model.seq_on_mask = 0xFFFFu;
+    for (unsigned step = 0u; step < 16u; ++step) {
+        model.seq_values[step] = (uint16_t)(step * 1000u / 16u);
+    }
+    DemoView_Compose(&model);
+    memcpy(grain, DemoView_Frame(), sizeof(grain));
+    model.seq_view = DEMO_SEQ_VIEW_STEPS;
+    DemoView_Compose(&model);
+    CHECK(memcmp(grain, DemoView_Frame(), sizeof(grain)) != 0);
+    /* Step 1 (value 0) is one pixel at the base; step 16 (937) is 30 tall. */
+    CHECK(byte_at(5u, 1u) == 0x80u && byte_at(4u, 1u) == 0x00u);
+    CHECK(byte_at(2u, 121u) == 0xFCu && byte_at(5u, 121u) == 0xFFu);
+    CHECK(byte_at(2u, 0u) == 0x00u && byte_at(2u, 7u) == 0x00u); /* gaps between steps */
+    /* Off: only the sides, the top and the base. Step 9 (500) is 16 tall. */
+    model.seq_on_mask = 0xFEFFu; /* step 9 off */
+    DemoView_Compose(&model);
+    CHECK(byte_at(4u, 65u) == 0xFFu && byte_at(4u, 70u) == 0xFFu);
+    CHECK(byte_at(4u, 66u) == 0x01u && byte_at(5u, 66u) == 0x80u);
+    /* Playhead and selection marks; nothing selected while the settings row has focus. */
+    model.seq_playhead = 3u;
+    model.seq_step = 2u;
+    DemoView_Compose(&model);
+    CHECK((byte_at(1u, 25u) & 0xC0u) == 0xC0u && (byte_at(1u, 17u) & 0xC0u) == 0x00u);
+    CHECK(byte_at(6u, 17u) == 0x03u);
+    model.seq_focus = DEMO_SEQ_FOCUS_STEP_EDIT;
+    DemoView_Compose(&model);
+    CHECK(byte_at(6u, 17u) == 0x0Fu && byte_at(7u, 100u) == 0xFFu);
+    model.seq_focus = DEMO_SEQ_FOCUS_SETTINGS;
+    DemoView_Compose(&model);
+    CHECK(byte_at(6u, 17u) == 0x00u && byte_at(7u, 127u) == 0x00u);
+    model.seq_focus = DEMO_SEQ_FOCUS_SETTING_EDIT;
+    DemoView_Compose(&model);
+    CHECK(byte_at(7u, 127u) == 0xFFu);
+    /* The view menu inverts its highlighted item. */
+    model.seq_view = DEMO_SEQ_VIEW_MENU;
+    model.seq_item = DEMO_SEQ_ITEM_SEQUENCER;
+    DemoView_Compose(&model);
+    CHECK(byte_at(3u, 127u) == 0xFFu && byte_at(2u, 127u) == 0x00u);
+    /* On the main page the position becomes an offset while running. */
+    model.seq_view = DEMO_SEQ_VIEW_ENGINE;
+    model.seq_running = true;
+    DemoView_Compose(&model);
+    CHECK(memcmp(grain + 2u * WIDTH, DemoView_Frame() + 2u * WIDTH, WIDTH) != 0);
+    CHECK(memcmp(grain + 3u * WIDTH, DemoView_Frame() + 3u * WIDTH, 3u * WIDTH) == 0);
+}
+
 static void test_wide_values_are_clipped(void)
 {
     DemoViewModel model = classic_model();
@@ -346,6 +412,7 @@ int main(void)
     test_unknown_and_unable_are_honest();
     test_instrument_clip_states();
     test_grain_pages();
+    test_step_view();
     test_wide_values_are_clipped();
     if (failures != 0u) {
         printf("%u failure(s)\n", failures);
