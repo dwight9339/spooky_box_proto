@@ -17,10 +17,17 @@
  *   only a fully loaded clip is READY, and only a READY clip plays (Principle II).
  *   Every outcome goes to DemoField_OnClipOutcome.
  * - A READY clip plays on the monitor while Instrument shows it, through the
- *   granular voice (Common/Src/granular.c, p04.7) or the plain loop
- *   (clip_player.c). Both render in the monitor stage of the radio DMA
- *   interrupt, timed against CLIP_RENDER_BUDGET_US; the raw capture is copied
- *   before it (Principle I).
+ *   granular voice (Common/Src/granular.c, p04.7), the Slicer
+ *   (Common/Src/slicer.c, p04.15) or the plain loop (clip_player.c). Each
+ *   renders in the monitor stage of the radio DMA interrupt, timed against
+ *   CLIP_RENDER_BUDGET_US; the raw capture is copied before it (Principle I).
+ * - Granular and the Slicer are the Instrument engines (0020 item 12); only one
+ *   renders at a time (0021 item 2). A switch between them takes effect at the
+ *   next radio half: the old engine fades out over DEMO_CLIP_SWITCH_FADE_FRAMES,
+ *   then the new one fades in over as many (0027 items 1 and 2, the fade-out,
+ *   fade-in form). The transport runs on, each pattern's playhead follows it,
+ *   and only the active engine's pattern fires (0027 item 3); the engine
+ *   switched in joins its current step in time.
  */
 
 #include <stdbool.h>
@@ -29,6 +36,10 @@
 #include "step_pattern.h"
 
 #include "granular.h"
+#include "slicer.h"
+
+/* Each half of an engine switch: 5 ms out, then 5 ms in (0027 item 2). */
+#define DEMO_CLIP_SWITCH_FADE_FRAMES 240U
 
 /* Source frames read and decimated per load step: 12,288 bytes. */
 #define CLIP_LOAD_CHUNK_FRAMES 2048U
@@ -67,12 +78,13 @@ typedef struct
   uint32_t loops;         /* passes of the current clip */
 } DemoClipStatus;
 
-/* What plays a READY clip on the monitor: the granular voice (p04.7), or the
- * plain loop of p04.6 kept as the fallback. */
+/* What plays a READY clip on the monitor: the granular voice (p04.7), the
+ * Slicer (p04.15), or the plain loop of p04.6 kept as the fallback. */
 typedef enum
 {
   DEMO_VOICE_GRAIN = 0,
-  DEMO_VOICE_LOOP
+  DEMO_VOICE_LOOP,
+  DEMO_VOICE_SLICE
 } DemoVoice;
 
 typedef struct
@@ -87,6 +99,8 @@ typedef struct
   uint32_t max_grains;        /* the voice's grain limit */
   uint32_t grains_active;
   uint32_t grains_high_water;
+  uint32_t slice_render_us_max; /* longest render with the Slicer playing */
+  uint32_t switches;            /* engine switches faded through */
 } DemoVoiceStatus;
 
 /* The Instrument transport and Granular's pattern (p04.14). */
@@ -94,12 +108,13 @@ typedef struct
 {
   bool running;
   uint32_t bpm_x100;
-  uint8_t steps_per_beat;  /* Granular's pattern: 4 (1/16), 2 (1/8) or 1 (1/4) */
-  uint32_t playhead;       /* the step the transport is on; 0xFFFFFFFF stopped */
-  uint32_t held_step;      /* the latest step that fired on; 0xFFFFFFFF none */
+  uint8_t steps_per_beat;  /* the active pattern's: 4 (1/16), 2 (1/8) or 1 (1/4) */
+  uint32_t playhead;       /* the active pattern's step; 0xFFFFFFFF stopped */
+  uint32_t held_step;      /* Granular's latest step that fired on; 0xFFFFFFFF none */
   uint32_t steps_fired;
   uint32_t fits;           /* fits on load applied */
   bool fit_pending;
+  uint16_t bar_phase;      /* position in the 4/4 bar, 0..65535 */
 } DemoTransportStatus;
 
 /* --- Control-facing (demo_field.c), foreground ------------------------------- */
@@ -114,8 +129,11 @@ void DemoClip_Fail(DemoClipFault fault);
 /* Whether Instrument shows the clip; it plays only while READY. */
 void DemoClip_SetPlaying(bool play);
 void DemoClip_GetStatus(DemoClipStatus *status);
-/* Switching voices stops the current one; SetPlaying starts the new one. */
+/* Between Granular and the Slicer the switch fades in the radio interrupt and
+ * both engines stay started. To or from the plain loop it stops the current
+ * voice, and SetPlaying starts the new one. */
 void DemoClip_SetVoice(DemoVoice voice);
+/* The voice chosen (the one fading in, during a switch). */
 DemoVoice DemoClip_Voice(void);
 /* The granular voice's parameters, taken at its next render. */
 void DemoClip_SetGrainParams(const GranularParams *params);
@@ -136,6 +154,17 @@ void DemoClip_SetTempo(uint32_t bpm_x100);
 uint32_t DemoClip_TempoTarget(void);
 /* Granular's pattern: the foreground edits steps and the division in place. */
 StepPattern *DemoClip_GrainPattern(void);
+/* The Slicer's pattern: a step's value is a slice. It starts as the identity
+ * pattern (0022 item 10) and is kept across clips (item 14). */
+StepPattern *DemoClip_SlicePattern(void);
+/* The pattern of the chosen engine (DemoClip_Voice). */
+StepPattern *DemoClip_ActivePattern(void);
+/* The Slicer's map and slice parameters, taken at its next render or trigger. */
+void DemoClip_SetSlicerSetup(const SlicerSetup *setup);
+/* Plays a slice once if the Slicer plays and the transport is stopped (0022
+ * item 8); ignored otherwise. */
+void DemoClip_Audition(uint8_t slice);
+void DemoClip_GetSlicerStatus(SlicerStatus *status);
 void DemoClip_GetTransportStatus(DemoTransportStatus *status);
 const char *DemoClip_StateName(uint8_t state);
 const char *DemoClip_FaultName(uint8_t fault);

@@ -2,6 +2,7 @@
 #include "demo_view.h"
 
 #include "demo_sequencer.h"
+#include "demo_slicer.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -329,6 +330,7 @@ static void test_step_view(void)
     model.seq_steps_per_beat = 2u;
     model.seq_playhead = 0xFFu;
     model.seq_on_mask = 0xFFFFu;
+    model.seq_value_max = 1000u;
     for (unsigned step = 0u; step < 16u; ++step) {
         model.seq_values[step] = (uint16_t)(step * 1000u / 16u);
     }
@@ -374,6 +376,73 @@ static void test_step_view(void)
     CHECK(memcmp(grain + 3u * WIDTH, DemoView_Frame() + 3u * WIDTH, 3u * WIDTH) == 0);
 }
 
+/* The Slicer's page (p04.15): a strip of the slices with a tick at each start,
+ * the selected slice filled and the playing one marked; an open slice inverts
+ * its title row; a pending count inverts its line; a count change over edits
+ * asks. The engine menu inverts its highlight, and the step view scales bars to
+ * the slice count. */
+static void test_slicer_view(void)
+{
+    static uint8_t page[DEMO_VIEW_FRAME_BYTES];
+    DemoViewModel model = classic_model();
+
+    DemoView_Init();
+    model.screen = DEMO_SCREEN_INSTRUMENT;
+    model.clip = DEMO_CLIP_VIEW_READY;
+    model.clip_playing = true;
+    model.slicer = true;
+    model.slicer_count = 16u;
+    model.slicer_count_choice = 16u;
+    model.slicer_selected = 2u;
+    model.slicer_sounding = 5u;
+    model.slicer_gate = 100u;
+    model.slicer_level = 80u;
+    model.slicer_length_ms = 187u;
+    for (unsigned slice = 0u; slice < 16u; ++slice) {
+        model.slicer_starts[slice] = (uint8_t)(slice * 8u);
+    }
+    DemoView_Compose(&model);
+    memcpy(page, DemoView_Frame(), sizeof(page));
+    CHECK((byte_at(2u, 8u) & 0xF8u) == 0xF8u && (byte_at(3u, 8u) & 0x1Fu) == 0x1Fu); /* tick */
+    CHECK(byte_at(2u, 12u) == 0x00u && byte_at(3u, 12u) == 0x10u);  /* slice 2: baseline only */
+    CHECK(byte_at(2u, 20u) == 0xE0u && byte_at(3u, 20u) == 0x1Fu);  /* selected: filled */
+    CHECK(byte_at(2u, 44u) == 0x03u);                               /* playing: marked */
+    CHECK(byte_at(6u, 127u) == 0x00u);
+    /* A count being chosen inverts its line. */
+    model.slicer_count_choice = 8u;
+    DemoView_Compose(&model);
+    CHECK(byte_at(6u, 127u) == 0xFFu);
+    /* An open slice: its title row is inverted, the strip stays. */
+    model.slicer_count_choice = 16u;
+    model.slicer_focus = DEMO_SLICER_SLICE;
+    model.slicer_pitch = -7;
+    DemoView_Compose(&model);
+    CHECK(byte_at(4u, 127u) == 0xFFu);
+    CHECK(memcmp(page + 2u * WIDTH, DemoView_Frame() + 2u * WIDTH, 2u * WIDTH) == 0);
+    /* The confirmation replaces the page. */
+    model.slicer_focus = DEMO_SLICER_CONFIRM;
+    DemoView_Compose(&model);
+    CHECK(memcmp(page + 2u * WIDTH, DemoView_Frame() + 2u * WIDTH, 2u * WIDTH) != 0);
+    /* The engine menu. */
+    model.slicer_focus = DEMO_SLICER_BROWSE;
+    model.seq_view = DEMO_SEQ_VIEW_ENGINE_MENU;
+    model.seq_engine_item = DEMO_SEQ_ENGINE_SLICER;
+    DemoView_Compose(&model);
+    CHECK(byte_at(3u, 127u) == 0xFFu && byte_at(2u, 127u) == 0x00u);
+    /* The step view: the identity pattern rises to full height at the last slice. */
+    model.seq_view = DEMO_SEQ_VIEW_STEPS;
+    model.seq_length = 16u;
+    model.seq_playhead = 0xFFu;
+    model.seq_on_mask = 0xFFFFu;
+    model.seq_value_max = 15u;
+    for (unsigned step = 0u; step < 16u; ++step) {
+        model.seq_values[step] = (uint16_t)step;
+    }
+    DemoView_Compose(&model);
+    CHECK(byte_at(2u, 121u) == 0xFFu && byte_at(5u, 121u) == 0xFFu);
+    CHECK(byte_at(5u, 1u) == 0x80u && byte_at(4u, 1u) == 0x00u);
+}
+
 static void test_wide_values_are_clipped(void)
 {
     DemoViewModel model = classic_model();
@@ -413,6 +482,7 @@ int main(void)
     test_instrument_clip_states();
     test_grain_pages();
     test_step_view();
+    test_slicer_view();
     test_wide_values_are_clipped();
     if (failures != 0u) {
         printf("%u failure(s)\n", failures);

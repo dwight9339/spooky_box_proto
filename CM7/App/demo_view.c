@@ -5,6 +5,7 @@
 
 #include "demo_instrument.h"
 #include "demo_sequencer.h"
+#include "demo_slicer.h"
 
 #define GLYPH_WIDTH 5U
 #define CELL_WIDTH 6U
@@ -543,24 +544,118 @@ static void GrainScreen(const DemoViewModel *model)
   Rule(5U);
 }
 
-/* The view menu (p04.14), in the form of the Field menus (decision 0009). */
-static void ViewMenuScreen(const DemoViewModel *model)
+/* The view menu (p04.14) and the engine menu (p04.15), in the form of the
+ * Field menus (decision 0009). */
+static void SeqMenuScreen(const DemoViewModel *model, bool engines)
 {
+  const uint32_t count = engines ? (uint32_t)DEMO_SEQ_ENGINE_COUNT : (uint32_t)DEMO_SEQ_ITEM_COUNT;
+  const uint32_t highlight = engines ? model->seq_engine_item : model->seq_item;
   uint32_t item;
 
-  Header(model, "VIEW");
-  for (item = 0U; item < (uint32_t)DEMO_SEQ_ITEM_COUNT; ++item)
+  Header(model, engines ? "ENGINE" : "VIEW");
+  for (item = 0U; item < count; ++item)
   {
     const uint8_t page = (uint8_t)(2U + item);
 
-    Text(page, 12U, DemoSequencer_ItemName((uint8_t)item));
-    if (item == model->seq_item)
+    Text(page, 12U, engines ? DemoSequencer_EngineName((uint8_t)item)
+                            : DemoSequencer_ItemName((uint8_t)item));
+    if (item == highlight)
     {
       Text(page, 0U, ">");
       Invert(page);
     }
   }
   Text(7U, 0U, "E0 SELECT  E1 BACK");
+}
+
+#define SLICE_STRIP_PAGE 2U
+
+/* The clip as a strip on pages 2 and 3: a tick at each slice start, the
+ * selected slice filled, and the slice playing marked by a bar over it. */
+static void SliceStrip(const DemoViewModel *model)
+{
+  const uint32_t count = (model->slicer_count > 16U) ? 16U : model->slicer_count;
+  uint32_t slice;
+
+  for (slice = 0U; slice < count; ++slice)
+  {
+    const uint32_t start = model->slicer_starts[slice];
+    const uint32_t end = (slice + 1U < count) ? model->slicer_starts[slice + 1U] : 128U;
+    uint32_t x;
+
+    frame[(SLICE_STRIP_PAGE * DEMO_VIEW_WIDTH) + start] |= 0xF8U;
+    frame[((SLICE_STRIP_PAGE + 1U) * DEMO_VIEW_WIDTH) + start] |= 0x1FU;
+    for (x = start; (x < end) && (x < DEMO_VIEW_WIDTH); ++x)
+    {
+      frame[((SLICE_STRIP_PAGE + 1U) * DEMO_VIEW_WIDTH) + x] |= 0x10U; /* baseline */
+      if (slice == model->slicer_selected)
+      {
+        frame[(SLICE_STRIP_PAGE * DEMO_VIEW_WIDTH) + x] |= 0xE0U;
+        frame[((SLICE_STRIP_PAGE + 1U) * DEMO_VIEW_WIDTH) + x] |= 0x0FU;
+      }
+      if (slice == model->slicer_sounding)
+      {
+        frame[(SLICE_STRIP_PAGE * DEMO_VIEW_WIDTH) + x] |= 0x03U;
+      }
+    }
+  }
+}
+
+/* The Slicer's page (p04.15): the slices, the selected one, the count; a slice
+ * opened shows its four parameters; a count change over edits asks first. */
+static void SlicerScreen(const DemoViewModel *model)
+{
+  char text[LINE_CHARS + 8U];
+  const uint32_t selected = (uint32_t)model->slicer_selected + 1U;
+
+  if (model->slicer_focus == DEMO_SLICER_CONFIRM)
+  {
+    Header(model, "SLICER");
+    BigTextCentred(2U, "DISCARD?");
+    (void)snprintf(text, sizeof(text), "E1: %u SLICES", (unsigned)model->slicer_count_choice);
+    TextCentred(5U, text);
+    TextCentred(6U, "ELSE: KEEP EDITS");
+    return;
+  }
+  (void)snprintf(text, sizeof(text), "SLICER %u%s", (unsigned)model->slicer_count,
+                 model->seq_running ? " SEQ" : "");
+  Header(model, text);
+  SliceStrip(model);
+  if (model->slicer_focus == DEMO_SLICER_SLICE)
+  {
+    (void)snprintf(text, sizeof(text), "SLICE %02lu", (unsigned long)selected);
+    Text(4U, 0U, text);
+    Invert(4U);
+    (void)snprintf(text, sizeof(text), "E0 PITCH %+dST", (int)model->slicer_pitch);
+    Text(5U, 0U, text);
+    (void)snprintf(text, sizeof(text), "E1 GATE %u%%", (unsigned)model->slicer_gate);
+    Text(6U, 0U, text);
+    (void)snprintf(text, sizeof(text), "E2 LVL %u%%", (unsigned)model->slicer_level);
+    Text(7U, 0U, text);
+    (void)snprintf(text, sizeof(text), "E3 %uMS", (unsigned)model->slicer_length_ms);
+    TextRight(7U, text);
+    return;
+  }
+  (void)snprintf(text, sizeof(text), "E0 SLICE %02lu %uMS", (unsigned long)selected,
+                 (unsigned)model->slicer_length_ms);
+  Text(5U, 0U, text);
+  if (model->slicer_count_choice != model->slicer_count)
+  {
+    (void)snprintf(text, sizeof(text), "E1 COUNT %u? CLICK", (unsigned)model->slicer_count_choice);
+    Text(6U, 0U, text);
+    Invert(6U);
+  }
+  else
+  {
+    (void)snprintf(text, sizeof(text), "E1 COUNT %u", (unsigned)model->slicer_count);
+    Text(6U, 0U, text);
+  }
+  (void)snprintf(text, sizeof(text), "C%03lu %lu.%luS",
+                 (unsigned long)(model->clip_capture % 1000U),
+                 (unsigned long)((model->clip_tenths / 10U) % 100U),
+                 (unsigned long)(model->clip_tenths % 10U));
+  Text(7U, 0U, text);
+  TextRight(7U, model->seq_running ? "PLAY" : "STOP");
 }
 
 #define STEP_BAR_TOP_PAGE 2U
@@ -597,7 +692,10 @@ static void StepScreen(const DemoViewModel *model)
   for (step = 0U; step < length; ++step)
   {
     const uint32_t x = step * 8U;
-    const uint32_t height = 1U + ((model->seq_values[step] * (STEP_BAR_HEIGHT - 1U)) / 1000U);
+    const uint32_t value_max = (model->seq_value_max == 0U) ? 1U : model->seq_value_max;
+    const uint32_t value = (model->seq_values[step] > value_max) ? value_max
+                                                                  : model->seq_values[step];
+    const uint32_t height = 1U + ((value * (STEP_BAR_HEIGHT - 1U)) / value_max);
     const uint32_t top = STEP_BAR_HEIGHT - height;
     uint32_t column;
 
@@ -639,10 +737,20 @@ static void StepScreen(const DemoViewModel *model)
   {
     const uint32_t selected = model->seq_step % 16U;
 
-    (void)snprintf(text, sizeof(text), "%s %02u %s %u%%", editing ? "EDIT" : "STEP",
-                   (unsigned)selected + 1U,
-                   ((model->seq_on_mask & (1U << selected)) != 0U) ? "ON" : "OFF",
-                   (unsigned)(model->seq_values[selected] / 10U));
+    if (model->slicer)
+    {
+      (void)snprintf(text, sizeof(text), "%s %02u %s SL%02u", editing ? "EDIT" : "STEP",
+                     (unsigned)selected + 1U,
+                     ((model->seq_on_mask & (1U << selected)) != 0U) ? "ON" : "OFF",
+                     (unsigned)model->seq_values[selected] + 1U);
+    }
+    else
+    {
+      (void)snprintf(text, sizeof(text), "%s %02u %s %u%%", editing ? "EDIT" : "STEP",
+                     (unsigned)selected + 1U,
+                     ((model->seq_on_mask & (1U << selected)) != 0U) ? "ON" : "OFF",
+                     (unsigned)(model->seq_values[selected] / 10U));
+    }
   }
   else
   {
@@ -671,11 +779,19 @@ static void InstrumentScreen(const DemoViewModel *model)
   {
     if (model->seq_view == DEMO_SEQ_VIEW_MENU)
     {
-      ViewMenuScreen(model);
+      SeqMenuScreen(model, false);
+    }
+    else if (model->seq_view == DEMO_SEQ_VIEW_ENGINE_MENU)
+    {
+      SeqMenuScreen(model, true);
     }
     else if (model->seq_view == DEMO_SEQ_VIEW_STEPS)
     {
       StepScreen(model);
+    }
+    else if (model->slicer)
+    {
+      SlicerScreen(model);
     }
     else
     {

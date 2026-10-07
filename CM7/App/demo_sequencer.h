@@ -8,13 +8,19 @@
  *
  * - Main engine page: an Encoder 0 click runs or stops the transport (0021
  *   item 7); a long Encoder 2 press opens the view menu (C-021, in the menu form
- *   of decision 0009 items 16 to 18). Turns and the Encoder 3 click stay with
- *   the engine's pages (demo_instrument.c).
+ *   of decision 0009 items 16 to 18) and a long Encoder 1 press the engine menu
+ *   (C-018, in the same form; user call 2026-10-07, p04.15). Turns and the
+ *   other gestures stay with the engine's pages (demo_instrument.c,
+ *   demo_slicer.c).
+ * - Engine menu: GRANULAR and SLICER, worked like the view menu. An Encoder 0
+ *   click commits the highlighted engine (C-020) and lands on the main page,
+ *   whichever engine it is (0027 item 4).
  * - View menu: ENGINE (the main page) and SEQUENCER. Encoder 0 scrolls, an
  *   Encoder 0 click selects, an Encoder 1 click closes without a change, and the
  *   menu closes after DEMO_SEQ_MENU_TIMEOUT_MS without input.
  * - Step view, steps: Encoder 0 browses (C-072); its click edits the step
- *   (C-073); its long press moves to the settings row (C-077).
+ *   (C-073) unless the pattern is read-only (the Slicer's until p04.16); its
+ *   long press moves to the settings row (C-077).
  * - Step edit: Encoder 0 changes the value at once (C-074); an Encoder 1 click
  *   turns the step on or off (C-075); an Encoder 0 click returns (C-076).
  * - Settings row: Tempo and Division. Encoder 0 browses (C-078); its click edits
@@ -44,8 +50,17 @@ typedef enum
 {
   DEMO_SEQ_VIEW_ENGINE = 0, /* the main engine page */
   DEMO_SEQ_VIEW_MENU,
-  DEMO_SEQ_VIEW_STEPS
+  DEMO_SEQ_VIEW_STEPS,
+  DEMO_SEQ_VIEW_ENGINE_MENU
 } DemoSeqView;
+
+/* The Instrument engines of the demo (decision 0020 item 12). */
+typedef enum
+{
+  DEMO_SEQ_ENGINE_GRANULAR = 0,
+  DEMO_SEQ_ENGINE_SLICER,
+  DEMO_SEQ_ENGINE_COUNT
+} DemoSeqEngine;
 
 typedef enum
 {
@@ -76,6 +91,7 @@ typedef struct
   uint8_t step;           /* the selected step */
   uint8_t setting;        /* DemoSeqSetting */
   uint8_t item;           /* DemoSeqItem highlighted in the menu */
+  uint8_t engine_item;    /* DemoSeqEngine highlighted in the engine menu */
   uint8_t menu_return;    /* the view a closed menu returns to */
   uint32_t edit_backup;   /* the setting's value before its edit */
   uint32_t last_input_ms; /* for the menu timeout */
@@ -85,22 +101,28 @@ typedef struct
 typedef struct
 {
   StepPattern *pattern;   /* edited in place */
+  bool read_only;         /* in: the steps are shown, not edited */
+  uint8_t engine;         /* in: the engine now; out: the engine chosen */
   uint32_t tempo_x100;    /* in: the tempo now; out: the tempo to set */
   bool toggle_run;        /* out: run or stop the transport */
   bool tempo_changed;     /* out */
+  bool engine_chosen;     /* out: the engine menu committed engine */
 } DemoSeqTarget;
 
 void DemoSequencer_Init(DemoSequencer *seq);
 /* Back to the main engine page, as on every entry to Instrument (0027 item 4). */
 void DemoSequencer_Reset(DemoSequencer *seq);
 /* True if the gesture was taken. On the main page only the Encoder 0 click and
- * the long Encoder 2 press are taken; everything else is left for the pages. */
+ * the long Encoder 1 and Encoder 2 presses are taken; everything else is left
+ * for the pages. */
 bool DemoSequencer_OnGesture(DemoSequencer *seq, Gesture gesture, DemoSeqTarget *target,
                              uint32_t now_ms);
-/* Closes the menu after DEMO_SEQ_MENU_TIMEOUT_MS without input. True if it closed. */
+/* Closes either menu after DEMO_SEQ_MENU_TIMEOUT_MS without input. True if it
+ * closed. */
 bool DemoSequencer_Tick(DemoSequencer *seq, uint32_t now_ms);
 const char *DemoSequencer_ItemName(uint8_t item);
 const char *DemoSequencer_SettingName(uint8_t setting);
+const char *DemoSequencer_EngineName(uint8_t engine);
 /* "1/16", "1/8" or "1/4". */
 const char *DemoSequencer_DivisionName(uint8_t steps_per_beat);
 

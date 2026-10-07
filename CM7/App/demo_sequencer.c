@@ -40,6 +40,7 @@ void DemoSequencer_Reset(DemoSequencer *seq)
   seq->view = (uint8_t)DEMO_SEQ_VIEW_ENGINE;
   seq->focus = (uint8_t)DEMO_SEQ_FOCUS_STEPS;
   seq->item = (uint8_t)DEMO_SEQ_ITEM_ENGINE;
+  seq->engine_item = (uint8_t)DEMO_SEQ_ENGINE_GRANULAR;
   seq->menu_return = (uint8_t)DEMO_SEQ_VIEW_ENGINE;
 }
 
@@ -51,6 +52,38 @@ static void OpenMenu(DemoSequencer *seq, uint32_t now_ms)
   seq->item = from_steps ? (uint8_t)DEMO_SEQ_ITEM_SEQUENCER : (uint8_t)DEMO_SEQ_ITEM_ENGINE;
   seq->view = (uint8_t)DEMO_SEQ_VIEW_MENU;
   seq->last_input_ms = now_ms;
+}
+
+/* The engine menu opens only from the main page (C-018) and closes to it. */
+static void OpenEngineMenu(DemoSequencer *seq, uint8_t engine, uint32_t now_ms)
+{
+  seq->menu_return = (uint8_t)DEMO_SEQ_VIEW_ENGINE;
+  seq->engine_item = (engine < (uint8_t)DEMO_SEQ_ENGINE_COUNT) ? engine
+                                                               : (uint8_t)DEMO_SEQ_ENGINE_GRANULAR;
+  seq->view = (uint8_t)DEMO_SEQ_VIEW_ENGINE_MENU;
+  seq->last_input_ms = now_ms;
+}
+
+static void EngineMenu(DemoSequencer *seq, Gesture gesture, DemoSeqTarget *target)
+{
+  if (Is(gesture, GESTURE_TURN, 0U))
+  {
+    seq->engine_item = (uint8_t)Clamp((int32_t)seq->engine_item + gesture.detents, 0,
+                                      (int32_t)DEMO_SEQ_ENGINE_COUNT - 1);
+  }
+  else if (Is(gesture, GESTURE_CLICK, 0U))
+  {
+    if (seq->engine_item != target->engine)
+    {
+      target->engine = seq->engine_item;
+      target->engine_chosen = true;
+    }
+    seq->view = (uint8_t)DEMO_SEQ_VIEW_ENGINE; /* the main page (0027 item 4) */
+  }
+  else if (Is(gesture, GESTURE_CLICK, 1U))
+  {
+    seq->view = (uint8_t)DEMO_SEQ_VIEW_ENGINE;
+  }
 }
 
 static void Menu(DemoSequencer *seq, Gesture gesture)
@@ -128,7 +161,7 @@ static void Steps(DemoSequencer *seq, Gesture gesture, DemoSeqTarget *target)
         seq->step = (uint8_t)Clamp((int32_t)seq->step + gesture.detents, 0,
                                    (int32_t)pattern->length - 1);
       }
-      else if (Is(gesture, GESTURE_CLICK, 0U))
+      else if (Is(gesture, GESTURE_CLICK, 0U) && !target->read_only)
       {
         seq->focus = (uint8_t)DEMO_SEQ_FOCUS_STEP_EDIT;
       }
@@ -206,6 +239,10 @@ bool DemoSequencer_OnGesture(DemoSequencer *seq, Gesture gesture, DemoSeqTarget 
       seq->last_input_ms = now_ms;
       Menu(seq, gesture);
       return true;
+    case DEMO_SEQ_VIEW_ENGINE_MENU:
+      seq->last_input_ms = now_ms;
+      EngineMenu(seq, gesture, target);
+      return true;
     case DEMO_SEQ_VIEW_STEPS:
       if (Is(gesture, GESTURE_CLICK, 2U))
       {
@@ -236,13 +273,20 @@ bool DemoSequencer_OnGesture(DemoSequencer *seq, Gesture gesture, DemoSeqTarget 
         OpenMenu(seq, now_ms);
         return true;
       }
+      if (Is(gesture, GESTURE_HOLD, 1U))
+      {
+        OpenEngineMenu(seq, target->engine, now_ms);
+        return true;
+      }
       return false;
   }
 }
 
 bool DemoSequencer_Tick(DemoSequencer *seq, uint32_t now_ms)
 {
-  if ((seq == NULL) || (seq->view != (uint8_t)DEMO_SEQ_VIEW_MENU) ||
+  if ((seq == NULL) ||
+      ((seq->view != (uint8_t)DEMO_SEQ_VIEW_MENU) &&
+       (seq->view != (uint8_t)DEMO_SEQ_VIEW_ENGINE_MENU)) ||
       ((now_ms - seq->last_input_ms) < DEMO_SEQ_MENU_TIMEOUT_MS))
   {
     return false;
@@ -263,6 +307,13 @@ const char *DemoSequencer_SettingName(uint8_t setting)
   static const char *const names[DEMO_SEQ_SETTING_COUNT] = {"TEMPO", "DIV"};
 
   return (setting < (uint8_t)DEMO_SEQ_SETTING_COUNT) ? names[setting] : "?";
+}
+
+const char *DemoSequencer_EngineName(uint8_t engine)
+{
+  static const char *const names[DEMO_SEQ_ENGINE_COUNT] = {"GRANULAR", "SLICER"};
+
+  return (engine < (uint8_t)DEMO_SEQ_ENGINE_COUNT) ? names[engine] : "?";
 }
 
 const char *DemoSequencer_DivisionName(uint8_t steps_per_beat)

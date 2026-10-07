@@ -154,7 +154,21 @@ typedef struct
   uint8_t seq_playhead;    /* the step playing; 0xFF while stopped */
   uint8_t seq_length;
   uint16_t seq_on_mask;    /* bit n: step n is on */
-  uint16_t seq_values[16]; /* step values, permille of the clip */
+  uint16_t seq_values[16]; /* step values: permille of the clip, or a slice */
+  uint16_t seq_value_max;  /* the largest step value: 1000, or the last slice */
+  uint8_t seq_engine_item; /* DemoSeqEngine highlighted in the engine menu */
+  /* The Slicer (demo_slicer.h, p04.15). */
+  bool slicer;             /* the Slicer is the engine */
+  uint8_t slicer_focus;    /* DemoSlicerFocus */
+  uint8_t slicer_selected;
+  uint8_t slicer_count;
+  uint8_t slicer_count_choice;
+  uint8_t slicer_sounding; /* the slice playing; 0xFF for none */
+  int8_t slicer_pitch;     /* the selected slice's parameters */
+  uint8_t slicer_gate;
+  uint8_t slicer_level;
+  uint16_t slicer_length_ms;
+  uint8_t slicer_starts[16]; /* each slice's start, in 1/128 of the clip */
   uint8_t notice;          /* DemoNotice */
   uint8_t notice_arg;      /* band for the band notices, reason for CLIP_FAILED */
 } DemoViewModel;
