@@ -220,11 +220,15 @@ if(SPOOKY_DEMO)
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_instrument.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/grain_matrix.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/transport.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/step_pattern.c
     )
-    # The granular voice renders in the radio DMA interrupt; the Demo image is a
-    # Debug (-O0) build, so its render is optimized to keep that work small
-    # (p04.7; measured by DEMO GRAIN RENDER_US_MAX).
+    # The granular voice and the sequencer run in the radio DMA interrupt; the
+    # Demo image is a Debug (-O0) build, so that work is optimized to keep it small
+    # (p04.7 and p04.14; measured by DEMO GRAIN RENDER_US_MAX).
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/transport.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/step_pattern.c
         PROPERTIES COMPILE_OPTIONS "-O2")
 endif()
 

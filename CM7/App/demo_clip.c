@@ -10,7 +10,9 @@
 #include "granular.h"
 #include "main.h"
 #include "recording_limits.h"
+#include "step_pattern.h"
 #include "storage_service.h"
+#include "transport.h"
 
 #define CLIP_HEADER_BYTES RECORDING_LIMIT_WAV_HEADER_BYTES
 #define CLIP_FRAME_BYTES (CLIP_SOURCE_CHANNELS * sizeof(int16_t))
@@ -52,6 +54,26 @@ static volatile uint8_t voice = (uint8_t)DEMO_VOICE_GRAIN;
 static volatile uint32_t render_us_max;
 static volatile uint32_t render_over_budget;
 static volatile uint32_t renders;
+
+/* The transport and Granular's pattern (p04.14). The radio interrupt owns the
+ * transport; the foreground posts targets it applies at its next render: the run
+ * state and tempo at once, a fit on load at the next step while running (decision
+ * 0026 item 4). Step values and flags are written one at a time by the
+ * foreground and read by the interrupt. */
+#define SEQ_KNOB_CENTRE 500U /* the position knob's no-offset point, permille */
+#define SEQ_NO_STEP 0xFFFFFFFFU
+static Transport transport;
+static StepPattern grain_pattern;
+static volatile bool run_target;
+static volatile uint32_t tempo_target = TRANSPORT_BPM_DEFAULT_X100;
+static volatile bool fit_pending;
+static volatile uint32_t fit_tempo;
+static volatile uint8_t fit_steps_per_beat;
+static volatile uint16_t knob_permille = SEQ_KNOB_CENTRE;
+static volatile uint32_t playhead = SEQ_NO_STEP;  /* the step the transport is on */
+static volatile uint32_t held_step = SEQ_NO_STEP; /* the latest step that fired on */
+static volatile uint32_t steps_fired;
+static volatile uint32_t fits;
 static ClipDecimator decimator;
 static ClipRange range;
 static LoadStep step;
@@ -121,6 +143,18 @@ static void Ready(void)
     status.load_ms_max = elapsed;
   }
   ++status.loads;
+  /* Fit on load (decision 0026 item 2): the interrupt applies it. */
+  {
+    uint32_t bpm_x100;
+    uint8_t steps_per_beat;
+
+    if (Transport_Fit(written, CLIP_RATE_HZ, grain_pattern.length, &bpm_x100, &steps_per_beat))
+    {
+      fit_tempo = bpm_x100;
+      fit_steps_per_beat = steps_per_beat;
+      fit_pending = true;
+    }
+  }
   printf("[clip] loaded C%03lu: %lu samples at 24 kHz (%lu ms) in %lu ms\r\n",
          (unsigned long)status.capture, (unsigned long)written,
          (unsigned long)((written * 1000U) / CLIP_RATE_HZ), (unsigned long)elapsed);
@@ -186,6 +220,8 @@ static bool ReadChunk(void)
 void DemoClip_Init(void)
 {
   ClipPlayer_Init(&player);
+  Transport_Init(&transport);
+  StepPattern_InitSweep(&grain_pattern, 1000U); /* decision 0027 item 5 */
   Granular_Init(&engine, HAL_GetTick() ^ DWT->CYCCNT);
   Granular_SetMaxGrains(&engine, CLIP_GRAIN_LIMIT);
 }
@@ -244,6 +280,52 @@ DemoVoice DemoClip_Voice(void)
 void DemoClip_SetGrainParams(const GranularParams *params)
 {
   Granular_SetParams(&engine, params);
+  if (params != NULL)
+  {
+    knob_permille = params->position_permille;
+  }
+}
+
+void DemoClip_SetRunning(bool run)
+{
+  run_target = run;
+}
+
+bool DemoClip_RunTarget(void)
+{
+  return run_target;
+}
+
+void DemoClip_SetTempo(uint32_t bpm_x100)
+{
+  tempo_target = (bpm_x100 < TRANSPORT_BPM_MIN_X100) ? TRANSPORT_BPM_MIN_X100
+                 : (bpm_x100 > TRANSPORT_BPM_MAX_X100) ? TRANSPORT_BPM_MAX_X100 : bpm_x100;
+}
+
+uint32_t DemoClip_TempoTarget(void)
+{
+  return tempo_target;
+}
+
+StepPattern *DemoClip_GrainPattern(void)
+{
+  return &grain_pattern;
+}
+
+void DemoClip_GetTransportStatus(DemoTransportStatus *out)
+{
+  if (out == NULL)
+  {
+    return;
+  }
+  out->running = transport.running;
+  out->bpm_x100 = transport.bpm_x100;
+  out->steps_per_beat = grain_pattern.steps_per_beat;
+  out->playhead = playhead;
+  out->held_step = held_step;
+  out->steps_fired = steps_fired;
+  out->fits = fits;
+  out->fit_pending = fit_pending;
 }
 
 uint32_t DemoClip_GetGrains(uint16_t *position_permille, uint8_t *envelope, uint32_t capacity)
@@ -407,12 +489,114 @@ void DemoClip_Abort(void)
 
 /* --- Monitor ------------------------------------------------------------------ */
 
+/* --- Sequencer, radio DMA interrupt ------------------------------------------ */
+
+static void ApplyFit(void)
+{
+  Transport_SetTempo(&transport, fit_tempo);
+  tempo_target = transport.bpm_x100;
+  grain_pattern.steps_per_beat = fit_steps_per_beat; /* every pattern (0026 item 2) */
+  fit_pending = false;
+  ++fits;
+}
+
+/* The held step's value, offset by the knob, is where new grains start. Read
+ * every pass, so a knob turn or an edit of the held step takes effect at once. */
+static void PinPosition(void)
+{
+  if (held_step < STEP_PATTERN_MAX_STEPS)
+  {
+    Granular_OverridePosition(&engine,
+                              StepPattern_Offset(grain_pattern.steps[held_step].value,
+                                                 knob_permille, SEQ_KNOB_CENTRE, 1000U));
+  }
+}
+
+/* A new step: an on step moves the grains there (decision 0027 item 6); an off
+ * step keeps the previous position (0020 item 8). */
+static void Step(void)
+{
+  uint32_t step;
+
+  if (fit_pending)
+  {
+    ApplyFit(); /* at the step boundary while running */
+  }
+  step = StepPattern_Playhead(&grain_pattern, &transport);
+  playhead = step;
+  ++steps_fired;
+  if (grain_pattern.steps[step].on)
+  {
+    held_step = step;
+    PinPosition();
+  }
+}
+
+static void ApplyTargets(void)
+{
+  if (run_target && !transport.running)
+  {
+    Transport_Start(&transport);
+    playhead = SEQ_NO_STEP;
+  }
+  else if (!run_target && transport.running)
+  {
+    Transport_Stop(&transport);
+    Granular_ReleasePosition(&engine);
+    playhead = SEQ_NO_STEP;
+    held_step = SEQ_NO_STEP;
+  }
+  if (fit_pending && !transport.running)
+  {
+    ApplyFit();
+  }
+  if (!fit_pending && (tempo_target != transport.bpm_x100))
+  {
+    Transport_SetTempo(&transport, tempo_target);
+  }
+}
+
+/* Renders frame_count frames, split where a step starts so the step takes effect
+ * on its own frame. The clock runs whichever voice plays, or none. */
+static bool RenderSequenced(uint16_t *stereo, uint32_t frame_count)
+{
+  bool rendered = false;
+  uint32_t done = 0U;
+
+  ApplyTargets();
+  if (transport.running && (playhead == SEQ_NO_STEP))
+  {
+    Step(); /* the first step of a start */
+  }
+  PinPosition();
+  while (done < frame_count)
+  {
+    uint32_t chunk = frame_count - done;
+    const uint32_t next = Transport_FramesToNextStep(&transport, grain_pattern.steps_per_beat);
+
+    if ((next != 0U) && (next < chunk))
+    {
+      chunk = next;
+    }
+    if ((voice == (uint8_t)DEMO_VOICE_LOOP) ? ClipPlayer_Render(&player, &stereo[2U * done], chunk)
+                                            : Granular_Render(&engine, &stereo[2U * done], chunk))
+    {
+      rendered = true;
+    }
+    Transport_Advance(&transport, chunk);
+    done += chunk;
+    if (transport.running && (next == chunk))
+    {
+      Step();
+    }
+  }
+  return rendered;
+}
+
 bool DemoClip_RenderMonitor(uint16_t *stereo, uint32_t frame_count)
 {
   const uint32_t start = DWT->CYCCNT;
-  const bool rendered = (voice == (uint8_t)DEMO_VOICE_LOOP)
-                          ? ClipPlayer_Render(&player, stereo, frame_count)
-                          : Granular_Render(&engine, stereo, frame_count);
+  const bool rendered = RenderSequenced(stereo, frame_count);
 
   if (rendered)
   {
