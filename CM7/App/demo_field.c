@@ -1308,9 +1308,89 @@ static bool HandleSeq(const char *command)
   return true;
 }
 
+/* `DEMO GRAIN SET NAME=value ...`: sets grain parameters from the console, for
+ * bench sweeps (p04.14). Names: POS, SIZE, DENS, PITCH, SPRAY, ENV, LEVEL, as
+ * DEMO GRAIN reports them; values are clamped as the pages clamp them. False if
+ * a token is not NAME=value with a known name. */
+static bool SetGrainFromCommand(const char *arguments)
+{
+  GranularParams params = instrument.params;
+  const char *cursor = arguments;
+
+  while (*cursor != '\0')
+  {
+    char name[8];
+    size_t length = 0U;
+    char *end;
+    long value;
+
+    while (*cursor == ' ')
+    {
+      ++cursor;
+    }
+    if (*cursor == '\0')
+    {
+      break;
+    }
+    while ((cursor[length] != '=') && (cursor[length] != '\0') && (length < (sizeof(name) - 1U)))
+    {
+      name[length] = cursor[length];
+      ++length;
+    }
+    if (cursor[length] != '=')
+    {
+      return false;
+    }
+    name[length] = '\0';
+    value = strtol(&cursor[length + 1U], &end, 10);
+    if ((end == &cursor[length + 1U]) || ((*end != ' ') && (*end != '\0')))
+    {
+      return false;
+    }
+    if (strcmp(name, "POS") == 0)
+    {
+      params.position_permille = (uint16_t)((value < 0) ? 0 : value);
+    }
+    else if (strcmp(name, "SIZE") == 0)
+    {
+      params.size_ms = (uint16_t)((value < 0) ? 0 : value);
+    }
+    else if (strcmp(name, "DENS") == 0)
+    {
+      params.density = (uint16_t)((value < 0) ? 0 : value);
+    }
+    else if (strcmp(name, "PITCH") == 0)
+    {
+      params.pitch_semitones = (int8_t)((value < -100) ? -100 : (value > 100) ? 100 : value);
+    }
+    else if (strcmp(name, "SPRAY") == 0)
+    {
+      params.spray_permille = (uint16_t)((value < 0) ? 0 : value);
+    }
+    else if (strcmp(name, "ENV") == 0)
+    {
+      params.envelope_percent = (uint8_t)((value < 0) ? 0 : (value > 255) ? 255 : value);
+    }
+    else if (strcmp(name, "LEVEL") == 0)
+    {
+      params.level_percent = (uint8_t)((value < 0) ? 0 : (value > 255) ? 255 : value);
+    }
+    else
+    {
+      return false;
+    }
+    cursor = end;
+  }
+  (void)Granular_ClampParams(&params);
+  instrument.params = params;
+  DemoClip_SetGrainParams(&instrument.params);
+  return true;
+}
+
 /* `DEMO GRAIN`: the Instrument voice, its page and parameters, and its render
  * cost in the radio interrupt; `DEMO GRAIN RESET` clears the render maximum;
- * `DEMO GRAIN MAX <n>` sets the grain limit (1 to 16), for bench sweeps.
+ * `DEMO GRAIN MAX <n>` sets the grain limit (1 to 16) and `DEMO GRAIN SET ...`
+ * the parameters, for bench sweeps.
  * `DEMO VOICE GRAIN|LOOP` picks the voice (LOOP is p04.6's plain loop). */
 static bool HandleGrain(const char *command)
 {
@@ -1335,11 +1415,20 @@ static bool HandleGrain(const char *command)
   {
     DemoClip_SetMaxGrains((uint32_t)strtoul(&command[15], NULL, 10));
   }
+  else if (strncmp(command, "DEMO GRAIN SET ", 15U) == 0)
+  {
+    if (!SetGrainFromCommand(&command[15]))
+    {
+      (void)UsbTest_SendText("ERR usage: DEMO GRAIN SET NAME=value ... "
+                             "(POS SIZE DENS PITCH SPRAY ENV LEVEL)\r\n");
+      return true;
+    }
+  }
   else if (strcmp(command, "DEMO GRAIN") != 0)
   {
     if ((strncmp(command, "DEMO VOICE", 10U) == 0) || (strncmp(command, "DEMO GRAIN", 10U) == 0))
     {
-      (void)UsbTest_SendText("ERR usage: DEMO GRAIN [RESET | MAX <n>] | DEMO VOICE GRAIN|LOOP\r\n");
+      (void)UsbTest_SendText("ERR usage: DEMO GRAIN [RESET | MAX <n> | SET ...] | DEMO VOICE GRAIN|LOOP\r\n");
       return true;
     }
     return false;

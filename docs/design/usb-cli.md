@@ -594,7 +594,10 @@ item 16). Its controls are provisional and demo-only, and do not settle C-025.
   recording ring still shows.
 
 `DEMO GRAIN` reports the voice, and `DEMO GRAIN MAX <n>` sets how many grains may sound at
-once (1 to 16; the image sets a default from the bench). `DEMO GRAIN RESET` clears the
+once (1 to 16; the image sets a default from the bench). `DEMO GRAIN SET NAME=value ...`
+sets parameters for bench sweeps, clamped as the pages clamp them, with the names `POS`,
+`SIZE`, `DENS`, `PITCH`, `SPRAY`, `ENV` and `LEVEL` (for example `DEMO GRAIN SET PITCH=7
+ENV=100`). `DEMO GRAIN RESET` clears the
 render maximum, the over-budget count and the grain high water. For example:
 
 ```text
