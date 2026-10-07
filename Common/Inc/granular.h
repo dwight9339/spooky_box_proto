@@ -15,8 +15,9 @@
  *   (decisions 0020 item 6 and 0021).
  * - The mix is scaled by level / sqrt(overlap), overlap being density times
  *   grain size, and saturates rather than wrapping.
- * - Bounded work: Render costs at most GRANULAR_MAX_GRAINS voice reads per
- *   output frame. A grain due while every voice is busy is dropped and counted.
+ * - Bounded work: Render costs at most max_grains voice reads per output frame
+ *   (Granular_SetMaxGrains, at most GRANULAR_MAX_GRAINS). A grain due while
+ *   that many are sounding is dropped and counted.
  *
  * Render runs in the radio DMA interrupt; Start, Stop and SetParams run in the
  * foreground on the same core. SetParams stages the new values and Render takes
@@ -79,7 +80,7 @@ typedef struct
 typedef struct
 {
   uint32_t grains_started;
-  uint32_t grains_dropped;  /* due while every voice was busy */
+  uint32_t grains_dropped;  /* due while max_grains were sounding */
   uint32_t active;          /* voices playing after the latest render */
   uint32_t active_high_water;
   uint32_t renders;
@@ -97,6 +98,7 @@ typedef struct
   volatile bool pending;
   GranularControl control;
   GranularGrain grains[GRANULAR_MAX_GRAINS];
+  volatile uint32_t max_grains; /* 1..GRANULAR_MAX_GRAINS, set by SetMaxGrains */
   uint32_t until_next;      /* output frames to the next grain start */
   uint32_t random;          /* xorshift32 state, never 0 */
   int32_t mix[512];         /* one render chunk */
@@ -119,6 +121,11 @@ void Granular_SetParams(GranularEngine *engine, const GranularParams *params);
  * once. False (and stopped) for no clip. */
 bool Granular_Start(GranularEngine *engine, const int16_t *samples, uint32_t count);
 void Granular_Stop(GranularEngine *engine);
+/* Limits how many grains sound at once, clamped to 1..GRANULAR_MAX_GRAINS
+ * (GRANULAR_MAX_GRAINS after Init). Sounding grains above a lowered limit finish;
+ * no new grain starts until fewer are sounding. */
+void Granular_SetMaxGrains(GranularEngine *engine, uint32_t max_grains);
+uint32_t Granular_MaxGrains(const GranularEngine *engine);
 bool Granular_Active(const GranularEngine *engine);
 /* Writes frame_count stereo frames (2 * frame_count halfwords), in chunks of at
  * most 512. False, with nothing written, while stopped. */

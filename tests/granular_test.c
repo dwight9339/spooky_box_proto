@@ -150,6 +150,47 @@ static void test_bounded_grains(void)
     }
 }
 
+/* A grain limit caps the sounding grains below GRANULAR_MAX_GRAINS; grains due
+ * at the limit are dropped. Grains above a lowered limit finish; a raised limit
+ * lets more start. The limit is clamped to 1..GRANULAR_MAX_GRAINS. */
+static void test_grain_limit(void)
+{
+    const GranularParams params = params_with(100u, 500u, 50u); /* overlap 50 */
+    GranularStatus status;
+
+    Granular_Init(&engine, 13u);
+    CHECK(Granular_MaxGrains(&engine) == GRANULAR_MAX_GRAINS);
+    Granular_SetMaxGrains(&engine, 0u);
+    CHECK(Granular_MaxGrains(&engine) == 1u);
+    Granular_SetMaxGrains(&engine, 99u);
+    CHECK(Granular_MaxGrains(&engine) == GRANULAR_MAX_GRAINS);
+    Granular_SetMaxGrains(&engine, 3u);
+    Granular_SetParams(&engine, &params);
+    CHECK(Granular_Start(&engine, clip, 1000u));
+    for (unsigned half = 0u; half < 100u; ++half) {
+        CHECK(Granular_Render(&engine, stereo, 512u));
+    }
+    Granular_GetStatus(&engine, &status);
+    CHECK(status.active == 3u && status.active_high_water == 3u);
+    CHECK(status.grains_dropped > 0u);
+    CHECK(status.grains_started + status.grains_dropped == 1u + (100u * 512u) / 480u);
+    Granular_SetMaxGrains(&engine, 8u);
+    for (unsigned half = 0u; half < 100u; ++half) {
+        CHECK(Granular_Render(&engine, stereo, 512u));
+    }
+    Granular_GetStatus(&engine, &status);
+    CHECK(status.active == 8u && status.active_high_water == 8u);
+    Granular_SetMaxGrains(&engine, 2u);
+    CHECK(Granular_Render(&engine, stereo, 512u));
+    Granular_GetStatus(&engine, &status);
+    CHECK(status.active <= 8u);
+    for (unsigned half = 0u; half < 100u; ++half) { /* 500 ms grains end within 47 halves */
+        CHECK(Granular_Render(&engine, stereo, 512u));
+    }
+    Granular_GetStatus(&engine, &status);
+    CHECK(status.active == 2u);
+}
+
 /* Without spray every grain starts at position. Spray stays within its share
  * of the clip around position; a full spray reaches every part of the clip. */
 static void test_position_and_spray(void)
@@ -274,6 +315,7 @@ int main(void)
     test_known_sample_steady();
     test_known_sample_pitch();
     test_bounded_grains();
+    test_grain_limit();
     test_position_and_spray();
     test_chunks_match();
     test_params_take_effect_at_render();

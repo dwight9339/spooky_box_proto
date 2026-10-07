@@ -593,17 +593,19 @@ item 16). Its controls are provisional and demo-only, and do not settle C-025.
   the position setting is a dim column. With no clip the matrix is dark. A session's
   recording ring still shows.
 
-`DEMO GRAIN` reports the voice, for example:
+`DEMO GRAIN` reports the voice, and `DEMO GRAIN MAX <n>` sets how many grains may sound at
+once (1 to 16; the image sets a default from the bench). `DEMO GRAIN RESET` clears the
+render maximum, the over-budget count and the grain high water. For example:
 
 ```text
-OK DEMO GRAIN VOICE=GRAIN PAGE=1 POS=500 SIZE_MS=80 DENSITY=20 PITCH=0 SPRAY=0 ENV=50 LEVEL=80 ACTIVE=2 HIGH=4/16 STARTED=1200 DROPPED=0 RENDERS=5600 RENDER_US_MAX=240 OVER_BUDGET=0 BUDGET_US=1500 GESTURES=35
+OK DEMO GRAIN VOICE=GRAIN PAGE=1 POS=500 SIZE_MS=80 DENSITY=20 PITCH=0 SPRAY=0 ENV=50 LEVEL=80 ACTIVE=2 HIGH=3/3 STARTED=1200 DROPPED=0 RENDERS=5600 RENDER_US_MAX=240 OVER_BUDGET=0 BUDGET_US=1500 GESTURES=35
 ```
 
 | Field | Meaning |
 | --- | --- |
 | `VOICE`, `PAGE` | `GRAIN` or `LOOP`; the Instrument page shown |
 | `POS` ... `LEVEL` | The parameters: position and spray in permille of the clip, size in ms, density in grains a second, pitch in semitones, envelope and level in percent |
-| `ACTIVE`, `HIGH`, `STARTED`, `DROPPED` | Grains sounding now; the most at once, of the limit; grains started; grains due while every voice was busy |
+| `ACTIVE`, `HIGH`, `STARTED`, `DROPPED` | Grains sounding now; the most at once since the last reset, of the grain limit; grains started; grains due while the limit was sounding |
 | `RENDERS`, `RENDER_US_MAX`, `OVER_BUDGET`, `BUDGET_US` | Monitor halves (512 frames, 10.7 ms) a voice rendered in the radio interrupt; the longest render; renders over the budget, counted, not cut short |
 | `GESTURES` | Encoder turns and Encoder 3 clicks the Instrument pages took |
 

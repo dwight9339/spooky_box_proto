@@ -18,6 +18,10 @@
  * took about 1.2 ms in the Debug image while recording (full_spooky_proto-akw).
  * A voice render over this is counted, not cut short. */
 #define CLIP_RENDER_BUDGET_US 1500U
+/* Grains that may sound at once. At the 64 MHz, cache-off clock a grain costs
+ * about 0.43 ms per radio half, and 16 grains (6.8 ms) overran the radio queue
+ * (p04.7 bench, 2026-10-07). Provisional until the bench sweep sets it. */
+#define CLIP_GRAIN_LIMIT 3U
 
 _Static_assert(CLIP_RATE_HZ == GRANULAR_SOURCE_RATE_HZ, "the voice reads the 24 kHz clip");
 
@@ -180,6 +184,7 @@ void DemoClip_Init(void)
 {
   ClipPlayer_Init(&player);
   Granular_Init(&engine, HAL_GetTick() ^ DWT->CYCCNT);
+  Granular_SetMaxGrains(&engine, CLIP_GRAIN_LIMIT);
 }
 
 void DemoClip_Expect(void)
@@ -261,12 +266,19 @@ void DemoClip_GetVoiceStatus(DemoVoiceStatus *out)
   out->grains_dropped = grains.grains_dropped;
   out->grains_active = grains.active;
   out->grains_high_water = grains.active_high_water;
+  out->max_grains = Granular_MaxGrains(&engine);
 }
 
 void DemoClip_ResetVoiceStats(void)
 {
   render_us_max = 0U;
   render_over_budget = 0U;
+  engine.status.active_high_water = 0U;
+}
+
+void DemoClip_SetMaxGrains(uint32_t max_grains)
+{
+  Granular_SetMaxGrains(&engine, max_grains);
 }
 
 void DemoClip_GetStatus(DemoClipStatus *out)

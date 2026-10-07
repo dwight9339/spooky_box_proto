@@ -1,6 +1,7 @@
 #include "demo_field.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "app_events.h"
@@ -1188,7 +1189,8 @@ static bool HandleClip(const char *command)
 }
 
 /* `DEMO GRAIN`: the Instrument voice, its page and parameters, and its render
- * cost in the radio interrupt; `DEMO GRAIN RESET` clears the render maximum.
+ * cost in the radio interrupt; `DEMO GRAIN RESET` clears the render maximum;
+ * `DEMO GRAIN MAX <n>` sets the grain limit (1 to 16), for bench sweeps.
  * `DEMO VOICE GRAIN|LOOP` picks the voice (LOOP is p04.6's plain loop). */
 static bool HandleGrain(const char *command)
 {
@@ -1208,11 +1210,16 @@ static bool HandleGrain(const char *command)
   {
     DemoClip_ResetVoiceStats();
   }
+  else if ((strncmp(command, "DEMO GRAIN MAX ", 15U) == 0) && (command[15] >= '1') &&
+           (command[15] <= '9'))
+  {
+    DemoClip_SetMaxGrains((uint32_t)strtoul(&command[15], NULL, 10));
+  }
   else if (strcmp(command, "DEMO GRAIN") != 0)
   {
     if ((strncmp(command, "DEMO VOICE", 10U) == 0) || (strncmp(command, "DEMO GRAIN", 10U) == 0))
     {
-      (void)UsbTest_SendText("ERR usage: DEMO GRAIN [RESET] | DEMO VOICE GRAIN|LOOP\r\n");
+      (void)UsbTest_SendText("ERR usage: DEMO GRAIN [RESET | MAX <n>] | DEMO VOICE GRAIN|LOOP\r\n");
       return true;
     }
     return false;
@@ -1229,7 +1236,7 @@ static bool HandleGrain(const char *command)
                  (int)params->pitch_semitones, (unsigned)params->spray_permille,
                  (unsigned)params->envelope_percent,
                  (unsigned)params->level_percent, (unsigned long)voice.grains_active,
-                 (unsigned long)voice.grains_high_water, (unsigned)GRANULAR_MAX_GRAINS,
+                 (unsigned long)voice.grains_high_water, (unsigned)voice.max_grains,
                  (unsigned long)voice.grains_started, (unsigned long)voice.grains_dropped,
                  (unsigned long)voice.renders, (unsigned long)voice.render_us_max,
                  (unsigned long)voice.render_over_budget,

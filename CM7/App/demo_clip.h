@@ -81,7 +81,8 @@ typedef struct
   uint32_t render_over_budget;/* renders longer than render_budget_us */
   uint32_t render_budget_us;
   uint32_t grains_started;
-  uint32_t grains_dropped;    /* due while all GRANULAR_MAX_GRAINS voices played */
+  uint32_t grains_dropped;    /* due while max_grains were sounding */
+  uint32_t max_grains;        /* the voice's grain limit */
   uint32_t grains_active;
   uint32_t grains_high_water;
 } DemoVoiceStatus;
@@ -106,8 +107,10 @@ void DemoClip_SetGrainParams(const GranularParams *params);
 /* Sounding grains, for the matrix (Granular_GetGrains). */
 uint32_t DemoClip_GetGrains(uint16_t *position_permille, uint8_t *envelope, uint32_t capacity);
 void DemoClip_GetVoiceStatus(DemoVoiceStatus *status);
-/* Clears the render maximum and the over-budget count. */
+/* Clears the render maximum, the over-budget count and the grain high water. */
 void DemoClip_ResetVoiceStats(void);
+/* The granular voice's grain limit (Granular_SetMaxGrains). */
+void DemoClip_SetMaxGrains(uint32_t max_grains);
 const char *DemoClip_StateName(uint8_t state);
 const char *DemoClip_FaultName(uint8_t fault);
 

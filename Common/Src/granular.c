@@ -183,6 +183,7 @@ void Granular_Init(GranularEngine *engine, uint32_t seed)
   }
   (void)memset(engine, 0, sizeof(*engine));
   engine->random = (seed != 0U) ? seed : 0x2545F491U;
+  engine->max_grains = GRANULAR_MAX_GRAINS;
   Granular_DefaultParams(&engine->params);
   Convert(&engine->params, 0U, &engine->control);
 }
@@ -236,6 +237,21 @@ void Granular_Stop(GranularEngine *engine)
   }
 }
 
+void Granular_SetMaxGrains(GranularEngine *engine, uint32_t max_grains)
+{
+  if (engine == NULL)
+  {
+    return;
+  }
+  engine->max_grains = (max_grains < 1U) ? 1U
+                       : (max_grains > GRANULAR_MAX_GRAINS) ? GRANULAR_MAX_GRAINS : max_grains;
+}
+
+uint32_t Granular_MaxGrains(const GranularEngine *engine)
+{
+  return (engine != NULL) ? engine->max_grains : 0U;
+}
+
 bool Granular_Active(const GranularEngine *engine)
 {
   return (engine != NULL) && engine->active;
@@ -278,28 +294,36 @@ static uint32_t GrainStart(GranularEngine *engine, uint32_t count)
 
 static void StartGrain(GranularEngine *engine, uint32_t count)
 {
+  GranularGrain *grain = NULL;
+  uint32_t sounding = 0U;
   uint32_t index;
 
   for (index = 0U; index < GRANULAR_MAX_GRAINS; ++index)
   {
-    GranularGrain *grain = &engine->grains[index];
-
-    if (!grain->active)
+    if (engine->grains[index].active)
     {
-      grain->start = GrainStart(engine, count);
-      grain->index = grain->start;
-      grain->fraction = 0U;
-      grain->elapsed = 0U;
-      grain->length = engine->control.length;
-      grain->ramp = engine->control.ramp;
-      grain->increment = engine->control.increment;
-      grain->active = true;
-      engine->status.last_start = grain->start;
-      ++engine->status.grains_started;
-      return;
+      ++sounding;
+    }
+    else if (grain == NULL)
+    {
+      grain = &engine->grains[index];
     }
   }
-  ++engine->status.grains_dropped;
+  if ((grain == NULL) || (sounding >= engine->max_grains))
+  {
+    ++engine->status.grains_dropped;
+    return;
+  }
+  grain->start = GrainStart(engine, count);
+  grain->index = grain->start;
+  grain->fraction = 0U;
+  grain->elapsed = 0U;
+  grain->length = engine->control.length;
+  grain->ramp = engine->control.ramp;
+  grain->increment = engine->control.increment;
+  grain->active = true;
+  engine->status.last_start = grain->start;
+  ++engine->status.grains_started;
 }
 
 static int32_t Envelope(const GranularGrain *grain, uint32_t elapsed)
