@@ -12,6 +12,10 @@
  *   timeouts as one tick event posted only when one is due (decision 0007).
  * - Context commands go through the shared command policy (decision 0008) to
  *   Classic, the Radio machine (band menu) and the Session machine (prompt).
+ * - The C-010 chord saves and loads the Instrument clip (demo_clip.c, p04.6).
+ *   Instrument shows the clip as it saves, loads and plays; a refused or failed
+ *   save or load sends Context a Shift+B0 gesture (the C-028 path back to Field)
+ *   and shows the fault. The session prompt is refused in Instrument.
  * - The OLED (demo_view.c), the button and encoder lights (demo_lights.c) render
  *   published state; the matrix is matrix_adapter.c.
  *
@@ -43,6 +47,9 @@ void DemoField_OnSessionEvent(SesPublished event);
 void DemoField_OnSessionStateChanged(void);
 /* The final outcome of a capture save (demo_rolling.c): a DemoSaveOutcome. */
 void DemoField_OnSaveOutcome(uint8_t outcome);
+/* The C-010 clip is READY or FAILED (demo_clip.c): a DemoClipState and, for
+ * FAILED, a DemoClipFault. A failure returns Instrument to Field (p04.6). */
+void DemoField_OnClipOutcome(uint8_t state, uint8_t fault);
 /* Every Radio machine answer (radio_adapter.c). */
 void DemoField_OnRadioAnswer(RadPublished event, const RadCommand *command);
 
@@ -50,7 +57,8 @@ void DemoField_OnRadioAnswer(RadPublished event, const RadCommand *command);
 bool DemoField_ClassicActive(void);
 
 /* `DEMO` and `DEMO STATUS` reply `OK DEMO ...` (counters for bench evidence);
- * `ROLL`, `ROLL ON|OFF` and `ROLL SAVE` control and report rolling capture. */
+ * `ROLL`, `ROLL ON|OFF` and `ROLL SAVE` control and report rolling capture;
+ * `DEMO CLIP` reports the Instrument clip. */
 bool DemoField_HandleCommand(const char *command);
 
 #endif /* SPOOKY_DEMO_FIELD_H */

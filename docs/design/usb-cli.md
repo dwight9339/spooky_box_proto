@@ -516,7 +516,7 @@ The demo image keeps a rolling window of the last minute outside sessions
 
 `ROLL` (or `ROLL STATUS`) reports the window and its counters. `ROLL OFF` stops it and
 frees the card for `SD` and `WAV` commands, and `ROLL ON` lets it start again. `ROLL
-OFF` is refused while a save is in progress.
+OFF` is refused while a save or a clip load is in progress.
 
 ```text
 OK ROLL STATE=RUNNING ENABLED=1 RETAINED_MS=65536 SEGMENTS=14 ROTATIONS=13 ROTATE_MS_MAX=40 STEP_MS_MAX=31 WRITE_MS_MAX=27 QUEUES=1,1/8 BLOCKS=880 STARTS=1 FAULTS=0 RECLAIMED=1 ALLOC_FAIL=0 SAVE=SAVED SAVES=1 FAILED=0 BUSY=0 UNAVAILABLE=0 SAVE_MS_MAX=420 LAST=C001 LAST_FRAMES=2883584
@@ -532,6 +532,47 @@ OK ROLL STATE=RUNNING ENABLED=1 RETAINED_MS=65536 SEGMENTS=14 ROTATIONS=13 ROTAT
 | `RECLAIMED`, `ALLOC_FAIL` | Old segments overwritten; times no segment was free |
 | `SAVE`, `SAVES`, `FAILED`, `BUSY`, `UNAVAILABLE`, `SAVE_MS_MAX` | Latest outcome and the count of each; longest save from request to commit |
 | `LAST`, `LAST_FRAMES` | The newest capture committed since boot (`C000` for none) and its frames |
+
+The demo image's C-010 chord takes a moment from Field into Instrument
+(`full_spooky_proto-p04.6`, decision 0011 item 15). Like the rest of the demo, this is
+demo-only behavior.
+
+- **The chord.** Shift plus Buttons 0 and 1 outside a session saves the rolling window,
+  switches to Instrument and loads a clip from that save. While the save commits,
+  Instrument shows `SAVING`. While the clip loads, it shows `LOADING`.
+- **The clip.** The clip is the last 3 s before the save point (or less, if less was
+  held): the mean of the two radio channels, filtered and decimated to 24 kHz, 16-bit,
+  at most 144,000 bytes in AXI SRAM. It is read from the newest one or two segments of
+  the committed capture, 2,048 frames per step, between the rolling stream's block
+  writes.
+- **Playback.** A loaded clip plays as a plain loop on the headphones in place of the
+  radio while Instrument is shown. Instrument shows the clip's length and capture.
+  The recorder still captures the raw radio channels unchanged.
+- **Failure.** If the save is busy, unavailable or fails, or the load fails, the clip is
+  not shown or played. Instrument returns to Field by itself and the display shows
+  the reason (`CLIP: SAVE BUSY`, `CLIP: NO BUFFER`, `CLIP: SAVE FAILED` or
+  `CLIP LOAD FAILED`). A new chord replaces the clip, and a save or a load in progress
+  makes another save busy.
+- **Back to Field and sessions.** Shift plus Button 0 (C-028) returns to Field and stops
+  the loop. The clip stays loaded for the next visit. Holding Button 0 for a session in
+  Instrument is refused with `SESSION: FIELD ONLY`. During a session the chord saves
+  nothing (rolling capture is off) and the mode switch is rejected.
+
+`DEMO CLIP` reports the clip, for example:
+
+```text
+OK DEMO CLIP STATE=READY FAULT=NONE CAPTURE=C004 SAMPLES=72000 MS=3000 PLAYING=1 LOOPS=12 LOADS=3 FAILURES=1 LOAD_MS=930 LOAD_MS_MAX=1010 STEP_MS_MAX=6 RETURNS=1 RETURNS_REFUSED=0 PROMPTS_REFUSED=0
+```
+
+| Field | Meaning |
+| --- | --- |
+| `STATE`, `FAULT` | `NONE`, `SAVING`, `LOADING`, `READY` or `FAILED`; the latest failure's reason (`SAVE_BUSY`, `SAVE_UNAVAILABLE`, `SAVE_FAILED`, `LOAD_FAILED`) |
+| `CAPTURE`, `SAMPLES`, `MS` | Capture the clip comes from; its length at 24 kHz and in milliseconds, while ready |
+| `PLAYING`, `LOOPS` | The loop is on the monitor; passes of the current clip |
+| `LOADS`, `FAILURES` | Clips loaded and chords that ended in a failure since boot |
+| `LOAD_MS`, `LOAD_MS_MAX`, `STEP_MS_MAX` | Latest and longest load from the committed save to ready; longest single load step |
+| `RETURNS`, `RETURNS_REFUSED` | Shift plus Button 0 gestures sent to return to Field after a failure; posts the queue refused, which are retried |
+| `PROMPTS_REFUSED` | Session prompts refused in Instrument |
 
 `UI DISPLAY TEST` draws a static test image with the confirmed zero-column mapping
 and reports:

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "demo_clip.h"
 #include "demo_field.h"
 #include "ff.h"
 #include "main.h"
@@ -118,6 +119,8 @@ static void Outcome(DemoSaveOutcome outcome)
 static void EndSave(DemoSaveOutcome outcome)
 {
   const uint32_t elapsed = Now() - save_started_ms;
+  const uint32_t segments = catalog.pinned_count;
+  const uint32_t capture = capture_number;
 
   RollingCatalog_SaveDone(&catalog);
   save_state = SAVE_IDLE;
@@ -140,6 +143,18 @@ static void EndSave(DemoSaveOutcome outcome)
          (outcome == DEMO_SAVE_SAVED) ? "committed" : "failed", capture_name,
          (unsigned long)elapsed);
   Outcome(outcome);
+  /* The C-010 chord's clip loads from the capture just committed (p04.6). */
+  if (DemoClip_Waiting())
+  {
+    if (outcome == DEMO_SAVE_SAVED)
+    {
+      DemoClip_Begin(capture, capture_name, saved_frames, segments);
+    }
+    else
+    {
+      DemoClip_Fail(DEMO_CLIP_FAULT_SAVE_FAILED);
+    }
+  }
 }
 
 /* Opens the next segment: a free slot, preallocated contiguously when its file is
@@ -247,6 +262,10 @@ static bool CloseStep(void)
       status.save_active = false;
       ++status.saves_unavailable;
       Outcome(DEMO_SAVE_UNAVAILABLE);
+      if (DemoClip_Waiting())
+      {
+        DemoClip_Fail(DEMO_CLIP_FAULT_SAVE_UNAVAILABLE);
+      }
     }
   }
   segment_state = SEGMENT_OPEN_PENDING;
@@ -483,6 +502,11 @@ bool DemoRolling_Step(void)
       {
         SaveStep();
       }
+      else if ((save_state == SAVE_IDLE) && DemoClip_Loading())
+      {
+        DemoClip_Step(); /* timed by demo_clip.c; a failure ends only the load */
+        return true;
+      }
       else
       {
         return true; /* nothing to do: not a step */
@@ -498,7 +522,7 @@ bool DemoRolling_Step(void)
 
 bool DemoRolling_Stop(void)
 {
-  if (save_state != SAVE_IDLE)
+  if (DemoRolling_SaveActive())
   {
     return false;
   }
@@ -524,6 +548,7 @@ void DemoRolling_Fault(const char *reason)
   {
     EndSave(DEMO_SAVE_FAILED);
   }
+  DemoClip_Abort();
   RollingCatalog_Discard(&catalog);
   if (StorageService_Owner() == STORAGE_OWNER_RECORDER)
   {
@@ -537,7 +562,7 @@ void DemoRolling_Fault(const char *reason)
 
 bool DemoRolling_SaveActive(void)
 {
-  return save_state != SAVE_IDLE;
+  return (save_state != SAVE_IDLE) || DemoClip_Loading();
 }
 
 void DemoRolling_SetState(DemoRollState state)
@@ -549,7 +574,7 @@ void DemoRolling_SetState(DemoRollState state)
 
 DemoSaveOutcome DemoRolling_RequestSave(void)
 {
-  if (save_state != SAVE_IDLE)
+  if (DemoRolling_SaveActive())
   {
     ++status.saves_busy;
     status.save = (uint8_t)DEMO_SAVE_BUSY;

@@ -214,6 +214,9 @@ if(SPOOKY_DEMO)
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_field.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/rolling_catalog.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_rolling.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/clip_decimator.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/clip_player.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_clip.c
     )
 endif()
 

@@ -106,6 +106,12 @@ spooky_test(classic_service_test classic_service_test.c ../CM7/App/classic_servi
 spooky_test(demo_view_test demo_view_test.c ../CM7/App/demo_view.c)
 spooky_test(demo_lights_test demo_lights_test.c ../CM7/App/demo_lights.c)
 spooky_test(rolling_catalog_test rolling_catalog_test.c ../CM7/App/rolling_catalog.c)
+# The Instrument clip: range, decimation and the plain loop (p04.6).
+spooky_test(clip_decimator_test clip_decimator_test.c ../CM7/App/clip_decimator.c)
+if(NOT MSVC)
+    target_link_libraries(clip_decimator_test PRIVATE m)
+endif()
+spooky_test(clip_player_test clip_player_test.c ../CM7/App/clip_player.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)
