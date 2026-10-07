@@ -21,7 +21,8 @@ static void format(DemoParam param, char *text)
 }
 
 /* Decision 0011 item 16: page 1 position, size, density, pitch; page 2 spray,
- * slices, envelope, level; Encoder 3 click wraps (C-024). */
+ * nothing (slices removed, 0020 item 6), envelope, level; Encoder 3 click wraps
+ * (C-024). */
 static void test_pages(void)
 {
     DemoInstrument_Init(&instrument);
@@ -31,7 +32,7 @@ static void test_pages(void)
     CHECK(DemoInstrument_Param(0u, 2u) == DEMO_PARAM_DENSITY);
     CHECK(DemoInstrument_Param(0u, 3u) == DEMO_PARAM_PITCH);
     CHECK(DemoInstrument_Param(1u, 0u) == DEMO_PARAM_SPRAY);
-    CHECK(DemoInstrument_Param(1u, 1u) == DEMO_PARAM_SLICES);
+    CHECK(DemoInstrument_Param(1u, 1u) == DEMO_PARAM_COUNT);
     CHECK(DemoInstrument_Param(1u, 2u) == DEMO_PARAM_ENVELOPE);
     CHECK(DemoInstrument_Param(1u, 3u) == DEMO_PARAM_LEVEL);
     CHECK(DemoInstrument_Param(2u, 0u) == DEMO_PARAM_COUNT);
@@ -89,14 +90,15 @@ static void test_ranges(void)
     CHECK(instrument.params.level_percent == 100u);
     CHECK(DemoInstrument_Turn(&instrument, 3u, -30));
     CHECK(instrument.params.level_percent == 0u);
+    CHECK(strcmp(DemoInstrument_Name(DEMO_PARAM_COUNT), "-") == 0);
+    CHECK(!DemoInstrument_Turn(&instrument, 1u, 5)); /* the unassigned slot */
     CHECK(DemoInstrument_Turn(&instrument, 2u, 30));
     CHECK(instrument.params.envelope_percent == 100u);
 }
 
-/* Sizes and densities step through their tables; slices off, 4, 8, 16. */
+/* Sizes and densities step through their tables. */
 static void test_steps(void)
 {
-    static const uint8_t slices[] = {4u, 8u, 16u, 16u};
     char text[16];
 
     DemoInstrument_Init(&instrument);
@@ -123,17 +125,6 @@ static void test_steps(void)
     instrument.params.density = 7u;
     CHECK(DemoInstrument_Turn(&instrument, 2u, 1));
     CHECK(instrument.params.density == 10u);
-    DemoInstrument_NextPage(&instrument);
-    format(DEMO_PARAM_SLICES, text);
-    CHECK(strcmp(text, "OFF") == 0);
-    for (unsigned turn = 0u; turn < 4u; ++turn) {
-        CHECK(DemoInstrument_Turn(&instrument, 1u, 1) == (turn < 3u));
-        CHECK(instrument.params.slices == slices[turn]);
-    }
-    format(DEMO_PARAM_SLICES, text);
-    CHECK(strcmp(text, "16") == 0);
-    CHECK(DemoInstrument_Turn(&instrument, 1u, -9));
-    CHECK(instrument.params.slices == 0u);
 }
 
 /* Every value fits beside its name on one 21-character line. */
@@ -147,7 +138,6 @@ static void test_formats_fit(void)
     instrument.params.density = 100u;
     instrument.params.pitch_semitones = -24;
     instrument.params.spray_permille = 1000u;
-    instrument.params.slices = 16u;
     instrument.params.envelope_percent = 100u;
     instrument.params.level_percent = 100u;
     for (unsigned param = 0u; param < DEMO_PARAM_COUNT; ++param) {
@@ -155,7 +145,7 @@ static void test_formats_fit(void)
         CHECK(strlen(text) <= 7u);
     }
     format(DEMO_PARAM_COUNT, text);
-    CHECK(strcmp(text, "?") == 0);
+    CHECK(text[0] == '\0');
     DemoInstrument_FormatValue(NULL, DEMO_PARAM_SIZE, text, sizeof(text));
     CHECK(text[0] == '\0');
 }

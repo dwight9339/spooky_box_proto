@@ -64,23 +64,13 @@ static void test_clamp(void)
     params.density = 500u;
     params.pitch_semitones = -40;
     params.spray_permille = 2000u;
-    params.slices = 3u;
     params.envelope_percent = 150u;
     params.level_percent = 101u;
     CHECK(!Granular_ClampParams(&params));
     CHECK(params.position_permille == 1000u && params.size_ms == GRANULAR_SIZE_MS_MIN);
     CHECK(params.density == GRANULAR_DENSITY_MAX && params.pitch_semitones == GRANULAR_PITCH_MIN);
-    CHECK(params.spray_permille == 1000u && params.slices == 4u);
+    CHECK(params.spray_permille == 1000u);
     CHECK(params.envelope_percent == 100u && params.level_percent == 100u);
-    params.slices = 5u;
-    Granular_ClampParams(&params);
-    CHECK(params.slices == 8u);
-    params.slices = 9u;
-    Granular_ClampParams(&params);
-    CHECK(params.slices == 16u);
-    params.slices = 200u;
-    Granular_ClampParams(&params);
-    CHECK(params.slices == 16u);
     params.pitch_semitones = 30;
     Granular_ClampParams(&params);
     CHECK(params.pitch_semitones == GRANULAR_PITCH_MAX);
@@ -160,15 +150,14 @@ static void test_bounded_grains(void)
     }
 }
 
-/* Slices snap grain starts to the clip's quarters, eighths or sixteenths; with
- * spray, around position, several slices are picked. */
-static void test_slices_and_spray(void)
+/* Without spray every grain starts at position. Spray stays within its share
+ * of the clip around position; a full spray reaches every part of the clip. */
+static void test_position_and_spray(void)
 {
     GranularParams params = params_with(100u, 10u, 0u);
     GranularStatus status;
     bool seen[4] = {false, false, false, false};
 
-    params.slices = 4u;
     params.position_permille = 600u;
     Granular_Init(&engine, 5u);
     Granular_SetParams(&engine, &params);
@@ -176,27 +165,25 @@ static void test_slices_and_spray(void)
     for (unsigned half = 0u; half < 20u; ++half) {
         Granular_Render(&engine, stereo, 512u);
         Granular_GetStatus(&engine, &status);
-        CHECK(status.last_start == 500u);
+        CHECK(status.last_start == 600u);
     }
-    params.spray_permille = 1000u;
-    Granular_SetParams(&engine, &params);
-    for (unsigned half = 0u; half < 400u; ++half) {
-        Granular_Render(&engine, stereo, 480u); /* one grain per render */
-        Granular_GetStatus(&engine, &status);
-        CHECK((status.last_start % 250u) == 0u);
-        seen[(status.last_start / 250u) % 4u] = true;
-    }
-    CHECK(seen[0] && seen[1] && seen[2] && seen[3]);
-    /* Unquantized spray stays within its share of the clip around position. */
-    params.slices = 0u;
     params.position_permille = 500u;
     params.spray_permille = 200u;
     Granular_SetParams(&engine, &params);
     for (unsigned half = 0u; half < 400u; ++half) {
-        Granular_Render(&engine, stereo, 480u);
+        Granular_Render(&engine, stereo, 480u); /* one grain per render */
         Granular_GetStatus(&engine, &status);
         CHECK(status.last_start >= 400u && status.last_start <= 600u);
     }
+    params.spray_permille = 1000u;
+    Granular_SetParams(&engine, &params);
+    for (unsigned half = 0u; half < 400u; ++half) {
+        Granular_Render(&engine, stereo, 480u);
+        Granular_GetStatus(&engine, &status);
+        CHECK(status.last_start < 1000u);
+        seen[(status.last_start / 250u) % 4u] = true;
+    }
+    CHECK(seen[0] && seen[1] && seen[2] && seen[3]);
 }
 
 /* Interrupt halves split the stream anywhere; the output does not change. */
@@ -287,7 +274,7 @@ int main(void)
     test_known_sample_steady();
     test_known_sample_pitch();
     test_bounded_grains();
-    test_slices_and_spray();
+    test_position_and_spray();
     test_chunks_match();
     test_params_take_effect_at_render();
     test_saturates();

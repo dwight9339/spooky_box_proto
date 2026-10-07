@@ -6,8 +6,9 @@
  * full_spooky_proto-p04.7). Provisional: these assignments do not settle C-025.
  *
  * - Page 1: position, grain size, density and pitch on Encoders 0-3.
- * - Page 2: spray, slice quantization (off, 4, 8, 16: the chopped loop),
- *   envelope and level on Encoders 0-3.
+ * - Page 2: spray, nothing, envelope and level on Encoders 0-3. Slice
+ *   quantization was removed (decision 0020 item 6); its Encoder 1 slot is
+ *   unassigned.
  * - An Encoder 3 click advances the page and wraps (C-024).
  * - Button 1 has no Instrument function (C-029 stays Proposed).
  *
@@ -31,7 +32,6 @@ typedef enum
   DEMO_PARAM_DENSITY,
   DEMO_PARAM_PITCH,
   DEMO_PARAM_SPRAY,
-  DEMO_PARAM_SLICES,
   DEMO_PARAM_ENVELOPE,
   DEMO_PARAM_LEVEL,
   DEMO_PARAM_COUNT
@@ -51,10 +51,10 @@ bool DemoInstrument_Turn(DemoInstrument *instrument, uint8_t encoder, int32_t de
 void DemoInstrument_NextPage(DemoInstrument *instrument);
 /* The parameter an encoder adjusts on a page; DEMO_PARAM_COUNT for none. */
 DemoParam DemoInstrument_Param(uint8_t page, uint8_t encoder);
-/* Short upper-case name, at most 5 characters. */
+/* Short upper-case name, at most 5 characters; "-" for an unassigned slot. */
 const char *DemoInstrument_Name(DemoParam param);
 /* The value with its unit, at most 7 characters: "45%", "120MS", "20/S",
- * "+7ST", "OFF", "16". */
+ * "+7ST"; empty for an unassigned slot. */
 void DemoInstrument_FormatValue(const GranularParams *params, DemoParam param, char *text,
                                 size_t size);
 

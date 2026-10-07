@@ -1220,14 +1220,14 @@ static bool HandleGrain(const char *command)
   DemoClip_GetVoiceStatus(&voice);
   (void)snprintf(response, sizeof(response),
                  "OK DEMO GRAIN VOICE=%s PAGE=%u POS=%u SIZE_MS=%u DENSITY=%u PITCH=%d "
-                 "SPRAY=%u SLICES=%u ENV=%u LEVEL=%u ACTIVE=%lu HIGH=%lu/%u STARTED=%lu "
+                 "SPRAY=%u ENV=%u LEVEL=%u ACTIVE=%lu HIGH=%lu/%u STARTED=%lu "
                  "DROPPED=%lu RENDERS=%lu RENDER_US_MAX=%lu OVER_BUDGET=%lu BUDGET_US=%lu "
                  "GESTURES=%lu\r\n",
                  (voice.voice == (uint8_t)DEMO_VOICE_LOOP) ? "LOOP" : "GRAIN",
                  (unsigned)instrument.page + 1U, (unsigned)params->position_permille,
                  (unsigned)params->size_ms, (unsigned)params->density,
                  (int)params->pitch_semitones, (unsigned)params->spray_permille,
-                 (unsigned)params->slices, (unsigned)params->envelope_percent,
+                 (unsigned)params->envelope_percent,
                  (unsigned)params->level_percent, (unsigned long)voice.grains_active,
                  (unsigned long)voice.grains_high_water, (unsigned)GRANULAR_MAX_GRAINS,
                  (unsigned long)voice.grains_started, (unsigned long)voice.grains_dropped,

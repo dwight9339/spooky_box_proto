@@ -51,7 +51,6 @@ void Granular_DefaultParams(GranularParams *params)
   params->density = 20U;
   params->pitch_semitones = 0;
   params->spray_permille = 0U;
-  params->slices = 0U;
   params->envelope_percent = 50U;
   params->level_percent = 80U;
 }
@@ -74,7 +73,6 @@ static uint32_t Clamp(uint32_t value, uint32_t low, uint32_t high, bool *unchang
 bool Granular_ClampParams(GranularParams *params)
 {
   bool unchanged = true;
-  uint8_t slices;
 
   if (params == NULL)
   {
@@ -96,9 +94,6 @@ bool Granular_ClampParams(GranularParams *params)
     unchanged = false;
   }
   params->spray_permille = (uint16_t)Clamp(params->spray_permille, 0U, 1000U, &unchanged);
-  slices = params->slices;
-  params->slices = (slices == 0U) ? 0U : (slices <= 4U) ? 4U : (slices <= 8U) ? 8U : 16U;
-  unchanged = unchanged && (params->slices == slices);
   params->envelope_percent = (uint8_t)Clamp(params->envelope_percent, 0U, 100U, &unchanged);
   params->level_percent = (uint8_t)Clamp(params->level_percent, 0U, 100U, &unchanged);
   return unchanged;
@@ -139,7 +134,6 @@ static void Convert(const GranularParams *params, uint32_t count, GranularContro
     control->position = count - 1U;
   }
   control->spray = (uint32_t)(((uint64_t)params->spray_permille * count) / 1000U);
-  control->slices = params->slices;
   control->length = (uint32_t)params->size_ms * GRANULAR_FRAMES_PER_MS;
   ramp = (control->length * params->envelope_percent) / 200U;
   if (ramp < GRANULAR_RAMP_MIN_FRAMES)
@@ -278,23 +272,8 @@ static uint32_t Wrap(int64_t value, uint32_t modulus)
 static uint32_t GrainStart(GranularEngine *engine, uint32_t count)
 {
   const GranularControl *control = &engine->control;
-  const uint32_t slice_length = (control->slices != 0U) ? (count / control->slices) : 0U;
 
-  if (slice_length == 0U)
-  {
-    return Wrap((int64_t)control->position + Spread(engine, control->spray), count);
-  }
-  {
-    uint32_t base = control->position / slice_length;
-    const uint32_t spread = (uint32_t)(((uint64_t)control->spray * control->slices +
-                                        (count / 2U)) / count);
-
-    if (base >= control->slices)
-    {
-      base = control->slices - 1U;
-    }
-    return Wrap((int64_t)base + Spread(engine, spread), control->slices) * slice_length;
-  }
+  return Wrap((int64_t)control->position + Spread(engine, control->spray), count);
 }
 
 static void StartGrain(GranularEngine *engine, uint32_t count)

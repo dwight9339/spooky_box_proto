@@ -580,10 +580,9 @@ item 16). Its controls are provisional and demo-only, and do not settle C-025.
 
 - **Page 1:** Encoders 0 to 3 set position (where grains start, in the clip), grain size
   (10 to 500 ms), density (1 to 100 grains a second) and pitch (±24 semitones).
-- **Page 2:** Encoders 0 to 3 set spray (random spread of grain starts, as a share of the
-  clip), slice quantization (off, 4, 8 or 16), envelope (2 ms ramps at 0 %, a triangle
-  at 100 %) and level. With slices on, grains start on slice boundaries, and spray picks
-  slices around the position: the chopped loop.
+- **Page 2:** Encoders 0, 2 and 3 set spray (random spread of grain starts, as a share of
+  the clip), envelope (2 ms ramps at 0 %, a triangle at 100 %) and level. Encoder 1 is
+  unassigned: slice quantization was removed (decision 0020 item 6).
 - **Page change and Button 1:** An Encoder 3 click (C-024) moves to the next page and
   wraps. Button 1 does nothing in Instrument.
 - **Display.** The display shows the page's four parameters, the clip and the number of
@@ -597,13 +596,13 @@ item 16). Its controls are provisional and demo-only, and do not settle C-025.
 `DEMO GRAIN` reports the voice, for example:
 
 ```text
-OK DEMO GRAIN VOICE=GRAIN PAGE=1 POS=500 SIZE_MS=80 DENSITY=20 PITCH=0 SPRAY=0 SLICES=0 ENV=50 LEVEL=80 ACTIVE=2 HIGH=4/16 STARTED=1200 DROPPED=0 RENDERS=5600 RENDER_US_MAX=240 OVER_BUDGET=0 BUDGET_US=1500 GESTURES=35
+OK DEMO GRAIN VOICE=GRAIN PAGE=1 POS=500 SIZE_MS=80 DENSITY=20 PITCH=0 SPRAY=0 ENV=50 LEVEL=80 ACTIVE=2 HIGH=4/16 STARTED=1200 DROPPED=0 RENDERS=5600 RENDER_US_MAX=240 OVER_BUDGET=0 BUDGET_US=1500 GESTURES=35
 ```
 
 | Field | Meaning |
 | --- | --- |
 | `VOICE`, `PAGE` | `GRAIN` or `LOOP`; the Instrument page shown |
-| `POS` ... `LEVEL` | The parameters: position and spray in permille of the clip, size in ms, density in grains a second, pitch in semitones, slices (0 for off), envelope and level in percent |
+| `POS` ... `LEVEL` | The parameters: position and spray in permille of the clip, size in ms, density in grains a second, pitch in semitones, envelope and level in percent |
 | `ACTIVE`, `HIGH`, `STARTED`, `DROPPED` | Grains sounding now; the most at once, of the limit; grains started; grains due while every voice was busy |
 | `RENDERS`, `RENDER_US_MAX`, `OVER_BUDGET`, `BUDGET_US` | Monitor halves (512 frames, 10.7 ms) a voice rendered in the radio interrupt; the longest render; renders over the budget, counted, not cut short |
 | `GESTURES` | Encoder turns and Encoder 3 clicks the Instrument pages took |

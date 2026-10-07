@@ -11,9 +11,8 @@
  *   position plus a random spray offset, circularly, at the pitch's rate, with
  *   linear interpolation, under a trapezoid envelope whose ramps grow with the
  *   envelope parameter (2 ms ramps at 0 %, a triangle at 100 %).
- * - Slice quantization (4, 8 or 16) snaps each grain start to a slice of the
- *   clip; with spray the slices are picked at random around position, which
- *   gives a chopped loop.
+ * - There is no slice parameter: slicing belongs to the Slicer engine
+ *   (decisions 0020 item 6 and 0021).
  * - The mix is scaled by level / sqrt(overlap), overlap being density times
  *   grain size, and saturates rather than wrapping.
  * - Bounded work: Render costs at most GRANULAR_MAX_GRAINS voice reads per
@@ -49,7 +48,6 @@ typedef struct
   uint16_t density;           /* grains per second, GRANULAR_DENSITY_MIN..MAX */
   int8_t pitch_semitones;     /* GRANULAR_PITCH_MIN..MAX */
   uint16_t spray_permille;    /* random start spread, a share of the clip, 0..1000 */
-  uint8_t slices;             /* 0 (off), 4, 8 or 16 */
   uint8_t envelope_percent;   /* 0 (2 ms ramps) .. 100 (triangle) */
   uint8_t level_percent;      /* 0..100 */
 } GranularParams;
@@ -59,7 +57,6 @@ typedef struct
 {
   uint32_t position;        /* clip sample */
   uint32_t spray;           /* clip samples */
-  uint32_t slices;
   uint32_t length;          /* grain length, output frames */
   uint32_t ramp;            /* envelope ramp, output frames */
   uint32_t interval;        /* output frames between grain starts */
@@ -110,10 +107,9 @@ _Static_assert((sizeof(GranularControl) % sizeof(uint32_t)) == 0U,
                "the control block stages as whole words");
 
 /* Default parameters: the middle of the clip, 80 ms grains, 20 per second, no
- * pitch change or spray, slices off, 50 % envelope, 80 % level. */
+ * pitch change or spray, 50 % envelope, 80 % level. */
 void Granular_DefaultParams(GranularParams *params);
-/* Clamps each parameter to its range and rounds slices to 0, 4, 8 or 16.
- * Returns true if nothing had to change. */
+/* Clamps each parameter to its range. Returns true if nothing had to change. */
 bool Granular_ClampParams(GranularParams *params);
 
 void Granular_Init(GranularEngine *engine, uint32_t seed);

@@ -12,11 +12,10 @@ static const uint16_t densities[] = {
   1U, 2U, 3U, 4U, 5U, 6U, 8U, 10U, 12U, 15U,
   20U, 25U, 30U, 40U, 50U, 60U, 80U, 100U
 };
-static const uint8_t slice_counts[] = {0U, 4U, 8U, 16U};
 
 static const DemoParam pages[DEMO_INSTRUMENT_PAGES][DEMO_INSTRUMENT_ENCODERS] = {
   {DEMO_PARAM_POSITION, DEMO_PARAM_SIZE, DEMO_PARAM_DENSITY, DEMO_PARAM_PITCH},
-  {DEMO_PARAM_SPRAY, DEMO_PARAM_SLICES, DEMO_PARAM_ENVELOPE, DEMO_PARAM_LEVEL}
+  {DEMO_PARAM_SPRAY, DEMO_PARAM_COUNT, DEMO_PARAM_ENVELOPE, DEMO_PARAM_LEVEL}
 };
 
 _Static_assert(sizeof(sizes_ms) / sizeof(sizes_ms[0]) == 18U, "size steps");
@@ -71,18 +70,6 @@ static uint32_t Stepped(uint32_t value, int32_t detents, const uint16_t *table, 
   return table[next];
 }
 
-static uint32_t SliceIndex(uint8_t slices)
-{
-  uint32_t index = 0U;
-
-  while ((index + 1U < (sizeof(slice_counts) / sizeof(slice_counts[0]))) &&
-         (slice_counts[index] < slices))
-  {
-    ++index;
-  }
-  return index;
-}
-
 bool DemoInstrument_Turn(DemoInstrument *instrument, uint8_t encoder, int32_t detents)
 {
   GranularParams *params;
@@ -116,11 +103,6 @@ bool DemoInstrument_Turn(DemoInstrument *instrument, uint8_t encoder, int32_t de
     case DEMO_PARAM_SPRAY:
       params->spray_permille = (uint16_t)Linear(params->spray_permille, detents, 10, 0, 1000);
       break;
-    case DEMO_PARAM_SLICES:
-      params->slices = slice_counts[Linear((int32_t)SliceIndex(params->slices), detents, 1, 0,
-                                           (int32_t)(sizeof(slice_counts) /
-                                                     sizeof(slice_counts[0])) - 1)];
-      break;
     case DEMO_PARAM_ENVELOPE:
       params->envelope_percent = (uint8_t)Linear(params->envelope_percent, detents, 5, 0, 100);
       break;
@@ -135,7 +117,6 @@ bool DemoInstrument_Turn(DemoInstrument *instrument, uint8_t encoder, int32_t de
          (params->size_ms != before.size_ms) || (params->density != before.density) ||
          (params->pitch_semitones != before.pitch_semitones) ||
          (params->spray_permille != before.spray_permille) ||
-         (params->slices != before.slices) ||
          (params->envelope_percent != before.envelope_percent) ||
          (params->level_percent != before.level_percent);
 }
@@ -160,9 +141,13 @@ DemoParam DemoInstrument_Param(uint8_t page, uint8_t encoder)
 const char *DemoInstrument_Name(DemoParam param)
 {
   static const char *const names[DEMO_PARAM_COUNT] = {
-    "POS", "SIZE", "DENS", "PITCH", "SPRAY", "SLICE", "ENV", "LEVEL"
+    "POS", "SIZE", "DENS", "PITCH", "SPRAY", "ENV", "LEVEL"
   };
 
+  if (param == DEMO_PARAM_COUNT)
+  {
+    return "-";
+  }
   return ((uint32_t)param < DEMO_PARAM_COUNT) ? names[param] : "?";
 }
 
@@ -195,16 +180,6 @@ void DemoInstrument_FormatValue(const GranularParams *params, DemoParam param, c
     case DEMO_PARAM_SPRAY:
       (void)snprintf(text, size, "%u%%", (unsigned)(params->spray_permille / 10U));
       break;
-    case DEMO_PARAM_SLICES:
-      if (params->slices == 0U)
-      {
-        (void)snprintf(text, size, "OFF");
-      }
-      else
-      {
-        (void)snprintf(text, size, "%u", (unsigned)params->slices);
-      }
-      break;
     case DEMO_PARAM_ENVELOPE:
       (void)snprintf(text, size, "%u%%", (unsigned)params->envelope_percent);
       break;
@@ -212,6 +187,8 @@ void DemoInstrument_FormatValue(const GranularParams *params, DemoParam param, c
       (void)snprintf(text, size, "%u%%", (unsigned)params->level_percent);
       break;
     case DEMO_PARAM_COUNT:
+      text[0] = '\0';
+      break;
     default:
       (void)snprintf(text, size, "?");
       break;
