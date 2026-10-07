@@ -1,6 +1,7 @@
 # 0022. Slicer engine: slice map, slice page and sequencer
 
-- **Status:** Accepted 2026-10-06
+- **Status:** Accepted 2026-10-06; the one-bar BPM on load in item 10 superseded by
+  [0026](0026-transport-tempo-and-fit-on-load.md)
 - **Date:** 2026-10-05
 - **Supersedes:** none
 - **Beads:** `full_spooky_proto-v7l.9` (decision)

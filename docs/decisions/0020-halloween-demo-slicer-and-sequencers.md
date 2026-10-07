@@ -1,6 +1,7 @@
 # 0020. Halloween demo Instrument scope: Slicer, sequencers and a tempo matrix
 
-- **Status:** Accepted 2026-10-05
+- **Status:** Accepted 2026-10-05; the one-bar BPM on load in item 9 superseded by
+  [0026](0026-transport-tempo-and-fit-on-load.md)
 - **Date:** 2026-10-05
 - **Supersedes:** [0011](0011-halloween-2026-demo-build.md) item 16 in part (slice
   quantization; its grain-activity matrix stays for Granular) and the checkpoint 3
