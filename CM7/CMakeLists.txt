@@ -218,6 +218,7 @@ if(SPOOKY_DEMO)
         ${CMAKE_CURRENT_SOURCE_DIR}/App/clip_player.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_clip.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_instrument.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_sequencer.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/grain_matrix.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/transport.c

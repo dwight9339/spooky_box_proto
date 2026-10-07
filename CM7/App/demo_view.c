@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "demo_instrument.h"
+#include "demo_sequencer.h"
 
 #define GLYPH_WIDTH 5U
 #define CELL_WIDTH 6U
@@ -483,13 +484,27 @@ static void PromptScreen(const DemoViewModel *model, bool start)
  * with a length; a failed one is never shown as loaded (Principle II). */
 /* The granular voice's page (p04.7): the four encoders' parameters, then the
  * clip and the sounding grains. */
+/* "96" for a whole tempo, "96.5" otherwise. */
+static void FormatTempo(uint32_t bpm_x100, char *text, size_t size)
+{
+  if ((bpm_x100 % 100U) == 0U)
+  {
+    (void)snprintf(text, size, "%lu", (unsigned long)(bpm_x100 / 100U));
+  }
+  else
+  {
+    (void)snprintf(text, size, "%lu.%lu", (unsigned long)(bpm_x100 / 100U),
+                   (unsigned long)((bpm_x100 % 100U) / 10U));
+  }
+}
+
 static void GrainScreen(const DemoViewModel *model)
 {
   char text[LINE_CHARS + 8U];
   uint8_t encoder;
 
-  (void)snprintf(text, sizeof(text), "GRAIN %u/%u", (unsigned)model->instrument_page + 1U,
-                 (unsigned)DEMO_INSTRUMENT_PAGES);
+  (void)snprintf(text, sizeof(text), "GRAIN %u/%u%s", (unsigned)model->instrument_page + 1U,
+                 (unsigned)DEMO_INSTRUMENT_PAGES, model->seq_running ? " SEQ" : "");
   Header(model, text);
   for (encoder = 0U; encoder < DEMO_INSTRUMENT_ENCODERS; ++encoder)
   {
@@ -498,7 +513,17 @@ static void GrainScreen(const DemoViewModel *model)
 
     (void)snprintf(text, sizeof(text), "E%u %s", (unsigned)encoder, DemoInstrument_Name(param));
     Text(page, 0U, text);
-    DemoInstrument_FormatValue(&model->grain, param, text, sizeof(text));
+    if ((param == DEMO_PARAM_POSITION) && model->seq_running)
+    {
+      /* While the sequence drives position, the knob is an offset around 50 %
+       * (decision 0020 item 7, p04.14). */
+      (void)snprintf(text, sizeof(text), "%+d%%",
+                     ((int)model->grain.position_permille - 500) / 10);
+    }
+    else
+    {
+      DemoInstrument_FormatValue(&model->grain, param, text, sizeof(text));
+    }
     TextRight(page, text);
   }
   (void)snprintf(text, sizeof(text), "C%03lu %lu.%luS",
@@ -518,13 +543,144 @@ static void GrainScreen(const DemoViewModel *model)
   Rule(5U);
 }
 
+/* The view menu (p04.14), in the form of the Field menus (decision 0009). */
+static void ViewMenuScreen(const DemoViewModel *model)
+{
+  uint32_t item;
+
+  Header(model, "VIEW");
+  for (item = 0U; item < (uint32_t)DEMO_SEQ_ITEM_COUNT; ++item)
+  {
+    const uint8_t page = (uint8_t)(2U + item);
+
+    Text(page, 12U, DemoSequencer_ItemName((uint8_t)item));
+    if (item == model->seq_item)
+    {
+      Text(page, 0U, ">");
+      Invert(page);
+    }
+  }
+  Text(7U, 0U, "E0 SELECT  E1 BACK");
+}
+
+#define STEP_BAR_TOP_PAGE 2U
+#define STEP_BAR_PAGES 4U
+#define STEP_BAR_HEIGHT (STEP_BAR_PAGES * 8U)
+
+/* Sets the pixels of one column from y_top (inclusive) down to the bar's base. */
+static void BarColumn(uint32_t x, uint32_t y_top)
+{
+  uint32_t y;
+
+  for (y = y_top; y < STEP_BAR_HEIGHT; ++y)
+  {
+    frame[((STEP_BAR_TOP_PAGE + (y / 8U)) * DEMO_VIEW_WIDTH) + x] |= (uint8_t)(1U << (y % 8U));
+  }
+}
+
+/* The step view (p04.14): one 8-pixel column per step, a bar as tall as the
+ * step's clip position, filled when on and hollow when off; the playing step is
+ * marked above the bars and the selected step below them. */
+static void StepScreen(const DemoViewModel *model)
+{
+  char text[LINE_CHARS + 8U];
+  char tempo[12];
+  const uint32_t length = (model->seq_length > 16U) ? 16U : model->seq_length;
+  const bool editing = (model->seq_focus == DEMO_SEQ_FOCUS_STEP_EDIT) ||
+                       (model->seq_focus == DEMO_SEQ_FOCUS_SETTING_EDIT);
+  uint32_t step;
+
+  FormatTempo(model->seq_bpm_x100, tempo, sizeof(tempo));
+  (void)snprintf(text, sizeof(text), "SEQ %s %s", tempo,
+                 DemoSequencer_DivisionName(model->seq_steps_per_beat));
+  Header(model, text);
+  for (step = 0U; step < length; ++step)
+  {
+    const uint32_t x = step * 8U;
+    const uint32_t height = 1U + ((model->seq_values[step] * (STEP_BAR_HEIGHT - 1U)) / 1000U);
+    const uint32_t top = STEP_BAR_HEIGHT - height;
+    uint32_t column;
+
+    if ((model->seq_on_mask & (1U << step)) != 0U)
+    {
+      for (column = 1U; column <= 6U; ++column)
+      {
+        BarColumn(x + column, top);
+      }
+    }
+    else
+    {
+      BarColumn(x + 1U, top);
+      BarColumn(x + 6U, top);
+      for (column = 2U; column <= 5U; ++column)
+      {
+        frame[((STEP_BAR_TOP_PAGE + (top / 8U)) * DEMO_VIEW_WIDTH) + x + column] |=
+          (uint8_t)(1U << (top % 8U));
+        frame[((STEP_BAR_TOP_PAGE + STEP_BAR_PAGES - 1U) * DEMO_VIEW_WIDTH) + x + column] |=
+          0x80U;
+      }
+    }
+    if (step == model->seq_playhead)
+    {
+      for (column = 1U; column <= 6U; ++column)
+      {
+        frame[(1U * DEMO_VIEW_WIDTH) + x + column] |= 0xC0U;
+      }
+    }
+    if ((step == model->seq_step) && (model->seq_focus <= DEMO_SEQ_FOCUS_STEP_EDIT))
+    {
+      for (column = 1U; column <= 6U; ++column)
+      {
+        frame[(6U * DEMO_VIEW_WIDTH) + x + column] |= editing ? 0x0FU : 0x03U;
+      }
+    }
+  }
+  if (model->seq_focus <= DEMO_SEQ_FOCUS_STEP_EDIT)
+  {
+    const uint32_t selected = model->seq_step % 16U;
+
+    (void)snprintf(text, sizeof(text), "%s %02u %s %u%%", editing ? "EDIT" : "STEP",
+                   (unsigned)selected + 1U,
+                   ((model->seq_on_mask & (1U << selected)) != 0U) ? "ON" : "OFF",
+                   (unsigned)(model->seq_values[selected] / 10U));
+  }
+  else
+  {
+    const bool tempo_selected = model->seq_setting == DEMO_SEQ_SETTING_TEMPO;
+
+    (void)snprintf(text, sizeof(text), "%sTEMPO %s %sDIV %s", tempo_selected ? ">" : " ",
+                   tempo, tempo_selected ? " " : ">",
+                   DemoSequencer_DivisionName(model->seq_steps_per_beat));
+  }
+  Text(7U, 0U, text);
+  if (model->seq_focus <= DEMO_SEQ_FOCUS_STEP_EDIT)
+  {
+    TextRight(7U, model->seq_running ? "PLAY" : "STOP");
+  }
+  if (editing)
+  {
+    Invert(7U);
+  }
+}
+
 static void InstrumentScreen(const DemoViewModel *model)
 {
   char text[LINE_CHARS + 8U];
 
   if ((model->clip == DEMO_CLIP_VIEW_READY) && !model->voice_loop)
   {
-    GrainScreen(model);
+    if (model->seq_view == DEMO_SEQ_VIEW_MENU)
+    {
+      ViewMenuScreen(model);
+    }
+    else if (model->seq_view == DEMO_SEQ_VIEW_STEPS)
+    {
+      StepScreen(model);
+    }
+    else
+    {
+      GrainScreen(model);
+    }
     return;
   }
   Header(model, "INSTRUMENT");

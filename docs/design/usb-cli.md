@@ -607,9 +607,53 @@ OK DEMO GRAIN VOICE=GRAIN PAGE=1 POS=500 SIZE_MS=80 DENSITY=20 PITCH=0 SPRAY=0 E
 | `POS` ... `LEVEL` | The parameters: position and spray in permille of the clip, size in ms, density in grains a second, pitch in semitones, envelope and level in percent |
 | `ACTIVE`, `HIGH`, `STARTED`, `DROPPED` | Grains sounding now; the most at once since the last reset, of the grain limit; grains started; grains due while the limit was sounding |
 | `RENDERS`, `RENDER_US_MAX`, `OVER_BUDGET`, `BUDGET_US` | Monitor halves (512 frames, 10.7 ms) a voice rendered in the radio interrupt; the longest render; renders over the budget, counted, not cut short |
-| `GESTURES` | Encoder turns and Encoder 3 clicks the Instrument pages took |
+| `GESTURES` | Encoder gestures the Instrument pages, the view menu and the step view took |
 
-`DEMO GRAIN RESET` clears `RENDER_US_MAX` and `OVER_BUDGET`.
+`DEMO GRAIN RESET` clears `RENDER_US_MAX`, `OVER_BUDGET` and the grain high water.
+
+### Transport and step view (demo image)
+
+One transport clocks the Instrument (decisions 0021 and 0026); Granular has a 16-step
+pattern whose step values are clip positions (0020 item 8, 0027 item 5). The controls
+are provisional and demo-only (p04.14), and do not settle C-021 to C-023, C-083, C-084
+or D-012.
+
+- **Transport.** An Encoder 0 click on the main page, or an Encoder 2 click in the step
+  view, runs or stops it. It keeps running across page and view changes. Every clip
+  load fits the tempo and the division so the 16 steps span the clip, within 70 to 140
+  BPM (0026 items 2 and 3); while running, the fit waits for the next step.
+- **Grains.** While running, each step that is on moves new grains to its position;
+  a step that is off keeps the previous one. The position knob then offsets the
+  sequence around 50 % (the page shows it as `+10%`), clamped to the clip. A step
+  changes on its own frame: the render is split at the step boundary.
+- **View menu.** A long Encoder 2 press opens it, and an Encoder 3 click opens it from
+  the step view. It lists ENGINE (the main page) and SEQUENCER. Encoder 0 scrolls, its
+  click selects, an Encoder 1 click closes, and it closes itself after 5 s.
+- **Step view.** Encoder 0 browses the steps and its click edits one: Encoder 0 then
+  sets the position at once and an Encoder 1 click turns the step on or off; another
+  Encoder 0 click returns. A long Encoder 0 press moves to the settings row, Tempo (40
+  to 200 BPM) and Division (1/16, 1/8, 1/4), where the same keys browse and edit. An
+  edit is heard at once; an Encoder 0 click keeps it and an Encoder 1 click restores
+  the value from before it. A long Encoder 0 press returns to the steps.
+- **Display.** The step view draws one bar per step, as tall as its position, filled
+  when on and hollow when off; the playing step is marked above the bars and the
+  selected step below. Entering Instrument always shows the main page.
+
+`DEMO SEQ` reports the transport and the pattern, and `DEMO SEQ RUN` and `DEMO SEQ STOP`
+run or stop the transport, for example:
+
+```text
+OK DEMO SEQ RUN=1 TARGET=1 BPM_X100=8000 DIV=1/16 STEP=5 HELD=5 FIRED=230 FITS=1 FIT_PENDING=0 VIEW=STEPS FOCUS=STEPS SELECTED=6 STEPS=1:0,1:62,1:125,1:187,1:250,1:312,1:375,1:437,1:500,1:562,1:625,1:687,1:750,1:812,1:875,1:937
+```
+
+| Field | Meaning |
+| --- | --- |
+| `RUN`, `TARGET` | The transport runs; the run state last asked for (applied at the next radio half) |
+| `BPM_X100`, `DIV` | Tempo in hundredths of a BPM; Granular's division |
+| `STEP`, `HELD` | The step playing and the latest step that fired on, `-1` for none |
+| `FIRED`, `FITS`, `FIT_PENDING` | Steps reached; fits on load applied; a fit waiting for the next step |
+| `VIEW`, `FOCUS`, `SELECTED` | The Instrument view, the step view's focus and the selected step (from 1) |
+| `STEPS` | Each step as `on:value`, the value in permille of the clip |
 
 `UI DISPLAY TEST` draws a static test image with the confirmed zero-column mapping
 and reports:

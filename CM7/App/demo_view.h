@@ -142,6 +142,19 @@ typedef struct
   uint8_t grains_active;   /* sounding grains */
   uint8_t instrument_page; /* 0 or 1 (demo_instrument.h) */
   GranularParams grain;    /* the provisional Instrument parameters */
+  /* The transport and the step view (demo_sequencer.h, p04.14). */
+  uint8_t seq_view;        /* DemoSeqView */
+  uint8_t seq_focus;       /* DemoSeqFocus */
+  uint8_t seq_step;        /* the selected step */
+  uint8_t seq_setting;     /* DemoSeqSetting */
+  uint8_t seq_item;        /* DemoSeqItem highlighted in the view menu */
+  bool seq_running;
+  uint32_t seq_bpm_x100;   /* the tempo set (shown while it is edited) */
+  uint8_t seq_steps_per_beat;
+  uint8_t seq_playhead;    /* the step playing; 0xFF while stopped */
+  uint8_t seq_length;
+  uint16_t seq_on_mask;    /* bit n: step n is on */
+  uint16_t seq_values[16]; /* step values, permille of the clip */
   uint8_t notice;          /* DemoNotice */
   uint8_t notice_arg;      /* band for the band notices, reason for CLIP_FAILED */
 } DemoViewModel;
