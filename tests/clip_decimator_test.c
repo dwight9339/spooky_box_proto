@@ -35,7 +35,7 @@ static void test_range_one_segment(void)
     const uint32_t held[] = {FULL_SEGMENT};
     ClipRange range;
 
-    CHECK(CLIP_SOURCE_FRAMES == 144000u);
+    _Static_assert(CLIP_SOURCE_FRAMES == 144000u, "3 s of 48 kHz source frames");
     CHECK(ClipRange_Select(held, 1u, CLIP_SOURCE_FRAMES, &range));
     CHECK(range.count == 1u);
     CHECK(range.frames == CLIP_SOURCE_FRAMES);
