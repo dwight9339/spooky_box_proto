@@ -19,6 +19,10 @@
  *   (Granular_SetMaxGrains, at most GRANULAR_MAX_GRAINS). A grain due while
  *   that many are sounding is dropped and counted.
  *
+ * - A position override (a sequencer step, p04.14) replaces the position
+ *   parameter as the base of new grain starts until it is released; spray still
+ *   applies. Override and release run in the render's context, between renders.
+ *
  * Render runs in the radio DMA interrupt; Start, Stop and SetParams run in the
  * foreground on the same core. SetParams stages the new values and Render takes
  * them at its next call, so a render never sees half of an update. Stop the
@@ -99,6 +103,8 @@ typedef struct
   GranularControl control;
   GranularGrain grains[GRANULAR_MAX_GRAINS];
   volatile uint32_t max_grains; /* 1..GRANULAR_MAX_GRAINS, set by SetMaxGrains */
+  bool position_override;   /* render context: new grains start at override */
+  uint32_t override_position; /* clip sample */
   uint32_t until_next;      /* output frames to the next grain start */
   uint32_t random;          /* xorshift32 state, never 0 */
   int32_t mix[512];         /* one render chunk */
@@ -126,6 +132,11 @@ void Granular_Stop(GranularEngine *engine);
  * no new grain starts until fewer are sounding. */
 void Granular_SetMaxGrains(GranularEngine *engine, uint32_t max_grains);
 uint32_t Granular_MaxGrains(const GranularEngine *engine);
+/* Render context only. New grains start at position_permille of the clip (plus
+ * spray) instead of the position parameter, until Granular_ReleasePosition or the
+ * next Start. Sounding grains carry on. */
+void Granular_OverridePosition(GranularEngine *engine, uint16_t position_permille);
+void Granular_ReleasePosition(GranularEngine *engine);
 bool Granular_Active(const GranularEngine *engine);
 /* Writes frame_count stereo frames (2 * frame_count halfwords), in chunks of at
  * most 512. False, with nothing written, while stopped. */
