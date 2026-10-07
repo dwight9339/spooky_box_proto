@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "demo_instrument.h"
+
 #define GLYPH_WIDTH 5U
 #define CELL_WIDTH 6U
 #define BIG_CELL_WIDTH 12U
@@ -479,10 +481,52 @@ static void PromptScreen(const DemoViewModel *model, bool start)
 
 /* The clip as it saves, loads and plays (p04.6). Only a loaded clip is named
  * with a length; a failed one is never shown as loaded (Principle II). */
+/* The granular voice's page (p04.7): the four encoders' parameters, then the
+ * clip and the sounding grains. */
+static void GrainScreen(const DemoViewModel *model)
+{
+  char text[LINE_CHARS + 8U];
+  uint8_t encoder;
+
+  (void)snprintf(text, sizeof(text), "GRAIN %u/%u", (unsigned)model->instrument_page + 1U,
+                 (unsigned)DEMO_INSTRUMENT_PAGES);
+  Header(model, text);
+  for (encoder = 0U; encoder < DEMO_INSTRUMENT_ENCODERS; ++encoder)
+  {
+    const DemoParam param = DemoInstrument_Param(model->instrument_page, encoder);
+    const uint8_t page = (uint8_t)(2U + encoder);
+
+    (void)snprintf(text, sizeof(text), "E%u %s", (unsigned)encoder, DemoInstrument_Name(param));
+    Text(page, 0U, text);
+    DemoInstrument_FormatValue(&model->grain, param, text, sizeof(text));
+    TextRight(page, text);
+  }
+  (void)snprintf(text, sizeof(text), "C%03lu %lu.%luS",
+                 (unsigned long)(model->clip_capture % 1000U),
+                 (unsigned long)((model->clip_tenths / 10U) % 100U),
+                 (unsigned long)(model->clip_tenths % 10U));
+  Text(6U, 0U, text);
+  if (model->clip_playing)
+  {
+    (void)snprintf(text, sizeof(text), "%u GR", (unsigned)model->grains_active);
+  }
+  else
+  {
+    (void)snprintf(text, sizeof(text), "STOPPED");
+  }
+  TextRight(6U, text);
+  Rule(5U);
+}
+
 static void InstrumentScreen(const DemoViewModel *model)
 {
   char text[LINE_CHARS + 8U];
 
+  if ((model->clip == DEMO_CLIP_VIEW_READY) && !model->voice_loop)
+  {
+    GrainScreen(model);
+    return;
+  }
   Header(model, "INSTRUMENT");
   switch (model->clip)
   {

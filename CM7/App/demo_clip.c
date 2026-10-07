@@ -7,12 +7,26 @@
 #include "clip_player.h"
 #include "demo_field.h"
 #include "ff.h"
+#include "granular.h"
 #include "main.h"
 #include "recording_limits.h"
 #include "storage_service.h"
 
 #define CLIP_HEADER_BYTES RECORDING_LIMIT_WAV_HEADER_BYTES
 #define CLIP_FRAME_BYTES (CLIP_SOURCE_CHANNELS * sizeof(int16_t))
+/* Grains that may sound at once. At the 64 MHz, cache-off clock a grain costs
+ * about 0.42 ms per radio half (a half is 512 frames, 10,667 us). On the p04.7
+ * bench (2026-10-07, docs/evidence/2026-10-07-granular-voice-demo.md) 16 grains
+ * took 6.8 ms and overran the radio queue; limits 3 to 6 held with rolling
+ * capture running, the longest loop pass reaching 72 ms at 6. 4 keeps a step of
+ * margin below the 75 ms loop budget. */
+#define CLIP_GRAIN_LIMIT 4U
+/* The worst render measured at CLIP_GRAIN_LIMIT was 1,945 us. A render over this
+ * budget is counted, not cut short: a count above zero means the limit no longer
+ * bounds the work. */
+#define CLIP_RENDER_BUDGET_US 2000U
+
+_Static_assert(CLIP_RATE_HZ == GRANULAR_SOURCE_RATE_HZ, "the voice reads the 24 kHz clip");
 
 _Static_assert(RECORDING_LIMIT_CHANNELS == CLIP_SOURCE_CHANNELS,
                "captures hold the recorder's three channels");
@@ -33,6 +47,11 @@ static int16_t clip[CLIP_MAX_SAMPLES] __attribute__((section(".dma_buffer"), ali
 static int16_t chunk[CLIP_LOAD_CHUNK_FRAMES * CLIP_SOURCE_CHANNELS];
 
 static ClipPlayer player;
+static GranularEngine engine;
+static volatile uint8_t voice = (uint8_t)DEMO_VOICE_GRAIN;
+static volatile uint32_t render_us_max;
+static volatile uint32_t render_over_budget;
+static volatile uint32_t renders;
 static ClipDecimator decimator;
 static ClipRange range;
 static LoadStep step;
@@ -50,6 +69,17 @@ static uint32_t Now(void)
   return HAL_GetTick();
 }
 
+static void StopVoices(void)
+{
+  ClipPlayer_Stop(&player);
+  Granular_Stop(&engine);
+}
+
+static bool Playing(void)
+{
+  return ClipPlayer_Active(&player) || Granular_Active(&engine);
+}
+
 static void CloseFile(void)
 {
   if (file_open)
@@ -61,7 +91,7 @@ static void CloseFile(void)
 
 static void Fail(DemoClipFault fault)
 {
-  ClipPlayer_Stop(&player);
+  StopVoices();
   CloseFile();
   if (status.state != (uint8_t)DEMO_CLIP_LOADING)
   {
@@ -153,9 +183,16 @@ static bool ReadChunk(void)
 
 /* --- Control-facing ---------------------------------------------------------- */
 
+void DemoClip_Init(void)
+{
+  ClipPlayer_Init(&player);
+  Granular_Init(&engine, HAL_GetTick() ^ DWT->CYCCNT);
+  Granular_SetMaxGrains(&engine, CLIP_GRAIN_LIMIT);
+}
+
 void DemoClip_Expect(void)
 {
-  ClipPlayer_Stop(&player);
+  StopVoices();
   CloseFile();
   step = LOAD_IDLE;
   status.state = (uint8_t)DEMO_CLIP_SAVING;
@@ -173,14 +210,78 @@ void DemoClip_SetPlaying(bool play)
 {
   const bool ready = status.state == (uint8_t)DEMO_CLIP_READY;
 
-  if (play && ready && !ClipPlayer_Active(&player))
+  if (play && ready && !Playing())
   {
-    (void)ClipPlayer_Start(&player, clip, status.samples);
+    if (voice == (uint8_t)DEMO_VOICE_LOOP)
+    {
+      (void)ClipPlayer_Start(&player, clip, status.samples);
+    }
+    else
+    {
+      (void)Granular_Start(&engine, clip, status.samples);
+    }
   }
-  else if ((!play || !ready) && ClipPlayer_Active(&player))
+  else if ((!play || !ready) && Playing())
   {
-    ClipPlayer_Stop(&player);
+    StopVoices();
   }
+}
+
+void DemoClip_SetVoice(DemoVoice next)
+{
+  if ((uint8_t)next != voice)
+  {
+    StopVoices(); /* the next SetPlaying starts the new voice */
+    voice = (uint8_t)next;
+  }
+}
+
+DemoVoice DemoClip_Voice(void)
+{
+  return (DemoVoice)voice;
+}
+
+void DemoClip_SetGrainParams(const GranularParams *params)
+{
+  Granular_SetParams(&engine, params);
+}
+
+uint32_t DemoClip_GetGrains(uint16_t *position_permille, uint8_t *envelope, uint32_t capacity)
+{
+  return Granular_GetGrains(&engine, position_permille, envelope, capacity);
+}
+
+void DemoClip_GetVoiceStatus(DemoVoiceStatus *out)
+{
+  GranularStatus grains;
+
+  if (out == NULL)
+  {
+    return;
+  }
+  Granular_GetStatus(&engine, &grains);
+  out->voice = voice;
+  out->renders = renders;
+  out->render_us_max = render_us_max;
+  out->render_over_budget = render_over_budget;
+  out->render_budget_us = CLIP_RENDER_BUDGET_US;
+  out->grains_started = grains.grains_started;
+  out->grains_dropped = grains.grains_dropped;
+  out->grains_active = grains.active;
+  out->grains_high_water = grains.active_high_water;
+  out->max_grains = Granular_MaxGrains(&engine);
+}
+
+void DemoClip_ResetVoiceStats(void)
+{
+  render_us_max = 0U;
+  render_over_budget = 0U;
+  engine.status.active_high_water = 0U;
+}
+
+void DemoClip_SetMaxGrains(uint32_t max_grains)
+{
+  Granular_SetMaxGrains(&engine, max_grains);
 }
 
 void DemoClip_GetStatus(DemoClipStatus *out)
@@ -189,7 +290,7 @@ void DemoClip_GetStatus(DemoClipStatus *out)
   {
     return;
   }
-  status.playing = ClipPlayer_Active(&player);
+  status.playing = Playing();
   status.loops = player.loops;
   *out = status;
 }
@@ -308,5 +409,24 @@ void DemoClip_Abort(void)
 
 bool DemoClip_RenderMonitor(uint16_t *stereo, uint32_t frame_count)
 {
-  return ClipPlayer_Render(&player, stereo, frame_count);
+  const uint32_t start = DWT->CYCCNT;
+  const bool rendered = (voice == (uint8_t)DEMO_VOICE_LOOP)
+                          ? ClipPlayer_Render(&player, stereo, frame_count)
+                          : Granular_Render(&engine, stereo, frame_count);
+
+  if (rendered)
+  {
+    const uint32_t elapsed_us = (DWT->CYCCNT - start) / (SystemCoreClock / 1000000U);
+
+    ++renders;
+    if (elapsed_us > render_us_max)
+    {
+      render_us_max = elapsed_us;
+    }
+    if (elapsed_us > CLIP_RENDER_BUDGET_US)
+    {
+      ++render_over_budget;
+    }
+  }
+  return rendered;
 }

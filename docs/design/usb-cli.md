@@ -545,8 +545,9 @@ demo-only behavior.
   at most 144,000 bytes in AXI SRAM. It is read from the newest one or two segments of
   the committed capture, 2,048 frames per step, between the rolling stream's block
   writes.
-- **Playback.** A loaded clip plays as a plain loop on the headphones in place of the
-  radio while Instrument is shown. Instrument shows the clip's length and capture.
+- **Playback.** A loaded clip plays on the headphones in place of the radio while
+  Instrument is shown, through the granular voice below (`full_spooky_proto-p04.7`).
+  `DEMO VOICE LOOP` plays it as a plain loop instead, and `DEMO VOICE GRAIN` goes back.
   The recorder still captures the raw radio channels unchanged.
 - **Failure.** If the save is busy, unavailable or fails, or the load fails, the clip is
   not shown or played. Instrument returns to Field by itself and the display shows
@@ -554,7 +555,7 @@ demo-only behavior.
   `CLIP LOAD FAILED`). A new chord replaces the clip, and a save or a load in progress
   makes another save busy.
 - **Back to Field and sessions.** Shift plus Button 0 (C-028) returns to Field and stops
-  the loop. The clip stays loaded for the next visit. Holding Button 0 for a session in
+  the voice. The clip stays loaded for the next visit. Holding Button 0 for a session in
   Instrument is refused with `SESSION: FIELD ONLY`. During a session the chord saves
   nothing (rolling capture is off) and the mode switch is rejected.
 
@@ -568,11 +569,47 @@ OK DEMO CLIP STATE=READY FAULT=NONE CAPTURE=C004 SAMPLES=72000 MS=3000 PLAYING=1
 | --- | --- |
 | `STATE`, `FAULT` | `NONE`, `SAVING`, `LOADING`, `READY` or `FAILED`; the latest failure's reason (`SAVE_BUSY`, `SAVE_UNAVAILABLE`, `SAVE_FAILED`, `LOAD_FAILED`) |
 | `CAPTURE`, `SAMPLES`, `MS` | Capture the clip comes from; its length at 24 kHz and in milliseconds, while ready |
-| `PLAYING`, `LOOPS` | The loop is on the monitor; passes of the current clip |
+| `PLAYING`, `LOOPS` | A voice is on the monitor; passes of the plain loop |
 | `LOADS`, `FAILURES` | Clips loaded and chords that ended in a failure since boot |
 | `LOAD_MS`, `LOAD_MS_MAX`, `STEP_MS_MAX` | Latest and longest load from the committed save to ready; longest single load step |
 | `RETURNS`, `RETURNS_REFUSED` | Shift plus Button 0 gestures sent to return to Field after a failure; posts the queue refused, which are retried |
 | `PROMPTS_REFUSED` | Session prompts refused in Instrument |
+
+The granular voice reads the clip through at most 16 overlapping grains (decision 0011
+item 16). Its controls are provisional and demo-only, and do not settle C-025.
+
+- **Page 1:** Encoders 0 to 3 set position (where grains start, in the clip), grain size
+  (10 to 500 ms), density (1 to 100 grains a second) and pitch (±24 semitones).
+- **Page 2:** Encoders 0, 2 and 3 set spray (random spread of grain starts, as a share of
+  the clip), envelope (2 ms ramps at 0 %, a triangle at 100 %) and level. Encoder 1 is
+  unassigned: slice quantization was removed (decision 0020 item 6).
+- **Page change and Button 1:** An Encoder 3 click (C-024) moves to the next page and
+  wraps. Button 1 does nothing in Instrument.
+- **Display.** The display shows the page's four parameters, the clip and the number of
+  sounding grains. The values stay as set across visits and new clips. With no clip
+  loaded, or with the plain loop, there is no page and the encoders do nothing.
+- **Matrix.** The matrix shows grains instead of EMF. The nine columns span the clip.
+  Each sounding grain lights the column it is reading, as bright as its envelope, and
+  the position setting is a dim column. With no clip the matrix is dark. A session's
+  recording ring still shows.
+
+`DEMO GRAIN` reports the voice, and `DEMO GRAIN MAX <n>` sets how many grains may sound at
+once (1 to 16; the image sets a default from the bench). `DEMO GRAIN RESET` clears the
+render maximum, the over-budget count and the grain high water. For example:
+
+```text
+OK DEMO GRAIN VOICE=GRAIN PAGE=1 POS=500 SIZE_MS=80 DENSITY=20 PITCH=0 SPRAY=0 ENV=50 LEVEL=80 ACTIVE=2 HIGH=3/3 STARTED=1200 DROPPED=0 RENDERS=5600 RENDER_US_MAX=240 OVER_BUDGET=0 BUDGET_US=1500 GESTURES=35
+```
+
+| Field | Meaning |
+| --- | --- |
+| `VOICE`, `PAGE` | `GRAIN` or `LOOP`; the Instrument page shown |
+| `POS` ... `LEVEL` | The parameters: position and spray in permille of the clip, size in ms, density in grains a second, pitch in semitones, envelope and level in percent |
+| `ACTIVE`, `HIGH`, `STARTED`, `DROPPED` | Grains sounding now; the most at once since the last reset, of the grain limit; grains started; grains due while the limit was sounding |
+| `RENDERS`, `RENDER_US_MAX`, `OVER_BUDGET`, `BUDGET_US` | Monitor halves (512 frames, 10.7 ms) a voice rendered in the radio interrupt; the longest render; renders over the budget, counted, not cut short |
+| `GESTURES` | Encoder turns and Encoder 3 clicks the Instrument pages took |
+
+`DEMO GRAIN RESET` clears `RENDER_US_MAX` and `OVER_BUDGET`.
 
 `UI DISPLAY TEST` draws a static test image with the confirmed zero-column mapping
 and reports:

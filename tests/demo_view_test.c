@@ -271,6 +271,43 @@ static void test_instrument_clip_states(void)
     }
 }
 
+/* With the granular voice, a ready clip shows the page's four parameters; the
+ * pages differ, and the plain loop keeps its own screen (p04.7). */
+static void test_grain_pages(void)
+{
+    static uint8_t first[DEMO_VIEW_FRAME_BYTES];
+    DemoViewModel model = classic_model();
+
+    DemoView_Init();
+    model.screen = DEMO_SCREEN_INSTRUMENT;
+    model.clip = DEMO_CLIP_VIEW_READY;
+    model.clip_capture = 4u;
+    model.clip_tenths = 30u;
+    model.clip_playing = true;
+    model.grains_active = 7u;
+    Granular_DefaultParams(&model.grain);
+    DemoView_Compose(&model);
+    memcpy(first, DemoView_Frame(), sizeof(first));
+    /* "GRAIN 1/2": 'G' column 0 is 0x3E, over the header rule. */
+    CHECK(byte_at(0u, 0u) == (0x3Eu | 0x80u));
+    /* "E0 POS" on page 2. */
+    CHECK(byte_at(2u, 0u) == 0x7Fu);
+    model.instrument_page = 1u;
+    DemoView_Compose(&model);
+    CHECK(memcmp(first + 2u * WIDTH, DemoView_Frame() + 2u * WIDTH, 4u * WIDTH) != 0);
+    CHECK(memcmp(first + 6u * WIDTH, DemoView_Frame() + 6u * WIDTH, WIDTH) == 0);
+    /* A parameter change redraws only its row. */
+    model.instrument_page = 0u;
+    model.grain.density = 40u;
+    DemoView_Compose(&model);
+    CHECK(memcmp(first + 3u * WIDTH, DemoView_Frame() + 3u * WIDTH, WIDTH) == 0);
+    CHECK(memcmp(first + 4u * WIDTH, DemoView_Frame() + 4u * WIDTH, WIDTH) != 0);
+    model.voice_loop = true;
+    DemoView_Compose(&model);
+    CHECK(memcmp(first, DemoView_Frame(), DEMO_VIEW_FRAME_BYTES) != 0);
+    CHECK(byte_at(0u, 0u) == (0x00u | 0x80u)); /* "INSTRUMENT": 'I' column 0 is 0x00 */
+}
+
 static void test_wide_values_are_clipped(void)
 {
     DemoViewModel model = classic_model();
@@ -308,6 +345,7 @@ int main(void)
     test_screens_differ();
     test_unknown_and_unable_are_honest();
     test_instrument_clip_states();
+    test_grain_pages();
     test_wide_values_are_clipped();
     if (failures != 0u) {
         printf("%u failure(s)\n", failures);

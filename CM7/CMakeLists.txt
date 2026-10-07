@@ -217,7 +217,15 @@ if(SPOOKY_DEMO)
         ${CMAKE_CURRENT_SOURCE_DIR}/App/clip_decimator.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/clip_player.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_clip.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_instrument.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/grain_matrix.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
     )
+    # The granular voice renders in the radio DMA interrupt; the Demo image is a
+    # Debug (-O0) build, so its render is optimized to keep that work small
+    # (p04.7; measured by DEMO GRAIN RENDER_US_MAX).
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
+        PROPERTIES COMPILE_OPTIONS "-O2")
 endif()
 
 # Use the same FatFs R0.12c release as the passing sibling SDMMC tests.

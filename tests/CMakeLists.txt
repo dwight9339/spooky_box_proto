@@ -103,7 +103,8 @@ spooky_test(radio_activity_feed_test radio_activity_feed_test.c
 spooky_test(classic_service_test classic_service_test.c ../CM7/App/classic_service.c
     ../CM7/App/classic_scan.c ../CM7/App/command_policy.c)
 # Demo branch only: the Demo image's OLED view and lights (decision 0011, p04.3).
-spooky_test(demo_view_test demo_view_test.c ../CM7/App/demo_view.c)
+spooky_test(demo_view_test demo_view_test.c ../CM7/App/demo_view.c
+    ../CM7/App/demo_instrument.c ../Common/Src/granular.c)
 spooky_test(demo_lights_test demo_lights_test.c ../CM7/App/demo_lights.c)
 spooky_test(rolling_catalog_test rolling_catalog_test.c ../CM7/App/rolling_catalog.c)
 # The Instrument clip: range, decimation and the plain loop (p04.6).
@@ -112,6 +113,12 @@ if(NOT MSVC)
     target_link_libraries(clip_decimator_test PRIVATE m)
 endif()
 spooky_test(clip_player_test clip_player_test.c ../CM7/App/clip_player.c)
+# The granular voice, its provisional pages and the matrix grain view (p04.7).
+spooky_test(granular_test granular_test.c ../Common/Src/granular.c)
+spooky_test(demo_instrument_test demo_instrument_test.c ../CM7/App/demo_instrument.c
+    ../Common/Src/granular.c)
+spooky_test(grain_matrix_test grain_matrix_test.c ../CM7/App/grain_matrix.c
+    ../Common/Src/matrix_feedback.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)

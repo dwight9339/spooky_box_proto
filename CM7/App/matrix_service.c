@@ -123,6 +123,30 @@ bool MatrixService_Service(uint32_t now_ms, const MatrixServiceInput *input,
   return MatrixWriter_Next(run);
 }
 
+#if defined(SPOOKY_DEMO)
+bool MatrixService_ServiceFrame(const MatrixFeedbackFrame *frame, MatrixWriterRun *run)
+{
+  if (!service_ready || !service_enabled || (run == NULL))
+  {
+    return false;
+  }
+  if (frame != NULL)
+  {
+    MatrixWriterStatus writer;
+
+    MatrixWriter_GetStatus(&writer);
+    if (writer.pending_runs != 0U)
+    {
+      ++service_status.frames_superseded;
+    }
+    MatrixWriter_SetTarget(frame);
+    ++service_status.frames;
+  }
+  frame_due = true; /* Field feedback redraws its own frame when it is back */
+  return MatrixWriter_Next(run);
+}
+#endif
+
 void MatrixService_RunDone(bool ok, uint32_t elapsed_us)
 {
   MatrixWriter_Done(ok);

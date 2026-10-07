@@ -16,6 +16,8 @@
  *   Instrument shows the clip as it saves, loads and plays; a refused or failed
  *   save or load sends Context a Shift+B0 gesture (the C-028 path back to Field)
  *   and shows the fault. The session prompt is refused in Instrument.
+ * - In Instrument the provisional granular pages (demo_instrument.c, p04.7)
+ *   take the encoder turns and the Encoder 3 click; the matrix shows grains.
  * - The OLED (demo_view.c), the button and encoder lights (demo_lights.c) render
  *   published state; the matrix is matrix_adapter.c.
  *
@@ -26,6 +28,7 @@
 #include <stdint.h>
 
 #include "event_queue.h"
+#include "matrix_feedback.h"
 #include "sm/radio_port.h"
 #include "sm/session_port.h"
 
@@ -55,10 +58,16 @@ void DemoField_OnRadioAnswer(RadPublished event, const RadCommand *command);
 
 /* Context has Classic as the Field engine and Field as the mode. */
 bool DemoField_ClassicActive(void);
+/* The matrix in Instrument shows grain activity, not EMF (decision 0011 item
+ * 16, p04.7). False outside Instrument: the matrix shows Field feedback. True
+ * in Instrument, with *due set and the frame composed when a new frame is due
+ * (every 40 ms). */
+bool DemoField_InstrumentMatrix(uint32_t now_ms, MatrixFeedbackFrame *frame, bool *due);
 
 /* `DEMO` and `DEMO STATUS` reply `OK DEMO ...` (counters for bench evidence);
  * `ROLL`, `ROLL ON|OFF` and `ROLL SAVE` control and report rolling capture;
- * `DEMO CLIP` reports the Instrument clip. */
+ * `DEMO CLIP` reports the Instrument clip; `DEMO GRAIN` and `DEMO VOICE` report
+ * and pick its voice. */
 bool DemoField_HandleCommand(const char *command);
 
 #endif /* SPOOKY_DEMO_FIELD_H */
