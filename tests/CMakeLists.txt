@@ -119,6 +119,9 @@ spooky_test(demo_instrument_test demo_instrument_test.c ../CM7/App/demo_instrume
     ../Common/Src/granular.c)
 spooky_test(grain_matrix_test grain_matrix_test.c ../CM7/App/grain_matrix.c
     ../Common/Src/matrix_feedback.c)
+# The Instrument transport and step pattern (p04.14).
+spooky_test(transport_test transport_test.c ../Common/Src/transport.c
+    ../Common/Src/step_pattern.c)
 add_executable(ipc_smoke_protocol_test
     ipc_smoke_protocol_test.c
     ../Common/Src/ipc_smoke_protocol.c)
