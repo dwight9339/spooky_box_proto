@@ -643,8 +643,9 @@ or D-012.
   transport runs on, each engine keeps its own pattern, and only the active engine's
   pattern plays; the new engine joins the current step in time.
 - **Step view.** Encoder 0 browses the steps and its click edits one: Encoder 0 then
-  sets the position at once and an Encoder 1 click turns the step on or off; another
-  Encoder 0 click returns. A long Encoder 0 press moves to the settings row, Tempo (40
+  sets the value at once (1 % of the clip a detent for Granular, one slice a detent for
+  the Slicer) and an Encoder 1 click turns the step on or off; another Encoder 0 click
+  returns. A long Encoder 0 press moves to the settings row, Tempo (40
   to 200 BPM) and Division (1/16, 1/8, 1/4), where the same keys browse and edit. An
   edit is heard at once; an Encoder 0 click keeps it and an Encoder 1 click restores
   the value from before it. A long Encoder 0 press returns to the steps.
@@ -690,17 +691,19 @@ and demo-only (p04.15) and do not settle C-025 or 0022 item 5.
   it: the slices become equal, their settings return to the defaults, and the pattern
   is rebuilt to play the clip through. Each slice fires on the step where it begins,
   and the steps between are off, so at 4 slices only steps 1, 5, 9 and 13 are on. At
-  16 slices this is the identity pattern again. If slice settings or
-  lengths were changed, the display asks first (`DISCARD?`): another Encoder 1 click
-  applies the count, anything else keeps the edits.
+  16 slices this is the identity pattern again. If slice settings, lengths or steps
+  were changed, the display asks first (`DISCARD?`): another Encoder 1 click applies
+  the count and rebuilds the pattern, anything else keeps the edits.
 - **Open slice.** A long Encoder 0 press opens the selected slice. Encoders 0 to 3 then
   set pitch (±12 semitones; a higher slice also plays shorter), gate (5 to 100 % of the
   pitched slice), level (0 to 100 %) and length (10 ms a detent, at least 10 ms; it moves
   the start of the next slice; the last slice ends at the clip's end). An Encoder 2
   click runs or stops the transport and an Encoder 0 click closes the slice.
 - **Step view.** SEQUENCER in the view menu shows the Slicer's pattern, one bar per step
-  as tall as its slice. The steps cannot be edited yet; the settings row (Tempo,
-  Division) works as for Granular.
+  as tall as its slice, and edits it as for Granular: in step edit an Encoder 0 turn
+  picks the step's slice (1 to the slice count) and an Encoder 1 click turns the step
+  on or off. The Slicer's pattern is its own: Granular's is kept while the Slicer
+  plays, and the other way round.
 - **Display.** The page draws the clip as a strip with a tick at each slice start, the
   selected slice filled and the playing slice marked above it, then the selected
   slice's length, the count and the clip.
@@ -711,14 +714,14 @@ and demo-only (p04.15) and do not settle C-025 or 0022 item 5.
 `DEMO SLICE` reports the Slicer, for example:
 
 ```text
-OK DEMO SLICE ACTIVE=1 COUNT=16 CHOICE=16 SELECTED=3 FOCUS=BROWSE EDITED=0 SOUNDING=7 TRIGGERS=412 SILENT=0 FADES_CUT=0 RENDER_US_MAX=310 SWITCHES=4 SLICES=0:100:80:187,0:100:80:187,...
+OK DEMO SLICE ACTIVE=1 COUNT=16 CHOICE=16 SELECTED=3 FOCUS=BROWSE EDITED=0 PATTERN_EDITED=0 SOUNDING=7 TRIGGERS=412 SILENT=0 FADES_CUT=0 RENDER_US_MAX=310 SWITCHES=4 SLICES=0:100:80:187,0:100:80:187,...
 ```
 
 | Field | Meaning |
 | --- | --- |
 | `ACTIVE` | The Slicer is the chosen engine |
 | `COUNT`, `CHOICE`, `SELECTED`, `FOCUS` | The slice count; the count being chosen; the selected slice (from 1); `BROWSE`, `SLICE` (a slice open) or `CONFIRM` |
-| `EDITED` | Slice settings or lengths differ from equal slices at their defaults |
+| `EDITED`, `PATTERN_EDITED` | Slice settings, lengths or steps differ from what a count change leaves; a step was edited since the pattern was last built |
 | `SOUNDING`, `TRIGGERS`, `SILENT`, `FADES_CUT` | The slice playing (from 1, `-1` for none); slices started; starts of a disabled slice; crossfades ended early by a second cut within 2 ms |
 | `RENDER_US_MAX`, `SWITCHES` | The longest render in the radio interrupt with the Slicer playing; engine switches faded through |
 | `SLICES` | Each slice as `pitch:gate:level:length_ms`, with `X` after a disabled slice |

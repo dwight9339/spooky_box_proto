@@ -34,6 +34,7 @@ static bool send(GestureKind kind, uint8_t encoder, int8_t detents)
     target.toggle_run = false;
     target.tempo_changed = false;
     target.engine_chosen = false;
+    target.pattern_edited = false;
     return DemoSequencer_OnGesture(&seq, make(kind, encoder, detents), &target, 1000u);
 }
 
@@ -42,7 +43,8 @@ static void setup(void)
     DemoSequencer_Init(&seq);
     StepPattern_InitSweep(&pattern, 1000u);
     target.pattern = &pattern;
-    target.read_only = false;
+    target.value_max = DEMO_SEQ_VALUE_MAX;
+    target.value_step = DEMO_SEQ_VALUE_STEP;
     target.engine = DEMO_SEQ_ENGINE_GRANULAR;
     target.tempo_x100 = 12000u;
 }
@@ -196,22 +198,64 @@ static void test_engine_menu(void)
     CHECK(strcmp(DemoSequencer_EngineName(9u), "?") == 0);
 }
 
-/* A read-only pattern (the Slicer's until p04.16) browses but does not edit;
- * the settings row still edits. */
-static void test_read_only(void)
+/* Slicer steps (p04.16): a step value is a slice, one a detent, held within
+ * 0..count-1; every change to a step is reported, a turn that changes nothing
+ * is not. */
+static void test_slicer_steps(void)
 {
-    setup();
-    target.read_only = true;
-    send(GESTURE_HOLD, 2u, 0);
-    send(GESTURE_TURN, 0u, 1);
+    static const uint16_t counts[] = {4u, 8u, 16u};
+    unsigned index;
+
+    for (index = 0u; index < 3u; ++index) {
+        open_steps();
+        StepPattern_InitSweep(&pattern, 16u); /* identity */
+        target.value_max = (uint16_t)(counts[index] - 1u);
+        target.value_step = 1u;
+        target.engine = DEMO_SEQ_ENGINE_SLICER;
+        send(GESTURE_TURN, 0u, 2);
+        pattern.steps[2].value = 0u;
+        CHECK(send(GESTURE_CLICK, 0u, 0) && seq.focus == DEMO_SEQ_FOCUS_STEP_EDIT);
+        CHECK(!target.pattern_edited);
+        CHECK(send(GESTURE_TURN, 0u, 1) && pattern.steps[2].value == 1u && target.pattern_edited);
+        CHECK(send(GESTURE_TURN, 0u, 2) && pattern.steps[2].value == 3u);
+        CHECK(send(GESTURE_TURN, 0u, 100) && pattern.steps[2].value == counts[index] - 1u);
+        CHECK(send(GESTURE_TURN, 0u, 1) && !target.pattern_edited); /* held at the last */
+        CHECK(send(GESTURE_TURN, 0u, -100) && pattern.steps[2].value == 0u && target.pattern_edited);
+        CHECK(send(GESTURE_TURN, 0u, -1) && !target.pattern_edited); /* held at the first */
+        CHECK(send(GESTURE_CLICK, 1u, 0) && !pattern.steps[2].on && target.pattern_edited);
+        CHECK(send(GESTURE_CLICK, 0u, 0) && seq.focus == DEMO_SEQ_FOCUS_STEPS);
+        CHECK(send(GESTURE_TURN, 0u, 1) && !target.pattern_edited); /* browsing */
+        CHECK(pattern.steps[3].value == 3u && pattern.steps[3].on);
+    }
+}
+
+/* Each engine edits its own pattern (0020 item 5): editing the Slicer's leaves
+ * Granular's alone, and the other way round. */
+static void test_patterns_per_engine(void)
+{
+    StepPattern slices;
+    StepPattern grains;
+
+    open_steps();
+    StepPattern_InitSweep(&slices, 16u);
+    StepPattern_InitSweep(&grains, 1000u);
+    target.pattern = &slices;
+    target.value_max = 15u;
+    target.value_step = 1u;
     send(GESTURE_CLICK, 0u, 0);
-    CHECK(seq.view == DEMO_SEQ_VIEW_STEPS);
-    CHECK(send(GESTURE_TURN, 0u, 2) && seq.step == 2u);
-    CHECK(send(GESTURE_CLICK, 0u, 0) && seq.focus == DEMO_SEQ_FOCUS_STEPS);
-    CHECK(send(GESTURE_CLICK, 1u, 0) && pattern.steps[2].on);
-    CHECK(send(GESTURE_HOLD, 0u, 0) && seq.focus == DEMO_SEQ_FOCUS_SETTINGS);
-    CHECK(send(GESTURE_CLICK, 0u, 0) && seq.focus == DEMO_SEQ_FOCUS_SETTING_EDIT);
-    CHECK(send(GESTURE_TURN, 0u, 3) && target.tempo_changed && target.tempo_x100 == 12300u);
+    send(GESTURE_TURN, 0u, 5);
+    CHECK(slices.steps[0].value == 5u && grains.steps[0].value == 0u);
+    send(GESTURE_CLICK, 0u, 0);
+
+    target.pattern = &grains;
+    target.value_max = DEMO_SEQ_VALUE_MAX;
+    target.value_step = DEMO_SEQ_VALUE_STEP;
+    send(GESTURE_CLICK, 0u, 0);
+    send(GESTURE_TURN, 0u, 3);
+    send(GESTURE_CLICK, 1u, 0);
+    CHECK(grains.steps[0].value == 30u && !grains.steps[0].on);
+    CHECK(slices.steps[0].value == 5u && slices.steps[0].on);
+    target.pattern = &pattern;
 }
 
 static void test_reset(void)
@@ -233,7 +277,8 @@ int main(void)
     test_steps();
     test_settings();
     test_engine_menu();
-    test_read_only();
+    test_slicer_steps();
+    test_patterns_per_engine();
     test_reset();
     if (failures != 0u) {
         printf("%u failure(s)\n", failures);

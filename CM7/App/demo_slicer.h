@@ -12,11 +12,12 @@
  *   stop on every engine's main page (0021 items 6 and 7), so a hold opens the
  *   slice instead of 0022 item 5's press.
  * - An Encoder 1 turn chooses the slice count (4, 8 or 16; item 4) and an
- *   Encoder 1 click applies it (item 9). If boundaries or slice parameters were
- *   edited, the page asks first: a second Encoder 1 click discards them and
- *   applies; any other gesture cancels. A count change makes equal slices with
- *   default parameters, and the caller rebuilds the pattern with
- *   DemoSlicer_ClipPattern.
+ *   Encoder 1 click applies it (item 9). If boundaries, slice parameters or the
+ *   pattern were edited, the page asks first: a second Encoder 1 click discards
+ *   them and applies; any other gesture cancels. A count change makes equal
+ *   slices with default parameters, and the caller rebuilds the pattern with
+ *   DemoSlicer_ClipPattern (user call 2026-10-08, p04.16, in place of 0022
+ *   item 11's remap).
  * - Slice open: Encoders 0 to 3 turn pitch, gate, level and length (item 6).
  *   Length moves the slice's end, which is also the next slice's start, in
  *   DEMO_SLICER_LENGTH_STEP_MS steps, never below SLICER_MIN_SLICE_SAMPLES
@@ -57,6 +58,7 @@ typedef struct
   uint8_t selected;        /* the selected slice */
   uint8_t count;           /* the slice count in force: 4, 8 or 16 */
   uint8_t count_choice;    /* the count being chosen; equals count when none is */
+  bool pattern_edited;     /* a step was edited since the pattern was last built */
   SlicerSetup setup;       /* the map and slice parameters; staged by the caller */
 } DemoSlicer;
 
@@ -85,7 +87,11 @@ bool DemoSlicer_Modal(const DemoSlicer *slicer);
 /* True if the gesture was taken. running is the transport's run state. */
 bool DemoSlicer_OnGesture(DemoSlicer *slicer, Gesture gesture, bool running,
                           DemoSlicerAction *action);
-/* Boundaries or slice parameters differ from equal slices at their defaults. */
+/* The step view changed a Slicer step (p04.16): a count change now asks
+ * before it rebuilds the pattern. */
+void DemoSlicer_MarkPatternEdited(DemoSlicer *slicer);
+/* Boundaries or slice parameters differ from equal slices at their defaults,
+ * or the pattern was edited since it was last built. */
 bool DemoSlicer_Edited(const DemoSlicer *slicer);
 /* The next or previous count in 4, 8, 16 order, held at the ends. */
 uint8_t DemoSlicer_NextCount(uint8_t count, int32_t detents);
@@ -95,9 +101,9 @@ uint32_t DemoSlicer_LengthMs(const DemoSlicer *slicer, uint8_t slice);
  * in the clip, and only a step where a new slice begins is on, so the slices
  * play through and the pattern sounds like the clip at any count. With 16
  * equal slices it is the identity pattern (0022 item 10). This replaces 0022
- * item 11's remap by time while the Slicer's steps are read-only, so a count
- * round trip (16, 4, 16) gives the identity back (user call 2026-10-07,
- * p04.15 bench); p04.16 decides how an edited pattern follows the map.
+ * item 11's remap by time, so a count round trip (16, 4, 16) gives the
+ * identity back (user call 2026-10-07, p04.15 bench); an edited pattern is
+ * rebuilt too, after the page has asked (user call 2026-10-08, p04.16).
  * Written one step at a time, as the step view edits. */
 void DemoSlicer_ClipPattern(const SliceMap *map, StepPattern *pattern);
 
