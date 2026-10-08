@@ -720,6 +720,20 @@ bool DemoField_InstrumentMatrix(uint32_t now_ms, MatrixFeedbackFrame *frame, boo
   {
     return true;
   }
+  if (DemoClip_Voice() == DEMO_VOICE_SLICE)
+  {
+    MatrixServiceStatus shown;
+
+    /* Every pixel changes on every Slicer frame, more runs than the bus writes
+     * in one frame period, and the writer starts each frame from the same row:
+     * superseded frames never reached the top row (p04.15 bench, 2026-10-07).
+     * A new frame waits until the last one is fully shown. */
+    MatrixService_GetStatus(&shown);
+    if (shown.pending_runs != 0U)
+    {
+      return true;
+    }
+  }
   matrix_grain_last_ms = now_ms;
   DemoClip_GetStatus(&clip);
   if (DemoClip_Voice() == DEMO_VOICE_SLICE)
