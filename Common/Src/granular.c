@@ -414,6 +414,20 @@ static uint16_t Saturate(int64_t value)
   return (uint16_t)(int16_t)value;
 }
 
+/* Word stores, not memset: newlib-nano's memset stores a byte a pass from
+ * wherever the linker places it, and with no instruction cache it cost this
+ * render about 360 us once its loop straddled a flash line (p04.15 bench,
+ * 2026-10-07). The Demo image builds this file so that GCC keeps the loop. */
+static void ClearMix(int32_t *mix, uint32_t frames)
+{
+  uint32_t frame;
+
+  for (frame = 0U; frame < frames; ++frame)
+  {
+    mix[frame] = 0;
+  }
+}
+
 bool Granular_Render(GranularEngine *engine, uint16_t *stereo, uint32_t frame_count)
 {
   const int16_t *samples;
@@ -444,7 +458,7 @@ bool Granular_Render(GranularEngine *engine, uint16_t *stereo, uint32_t frame_co
     uint32_t position = 0U;
     uint32_t frame;
 
-    (void)memset(engine->mix, 0, chunk * sizeof(engine->mix[0]));
+    ClearMix(engine->mix, chunk);
     while (position < chunk)
     {
       uint32_t segment;

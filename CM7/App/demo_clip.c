@@ -10,6 +10,7 @@
 #include "granular.h"
 #include "main.h"
 #include "recording_limits.h"
+#include "slicer.h"
 #include "step_pattern.h"
 #include "storage_service.h"
 #include "transport.h"
@@ -52,8 +53,23 @@ static int16_t chunk[CLIP_LOAD_CHUNK_FRAMES * CLIP_SOURCE_CHANNELS];
 
 static ClipPlayer player;
 static GranularEngine engine;
+static SlicerEngine slicer;
+/* The foreground chooses voice_target; the radio interrupt owns voice, the one
+ * rendering, and moves it to the target, through a fade between the two
+ * engines (0027 items 1 and 2). */
+static volatile uint8_t voice_target = (uint8_t)DEMO_VOICE_GRAIN;
 static volatile uint8_t voice = (uint8_t)DEMO_VOICE_GRAIN;
+typedef enum
+{
+  SWITCH_NONE = 0,
+  SWITCH_OUT,   /* the old engine fades out */
+  SWITCH_IN     /* the new engine fades in */
+} SwitchPhase;
+static uint8_t switch_phase = (uint8_t)SWITCH_NONE;
+static uint32_t switch_done;   /* frames of the phase rendered */
+static volatile uint32_t switches;
 static volatile uint32_t render_us_max;
+static volatile uint32_t slice_render_us_max;
 static volatile uint32_t render_over_budget;
 static volatile uint32_t renders;
 
@@ -66,6 +82,10 @@ static volatile uint32_t renders;
 #define SEQ_NO_STEP 0xFFFFFFFFU
 static Transport transport;
 static StepPattern grain_pattern;
+static StepPattern slice_pattern;
+static volatile bool audition_pending;
+static volatile uint8_t audition_slice;
+static volatile uint16_t bar_phase;
 static volatile bool run_target;
 static volatile uint32_t tempo_target = TRANSPORT_BPM_DEFAULT_X100;
 static volatile bool fit_pending;
@@ -97,11 +117,23 @@ static void StopVoices(void)
 {
   ClipPlayer_Stop(&player);
   Granular_Stop(&engine);
+  Slicer_Stop(&slicer);
 }
 
 static bool Playing(void)
 {
-  return ClipPlayer_Active(&player) || Granular_Active(&engine);
+  return ClipPlayer_Active(&player) || Granular_Active(&engine) || Slicer_Active(&slicer);
+}
+
+static bool IsEngine(uint8_t which)
+{
+  return (which == (uint8_t)DEMO_VOICE_GRAIN) || (which == (uint8_t)DEMO_VOICE_SLICE);
+}
+
+/* The pattern a voice plays; the plain loop keeps Granular's clock. */
+static StepPattern *PatternOf(uint8_t which)
+{
+  return (which == (uint8_t)DEMO_VOICE_SLICE) ? &slice_pattern : &grain_pattern;
 }
 
 static void CloseFile(void)
@@ -224,7 +256,10 @@ void DemoClip_Init(void)
   ClipPlayer_Init(&player);
   Transport_Init(&transport);
   StepPattern_InitSweep(&grain_pattern, 1000U); /* decision 0027 item 5 */
+  /* The identity pattern: step n plays slice n (0022 item 10). */
+  StepPattern_InitSweep(&slice_pattern, (uint16_t)SLICE_MAP_MAX_SLICES);
   Granular_Init(&engine, HAL_GetTick() ^ DWT->CYCCNT);
+  Slicer_Init(&slicer);
   Granular_SetMaxGrains(&engine, CLIP_GRAIN_LIMIT);
 }
 
@@ -250,13 +285,15 @@ void DemoClip_SetPlaying(bool play)
 
   if (play && ready && !Playing())
   {
-    if (voice == (uint8_t)DEMO_VOICE_LOOP)
+    if (voice_target == (uint8_t)DEMO_VOICE_LOOP)
     {
       (void)ClipPlayer_Start(&player, clip, status.samples);
     }
     else
     {
+      /* Both engines start, so a switch between them needs no foreground step. */
       (void)Granular_Start(&engine, clip, status.samples);
+      (void)Slicer_Start(&slicer, clip, status.samples);
     }
   }
   else if ((!play || !ready) && Playing())
@@ -267,16 +304,20 @@ void DemoClip_SetPlaying(bool play)
 
 void DemoClip_SetVoice(DemoVoice next)
 {
-  if ((uint8_t)next != voice)
+  if ((uint8_t)next == voice_target)
+  {
+    return;
+  }
+  if (!IsEngine((uint8_t)next) || !IsEngine(voice_target))
   {
     StopVoices(); /* the next SetPlaying starts the new voice */
-    voice = (uint8_t)next;
   }
+  voice_target = (uint8_t)next; /* between engines, the interrupt fades */
 }
 
 DemoVoice DemoClip_Voice(void)
 {
-  return (DemoVoice)voice;
+  return (DemoVoice)voice_target;
 }
 
 void DemoClip_SetGrainParams(const GranularParams *params)
@@ -314,6 +355,32 @@ StepPattern *DemoClip_GrainPattern(void)
   return &grain_pattern;
 }
 
+StepPattern *DemoClip_SlicePattern(void)
+{
+  return &slice_pattern;
+}
+
+StepPattern *DemoClip_ActivePattern(void)
+{
+  return PatternOf(voice_target);
+}
+
+void DemoClip_SetSlicerSetup(const SlicerSetup *setup)
+{
+  Slicer_SetSetup(&slicer, setup);
+}
+
+void DemoClip_Audition(uint8_t slice)
+{
+  audition_slice = slice;
+  audition_pending = true;
+}
+
+void DemoClip_GetSlicerStatus(SlicerStatus *out)
+{
+  Slicer_GetStatus(&slicer, out);
+}
+
 void DemoClip_GetTransportStatus(DemoTransportStatus *out)
 {
   if (out == NULL)
@@ -322,7 +389,8 @@ void DemoClip_GetTransportStatus(DemoTransportStatus *out)
   }
   out->running = transport.running;
   out->bpm_x100 = transport.bpm_x100;
-  out->steps_per_beat = grain_pattern.steps_per_beat;
+  out->steps_per_beat = PatternOf(voice_target)->steps_per_beat;
+  out->bar_phase = bar_phase;
   out->playhead = playhead;
   out->held_step = held_step;
   out->steps_fired = steps_fired;
@@ -344,9 +412,11 @@ void DemoClip_GetVoiceStatus(DemoVoiceStatus *out)
     return;
   }
   Granular_GetStatus(&engine, &grains);
-  out->voice = voice;
+  out->voice = voice_target;
   out->renders = renders;
   out->render_us_max = render_us_max;
+  out->slice_render_us_max = slice_render_us_max;
+  out->switches = switches;
   out->render_over_budget = render_over_budget;
   out->render_budget_us = CLIP_RENDER_BUDGET_US;
   out->grains_started = grains.grains_started;
@@ -359,6 +429,7 @@ void DemoClip_GetVoiceStatus(DemoVoiceStatus *out)
 void DemoClip_ResetVoiceStats(void)
 {
   render_us_max = 0U;
+  slice_render_us_max = 0U;
   render_over_budget = 0U;
   engine.status.active_high_water = 0U;
 }
@@ -497,7 +568,9 @@ static void ApplyFit(void)
 {
   Transport_SetTempo(&transport, fit_tempo);
   tempo_target = transport.bpm_x100;
-  grain_pattern.steps_per_beat = fit_steps_per_beat; /* every pattern (0026 item 2) */
+  /* Every pattern (0026 item 2). */
+  grain_pattern.steps_per_beat = fit_steps_per_beat;
+  slice_pattern.steps_per_beat = fit_steps_per_beat;
   fit_pending = false;
   ++fits;
 }
@@ -514,8 +587,32 @@ static void PinPosition(void)
   }
 }
 
-/* A new step: an on step moves the grains there (decision 0027 item 6); an off
- * step keeps the previous position (0020 item 8). */
+/* An on step of the active pattern fires its engine. Granular: the grains move
+ * to the step's position (decision 0027 item 6); an off step keeps the previous
+ * position (0020 item 8). Slicer: the step's slice plays from offset_frames into
+ * it, cutting the one before (0022 item 3); an off step fires nothing, so the
+ * slice before plays on to its end. */
+static void Fire(uint32_t step, uint32_t offset_frames)
+{
+  const StepPattern *pattern = PatternOf(voice);
+
+  if (!pattern->steps[step].on)
+  {
+    return;
+  }
+  if (voice == (uint8_t)DEMO_VOICE_SLICE)
+  {
+    (void)Slicer_Trigger(&slicer, (uint8_t)pattern->steps[step].value, offset_frames);
+  }
+  else
+  {
+    held_step = step;
+    PinPosition();
+  }
+}
+
+/* A new step of the active pattern; the inactive pattern fires nothing (0027
+ * item 3). */
 static void Step(void)
 {
   uint32_t step;
@@ -524,14 +621,35 @@ static void Step(void)
   {
     ApplyFit(); /* at the step boundary while running */
   }
-  step = StepPattern_Playhead(&grain_pattern, &transport);
+  step = StepPattern_Playhead(PatternOf(voice), &transport);
   playhead = step;
   ++steps_fired;
-  if (grain_pattern.steps[step].on)
+  Fire(step, 0U);
+}
+
+/* Output frames of one step at the transport's tempo. */
+static uint32_t StepFrames(uint8_t steps_per_beat)
+{
+  const uint32_t q = (steps_per_beat == 0U) ? 1U : steps_per_beat;
+
+  return (uint32_t)(((uint64_t)TRANSPORT_RATE_HZ * 60U * 100U) /
+                    ((uint64_t)transport.bpm_x100 * q));
+}
+
+/* The engine switched in joins the step the transport is on, in time: the
+ * Slicer from as far into the slice as the step has run. */
+static void SwitchIn(void)
+{
+  const StepPattern *pattern = PatternOf(voice);
+  const uint32_t step_frames = StepFrames(pattern->steps_per_beat);
+  const uint32_t to_next = Transport_FramesToNextStep(&transport, pattern->steps_per_beat);
+
+  if (!transport.running)
   {
-    held_step = step;
-    PinPosition();
+    return;
   }
+  playhead = StepPattern_Playhead(pattern, &transport);
+  Fire(playhead, (to_next < step_frames) ? (step_frames - to_next) : 0U);
 }
 
 static void ApplyTargets(void)
@@ -545,6 +663,7 @@ static void ApplyTargets(void)
   {
     Transport_Stop(&transport);
     Granular_ReleasePosition(&engine);
+    Slicer_Silence(&slicer);
     playhead = SEQ_NO_STEP;
     held_step = SEQ_NO_STEP;
   }
@@ -556,10 +675,74 @@ static void ApplyTargets(void)
   {
     Transport_SetTempo(&transport, tempo_target);
   }
+  /* An engine switch: faded while both engines play, at once otherwise. A
+   * switch to or from the plain loop cancels one in progress. */
+  if (!IsEngine(voice_target) && (switch_phase != (uint8_t)SWITCH_NONE))
+  {
+    switch_phase = (uint8_t)SWITCH_NONE;
+  }
+  if ((voice_target != voice) && (switch_phase == (uint8_t)SWITCH_NONE))
+  {
+    if (IsEngine(voice) && IsEngine(voice_target) && Granular_Active(&engine) &&
+        Slicer_Active(&slicer))
+    {
+      switch_phase = (uint8_t)SWITCH_OUT;
+      switch_done = 0U;
+      ++switches;
+    }
+    else
+    {
+      voice = voice_target;
+    }
+  }
+  /* An audition plays only with the Slicer settled and the transport stopped. */
+  if (audition_pending)
+  {
+    audition_pending = false;
+    if ((voice == (uint8_t)DEMO_VOICE_SLICE) && (switch_phase == (uint8_t)SWITCH_NONE) &&
+        !transport.running)
+    {
+      (void)Slicer_Trigger(&slicer, audition_slice, 0U);
+    }
+  }
+}
+
+static bool RenderVoice(uint16_t *stereo, uint32_t frames)
+{
+  switch (voice)
+  {
+    case DEMO_VOICE_LOOP:
+      return ClipPlayer_Render(&player, stereo, frames);
+    case DEMO_VOICE_SLICE:
+      return Slicer_Render(&slicer, stereo, frames);
+    case DEMO_VOICE_GRAIN:
+    default:
+      return Granular_Render(&engine, stereo, frames);
+  }
+}
+
+/* The switch's gain over frames, from switch_done: down while the old engine
+ * fades out, up while the new one fades in. */
+static void Fade(uint16_t *stereo, uint32_t frames)
+{
+  const bool out = switch_phase == (uint8_t)SWITCH_OUT;
+  uint32_t frame;
+
+  for (frame = 0U; frame < frames; ++frame)
+  {
+    const uint32_t at = switch_done + frame;
+    const int32_t gain = (int32_t)(out ? (DEMO_CLIP_SWITCH_FADE_FRAMES - at) : at);
+    const int32_t value = ((int32_t)(int16_t)stereo[2U * frame] * gain) /
+                          (int32_t)DEMO_CLIP_SWITCH_FADE_FRAMES;
+
+    stereo[2U * frame] = (uint16_t)(int16_t)value;
+    stereo[(2U * frame) + 1U] = (uint16_t)(int16_t)value;
+  }
 }
 
 /* Renders frame_count frames, split where a step starts so the step takes effect
- * on its own frame. The clock runs whichever voice plays, or none. */
+ * on its own frame, and where a switch moves from one fade to the next. The
+ * clock runs whichever voice plays, or none. */
 static bool RenderSequenced(uint16_t *stereo, uint32_t frame_count)
 {
   bool rendered = false;
@@ -574,30 +757,65 @@ static bool RenderSequenced(uint16_t *stereo, uint32_t frame_count)
   while (done < frame_count)
   {
     uint32_t chunk = frame_count - done;
-    const uint32_t next = Transport_FramesToNextStep(&transport, grain_pattern.steps_per_beat);
+    const uint32_t next = Transport_FramesToNextStep(&transport, PatternOf(voice)->steps_per_beat);
+    bool switched = false;
 
     if ((next != 0U) && (next < chunk))
     {
       chunk = next;
     }
-    if ((voice == (uint8_t)DEMO_VOICE_LOOP) ? ClipPlayer_Render(&player, &stereo[2U * done], chunk)
-                                            : Granular_Render(&engine, &stereo[2U * done], chunk))
+    if ((switch_phase != (uint8_t)SWITCH_NONE) &&
+        ((DEMO_CLIP_SWITCH_FADE_FRAMES - switch_done) < chunk))
+    {
+      chunk = DEMO_CLIP_SWITCH_FADE_FRAMES - switch_done;
+    }
+    if (RenderVoice(&stereo[2U * done], chunk))
     {
       rendered = true;
+      if (switch_phase != (uint8_t)SWITCH_NONE)
+      {
+        Fade(&stereo[2U * done], chunk);
+      }
     }
     Transport_Advance(&transport, chunk);
     done += chunk;
+    if (switch_phase != (uint8_t)SWITCH_NONE)
+    {
+      switch_done += chunk;
+      if (switch_done >= DEMO_CLIP_SWITCH_FADE_FRAMES)
+      {
+        switch_done = 0U;
+        if (switch_phase == (uint8_t)SWITCH_OUT)
+        {
+          voice = voice_target;
+          switch_phase = (uint8_t)SWITCH_IN;
+          switched = true;
+        }
+        else
+        {
+          switch_phase = (uint8_t)SWITCH_NONE;
+        }
+      }
+    }
     if (transport.running && (next == chunk))
     {
       Step();
     }
+    else if (switched)
+    {
+      SwitchIn();
+    }
   }
+  /* One 4/4 bar is 4 beats (0026 item 1): the phase is the beat position
+   * modulo 4 beats, in 1/65536 of a bar. */
+  bar_phase = (uint16_t)((Transport_BeatsQ16(&transport) & ((4ULL << 16) - 1U)) >> 2);
   return rendered;
 }
 
 bool DemoClip_RenderMonitor(uint16_t *stereo, uint32_t frame_count)
 {
   const uint32_t start = DWT->CYCCNT;
+  const bool slicing = voice == (uint8_t)DEMO_VOICE_SLICE;
   const bool rendered = RenderSequenced(stereo, frame_count);
 
   if (rendered)
@@ -608,6 +826,10 @@ bool DemoClip_RenderMonitor(uint16_t *stereo, uint32_t frame_count)
     if (elapsed_us > render_us_max)
     {
       render_us_max = elapsed_us;
+    }
+    if (slicing && (elapsed_us > slice_render_us_max))
+    {
+      slice_render_us_max = elapsed_us;
     }
     if (elapsed_us > CLIP_RENDER_BUDGET_US)
     {

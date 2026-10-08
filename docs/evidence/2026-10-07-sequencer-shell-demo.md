@@ -134,3 +134,12 @@ the clip's save and load.
 - The matrix: Granular keeps p04.7's grain view, whose dim position column shows the
   knob, not the sequenced position.
 - Tempo accuracy at other tempos and divisions on hardware; host tests cover them.
+
+## Addendum, 2026-10-07 (p04.15 bench)
+
+The alignment above fixed the layout of `granular.c` only. The p04.15 bench
+([Slicer engine](2026-10-07-slicer-engine-demo.md)) found the grain render at 2,435 µs
+on a build whose `Granular_Render` was byte-identical and aligned as in image d: the
+render calls newlib-nano's byte-wise `memset` on its 2 KB mix every half, and that loop
+had moved to straddle a flash line. The render now clears its mix with its own loop, and
+4 grains at the soak settings above took 2,023 µs at most.

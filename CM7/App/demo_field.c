@@ -12,17 +12,20 @@
 #include "demo_clip.h"
 #include "demo_instrument.h"
 #include "demo_sequencer.h"
+#include "demo_slicer.h"
 #include "demo_lights.h"
 #include "demo_rolling.h"
 #include "demo_view.h"
 #include "emf_level.h"
 #include "grain_matrix.h"
 #include "main.h"
+#include "tempo_matrix.h"
 #include "matrix_service.h"
 #include "radio_adapter.h"
 #include "radio_control_service.h"
 #include "radio_recorder.h"
 #include "session_control.h"
+#include "slice_map.h"
 #include "sm/context_port.h"
 #include "sm/input_resolution_port.h"
 #include "ui_board_test.h"
@@ -101,8 +104,11 @@ static bool clip_return_pending;
 /* The provisional Instrument pages (p04.7); kept across visits. */
 static DemoInstrument instrument;
 static uint32_t instrument_gestures; /* encoder gestures taken by the pages */
-/* The view menu and the step view (p04.14). */
+/* The view menu and the step view (p04.14), and the engine menu (p04.15). */
 static DemoSequencer seq;
+/* The Slicer's page and its map and slice parameters (p04.15); kept across
+ * visits and clips (0022 item 14). */
+static DemoSlicer slicer_page;
 static uint32_t matrix_grain_last_ms;
 /* The grain view's frame cadence: 25 frames per second. */
 #define DEMO_GRAIN_MATRIX_MS 40U
@@ -159,7 +165,9 @@ void DemoField_Init(void)
   DemoClip_Init();
   DemoInstrument_Init(&instrument);
   DemoSequencer_Init(&seq);
+  DemoSlicer_Init(&slicer_page);
   DemoClip_SetGrainParams(&instrument.params);
+  DemoClip_SetSlicerSetup(&slicer_page.setup);
   for (control = 0U; control < (uint8_t)INP_CONTROL_COUNT; ++control)
   {
     pressed[control] = UiBoardTest_DemoPressed(control);
@@ -217,11 +225,55 @@ void DemoField_OnDetents(uint8_t encoder, int32_t detents, uint32_t now_ms)
   }
 }
 
+/* The Slicer page's gestures and their effects (demo_slicer.c, p04.15). */
+static bool SlicerGesture(Gesture gesture)
+{
+  DemoSlicerAction action;
+
+  if (!DemoSlicer_OnGesture(&slicer_page, gesture, DemoClip_RunTarget(), &action))
+  {
+    return false;
+  }
+  if (action.toggle_run)
+  {
+    DemoClip_SetRunning(!DemoClip_RunTarget());
+  }
+  if (action.setup_changed)
+  {
+    DemoClip_SetSlicerSetup(&slicer_page.setup);
+  }
+  if (action.count_changed)
+  {
+    /* The pattern plays the clip through at the new count (user call
+     * 2026-10-07, in place of 0022 item 11 until p04.16). */
+    DemoSlicer_ClipPattern(&slicer_page.setup.map, DemoClip_SlicePattern());
+  }
+  if (action.audition)
+  {
+    DemoClip_Audition(action.audition_slice);
+  }
+  ++instrument_gestures;
+  return true;
+}
+
+/* The engine menu committed an engine (C-020): the switch fades in the radio
+ * interrupt (0027 items 1 and 2) and the new engine opens on its main page
+ * (item 4), which the menu has already returned to. */
+static void SelectEngine(uint8_t engine)
+{
+  DemoClip_SetVoice((engine == (uint8_t)DEMO_SEQ_ENGINE_SLICER) ? DEMO_VOICE_SLICE
+                                                                 : DEMO_VOICE_GRAIN);
+  DemoSlicer_Reset(&slicer_page);
+  printf("[demo] t=%lu engine %s\r\n", (unsigned long)Now(), DemoSequencer_EngineName(engine));
+}
+
 /* Demo only (decision 0011 item 16): Context has no Instrument engine yet, so
- * while Instrument has the controls the view menu and the step view
- * (demo_sequencer.c, p04.14) take their encoder gestures first, then the
- * provisional pages take the turns and the Encoder 3 click (C-024). Everything
- * else, Shift+B0 (C-028) included, goes to Context. */
+ * while Instrument has the controls the view and engine menus and the step view
+ * (demo_sequencer.c, p04.14, p04.15) take their encoder gestures first, then the
+ * engine's page: Granular's provisional pages take the turns and the Encoder 3
+ * click (C-024), the Slicer's page its own (demo_slicer.c). An open slice or a
+ * count confirmation on the Slicer page takes gestures before the shell does.
+ * Everything else, Shift+B0 (C-028) included, goes to Context. */
 static bool InstrumentGesture(Gesture gesture)
 {
   const bool encoder_gesture = (gesture.kind == (uint8_t)GESTURE_TURN) ||
@@ -232,6 +284,7 @@ static bool InstrumentGesture(Gesture gesture)
   DemoSeqTarget target;
   DemoClipStatus clip;
   CtxStatus ctx;
+  bool slicing;
 
   Context_GetStatus(&ctx);
   if ((ctx.state != (uint8_t)CTX_STATE_INSTRUMENT) || !encoder_gesture)
@@ -241,14 +294,23 @@ static bool InstrumentGesture(Gesture gesture)
   /* The pages and views change only what the display shows: with no clip, or
    * the plain loop, there is none, and a page gesture does nothing. */
   DemoClip_GetStatus(&clip);
-  if ((clip.state != (uint8_t)DEMO_CLIP_READY) || (DemoClip_Voice() != DEMO_VOICE_GRAIN))
+  if ((clip.state != (uint8_t)DEMO_CLIP_READY) || (DemoClip_Voice() == DEMO_VOICE_LOOP))
   {
     return page_gesture;
   }
-  target.pattern = DemoClip_GrainPattern();
+  slicing = DemoClip_Voice() == DEMO_VOICE_SLICE;
+  if (slicing && (seq.view == (uint8_t)DEMO_SEQ_VIEW_ENGINE) && DemoSlicer_Modal(&slicer_page))
+  {
+    return SlicerGesture(gesture);
+  }
+  target.pattern = DemoClip_ActivePattern();
+  /* The Slicer's steps are shown, not edited, until p04.16 binds them. */
+  target.read_only = slicing;
+  target.engine = slicing ? (uint8_t)DEMO_SEQ_ENGINE_SLICER : (uint8_t)DEMO_SEQ_ENGINE_GRANULAR;
   target.tempo_x100 = DemoClip_TempoTarget();
   target.toggle_run = false;
   target.tempo_changed = false;
+  target.engine_chosen = false;
   if (DemoSequencer_OnGesture(&seq, gesture, &target, Now()))
   {
     if (target.toggle_run)
@@ -259,8 +321,16 @@ static bool InstrumentGesture(Gesture gesture)
     {
       DemoClip_SetTempo(target.tempo_x100);
     }
+    if (target.engine_chosen)
+    {
+      SelectEngine(target.engine);
+    }
     ++instrument_gestures;
     return true;
+  }
+  if (slicing)
+  {
+    return SlicerGesture(gesture);
   }
   if (!page_gesture)
   {
@@ -413,8 +483,36 @@ static void BuildModel(uint32_t now, const CtxStatus *ctx, const InpStatus *inp,
   }
   model->instrument_page = instrument.page;
   model->grain = instrument.params;
+  model->slicer = DemoClip_Voice() == DEMO_VOICE_SLICE;
+  if (model->slicer)
   {
-    const StepPattern *pattern = DemoClip_GrainPattern();
+    const SliceMap *map = &slicer_page.setup.map;
+    const SlicerSlice *params = &slicer_page.setup.slices[slicer_page.selected % SLICE_MAP_MAX_SLICES];
+    SlicerStatus slices;
+    uint32_t slice;
+
+    DemoClip_GetSlicerStatus(&slices);
+    model->slicer_focus = slicer_page.focus;
+    model->slicer_selected = slicer_page.selected;
+    model->slicer_count = slicer_page.count;
+    model->slicer_count_choice = slicer_page.count_choice;
+    model->slicer_sounding = slices.sounding;
+    model->slicer_pitch = params->pitch_semitones;
+    model->slicer_gate = params->gate_percent;
+    model->slicer_level = params->level_percent;
+    model->slicer_length_ms = (uint16_t)DemoSlicer_LengthMs(&slicer_page, slicer_page.selected);
+    for (slice = 0U; (slice < map->count) && (map->clip_samples != 0U); ++slice)
+    {
+      model->slicer_starts[slice] =
+        (uint8_t)(((uint64_t)map->starts[slice] * 128U) / map->clip_samples);
+    }
+  }
+  model->seq_value_max = model->slicer ? (uint16_t)((slicer_page.count > 1U) ? (slicer_page.count - 1U)
+                                                                            : 1U)
+                                       : 1000U;
+  model->seq_engine_item = seq.engine_item;
+  {
+    const StepPattern *pattern = DemoClip_ActivePattern();
     DemoTransportStatus transport;
     uint32_t step;
 
@@ -611,8 +709,36 @@ bool DemoField_InstrumentMatrix(uint32_t now_ms, MatrixFeedbackFrame *frame, boo
   {
     return true;
   }
+  if (DemoClip_Voice() == DEMO_VOICE_SLICE)
+  {
+    MatrixServiceStatus shown;
+
+    /* Every pixel changes on every Slicer frame, more runs than the bus writes
+     * in one frame period, and the writer starts each frame from the same row:
+     * superseded frames never reached the top row (p04.15 bench, 2026-10-07).
+     * A new frame waits until the last one is fully shown. */
+    MatrixService_GetStatus(&shown);
+    if (shown.pending_runs != 0U)
+    {
+      return true;
+    }
+  }
   matrix_grain_last_ms = now_ms;
   DemoClip_GetStatus(&clip);
+  if (DemoClip_Voice() == DEMO_VOICE_SLICE)
+  {
+    /* The Slicer: one colour turning once a bar (0020 item 13). */
+    DemoTransportStatus transport;
+    TempoMatrixInput tempo;
+
+    DemoClip_GetTransportStatus(&transport);
+    tempo.clip_ready = clip.state == (uint8_t)DEMO_CLIP_READY;
+    tempo.recording = Session_IsActive();
+    tempo.bar_phase = transport.bar_phase;
+    TempoMatrix_Compose(&tempo, frame);
+    *due = true;
+    return true;
+  }
   input.clip_ready = clip.state == (uint8_t)DEMO_CLIP_READY;
   input.recording = Session_IsActive();
   input.position_permille = instrument.params.position_permille;
@@ -983,6 +1109,13 @@ void DemoField_OnClipOutcome(uint8_t state, uint8_t fault)
 {
   if (state == (uint8_t)DEMO_CLIP_READY)
   {
+    DemoClipStatus clip;
+
+    /* The Slicer keeps its count, slice parameters and pattern, and its
+     * boundaries become equal over the new clip (0022 item 14). */
+    DemoClip_GetStatus(&clip);
+    DemoSlicer_OnClip(&slicer_page, clip.samples);
+    DemoClip_SetSlicerSetup(&slicer_page.setup);
     Notify(DEMO_NOTICE_CLIP_LOADED, 0U, DEMO_NOTICE_MS);
     return;
   }
@@ -1052,6 +1185,7 @@ void ctx_integration_publish(CtxPublished event, int32_t arg)
       if (mode == CTX_MODE_INSTRUMENT)
       {
         DemoSequencer_Reset(&seq); /* Instrument opens on the main page (0027 item 4) */
+        DemoSlicer_Reset(&slicer_page);
       }
       break;
     case CTX_PUB_ENGINE_CHANGED:
@@ -1253,14 +1387,15 @@ static bool HandleClip(const char *command)
   return true;
 }
 
-/* `DEMO SEQ`: the transport, Granular's pattern and the step view (p04.14);
- * `DEMO SEQ RUN` and `DEMO SEQ STOP` run or stop the transport. */
+/* `DEMO SEQ`: the transport, the active engine's pattern and the step view
+ * (p04.14, p04.15); `DEMO SEQ RUN` and `DEMO SEQ STOP` run or stop the
+ * transport. */
 static bool HandleSeq(const char *command)
 {
-  static const char *const views[] = {"ENGINE", "MENU", "STEPS"};
+  static const char *const views[] = {"ENGINE", "MENU", "STEPS", "ENGINE_MENU"};
   static const char *const focuses[] = {"STEPS", "STEP_EDIT", "SETTINGS", "SETTING_EDIT"};
   static char response[448];
-  const StepPattern *pattern = DemoClip_GrainPattern();
+  const StepPattern *pattern = DemoClip_ActivePattern();
   DemoTransportStatus transport;
   size_t used;
   uint32_t step;
@@ -1284,8 +1419,10 @@ static bool HandleSeq(const char *command)
   }
   DemoClip_GetTransportStatus(&transport);
   used = (size_t)snprintf(response, sizeof(response),
-                          "OK DEMO SEQ RUN=%u TARGET=%u BPM_X100=%lu DIV=%s STEP=%ld HELD=%ld "
-                          "FIRED=%lu FITS=%lu FIT_PENDING=%u VIEW=%s FOCUS=%s SELECTED=%u STEPS=",
+                          "OK DEMO SEQ ENGINE=%s RUN=%u TARGET=%u BPM_X100=%lu DIV=%s STEP=%ld "
+                          "HELD=%ld FIRED=%lu FITS=%lu FIT_PENDING=%u BAR_PHASE=%u VIEW=%s "
+                          "FOCUS=%s SELECTED=%u STEPS=",
+                          (DemoClip_Voice() == DEMO_VOICE_SLICE) ? "SLICER" : "GRANULAR",
                           transport.running ? 1U : 0U, DemoClip_RunTarget() ? 1U : 0U,
                           (unsigned long)transport.bpm_x100,
                           DemoSequencer_DivisionName(pattern->steps_per_beat),
@@ -1294,8 +1431,8 @@ static bool HandleSeq(const char *command)
                           (transport.held_step < STEP_PATTERN_MAX_STEPS) ? (long)transport.held_step
                                                                          : -1L,
                           (unsigned long)transport.steps_fired, (unsigned long)transport.fits,
-                          transport.fit_pending ? 1U : 0U,
-                          (seq.view < 3U) ? views[seq.view] : "?",
+                          transport.fit_pending ? 1U : 0U, (unsigned)transport.bar_phase,
+                          (seq.view < 4U) ? views[seq.view] : "?",
                           (seq.focus < 4U) ? focuses[seq.focus] : "?", (unsigned)seq.step + 1U);
   for (step = 0U; (step < pattern->length) && (used < (sizeof(response) - 12U)); ++step)
   {
@@ -1391,7 +1528,8 @@ static bool SetGrainFromCommand(const char *arguments)
  * cost in the radio interrupt; `DEMO GRAIN RESET` clears the render maximum;
  * `DEMO GRAIN MAX <n>` sets the grain limit (1 to 16) and `DEMO GRAIN SET ...`
  * the parameters, for bench sweeps.
- * `DEMO VOICE GRAIN|LOOP` picks the voice (LOOP is p04.6's plain loop). */
+ * `DEMO VOICE GRAIN|SLICE|LOOP` picks the voice (LOOP is p04.6's plain loop;
+ * GRAIN and SLICE switch engines as the engine menu does). */
 static bool HandleGrain(const char *command)
 {
   static char response[448];
@@ -1401,6 +1539,10 @@ static bool HandleGrain(const char *command)
   if (strcmp(command, "DEMO VOICE GRAIN") == 0)
   {
     DemoClip_SetVoice(DEMO_VOICE_GRAIN);
+  }
+  else if (strcmp(command, "DEMO VOICE SLICE") == 0)
+  {
+    DemoClip_SetVoice(DEMO_VOICE_SLICE);
   }
   else if (strcmp(command, "DEMO VOICE LOOP") == 0)
   {
@@ -1428,7 +1570,8 @@ static bool HandleGrain(const char *command)
   {
     if ((strncmp(command, "DEMO VOICE", 10U) == 0) || (strncmp(command, "DEMO GRAIN", 10U) == 0))
     {
-      (void)UsbTest_SendText("ERR usage: DEMO GRAIN [RESET | MAX <n> | SET ...] | DEMO VOICE GRAIN|LOOP\r\n");
+      (void)UsbTest_SendText("ERR usage: DEMO GRAIN [RESET | MAX <n> | SET ...] | "
+                             "DEMO VOICE GRAIN|SLICE|LOOP\r\n");
       return true;
     }
     return false;
@@ -1439,7 +1582,9 @@ static bool HandleGrain(const char *command)
                  "SPRAY=%u ENV=%u LEVEL=%u ACTIVE=%lu HIGH=%lu/%u STARTED=%lu "
                  "DROPPED=%lu RENDERS=%lu RENDER_US_MAX=%lu OVER_BUDGET=%lu BUDGET_US=%lu "
                  "GESTURES=%lu\r\n",
-                 (voice.voice == (uint8_t)DEMO_VOICE_LOOP) ? "LOOP" : "GRAIN",
+                 (voice.voice == (uint8_t)DEMO_VOICE_LOOP)    ? "LOOP"
+                 : (voice.voice == (uint8_t)DEMO_VOICE_SLICE) ? "SLICE"
+                                                              : "GRAIN",
                  (unsigned)instrument.page + 1U, (unsigned)params->position_permille,
                  (unsigned)params->size_ms, (unsigned)params->density,
                  (int)params->pitch_semitones, (unsigned)params->spray_permille,
@@ -1450,6 +1595,59 @@ static bool HandleGrain(const char *command)
                  (unsigned long)voice.renders, (unsigned long)voice.render_us_max,
                  (unsigned long)voice.render_over_budget,
                  (unsigned long)voice.render_budget_us, (unsigned long)instrument_gestures);
+  (void)UsbTest_SendText(response);
+  return true;
+}
+
+/* `DEMO SLICE`: the Slicer's page, map and slice parameters, its voice and
+ * its render cost (p04.15). Each slice is pitch:gate:level:length_ms, with a
+ * trailing X if it is disabled. `DEMO GRAIN RESET` clears the render maxima. */
+static bool HandleSlice(const char *command)
+{
+  static const char *const focuses[] = {"BROWSE", "SLICE", "CONFIRM"};
+  static char response[640];
+  const SliceMap *map = &slicer_page.setup.map;
+  DemoVoiceStatus voice;
+  SlicerStatus slices;
+  size_t used;
+  uint32_t slice;
+
+  if (strcmp(command, "DEMO SLICE") != 0)
+  {
+    if (strncmp(command, "DEMO SLICE", 10U) == 0)
+    {
+      (void)UsbTest_SendText("ERR usage: DEMO SLICE\r\n");
+      return true;
+    }
+    return false;
+  }
+  DemoClip_GetVoiceStatus(&voice);
+  DemoClip_GetSlicerStatus(&slices);
+  used = (size_t)snprintf(response, sizeof(response),
+                          "OK DEMO SLICE ACTIVE=%u COUNT=%u CHOICE=%u SELECTED=%u FOCUS=%s "
+                          "EDITED=%u SOUNDING=%ld TRIGGERS=%lu SILENT=%lu FADES_CUT=%lu "
+                          "RENDER_US_MAX=%lu SWITCHES=%lu SLICES=",
+                          (voice.voice == (uint8_t)DEMO_VOICE_SLICE) ? 1U : 0U,
+                          (unsigned)slicer_page.count, (unsigned)slicer_page.count_choice,
+                          (unsigned)slicer_page.selected + 1U,
+                          (slicer_page.focus < 3U) ? focuses[slicer_page.focus] : "?",
+                          DemoSlicer_Edited(&slicer_page) ? 1U : 0U,
+                          (slices.sounding == SLICER_NO_SLICE) ? -1L : (long)slices.sounding + 1L,
+                          (unsigned long)slices.triggers, (unsigned long)slices.silent,
+                          (unsigned long)slices.fades_cut,
+                          (unsigned long)voice.slice_render_us_max,
+                          (unsigned long)voice.switches);
+  for (slice = 0U; (slice < map->count) && (used < (sizeof(response) - 24U)); ++slice)
+  {
+    const SlicerSlice *params = &slicer_page.setup.slices[slice];
+
+    used += (size_t)snprintf(&response[used], sizeof(response) - used, "%s%d:%u:%u:%lu%s",
+                             (slice == 0U) ? "" : ",", (int)params->pitch_semitones,
+                             (unsigned)params->gate_percent, (unsigned)params->level_percent,
+                             (unsigned long)DemoSlicer_LengthMs(&slicer_page, (uint8_t)slice),
+                             SliceMap_Enabled(map, (uint8_t)slice) ? "" : "X");
+  }
+  (void)snprintf(&response[used], sizeof(response) - used, "\r\n");
   (void)UsbTest_SendText(response);
   return true;
 }
@@ -1468,7 +1666,8 @@ bool DemoField_HandleCommand(const char *command)
   char response[384];
 
   if (HandleLights(command) || HandleTunes(command) || HandleRoll(command) ||
-      HandleClip(command) || HandleGrain(command) || HandleSeq(command))
+      HandleClip(command) || HandleGrain(command) || HandleSeq(command) ||
+      HandleSlice(command))
   {
     return true;
   }

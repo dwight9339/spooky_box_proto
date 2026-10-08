@@ -220,23 +220,35 @@ if(SPOOKY_DEMO)
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_instrument.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_sequencer.c
         ${CMAKE_CURRENT_SOURCE_DIR}/App/grain_matrix.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/demo_slicer.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/App/tempo_matrix.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/slicer.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/slice_map.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/transport.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/step_pattern.c
     )
-    # The granular voice and the sequencer run in the radio DMA interrupt; the
-    # Demo image is a Debug (-O0) build, so that work is optimized to keep it small
-    # (p04.7 and p04.14; measured by DEMO GRAIN RENDER_US_MAX).
+    # The granular voice, the Slicer and the sequencer run in the radio DMA
+    # interrupt; the Demo image is a Debug (-O0) build, so that work is optimized
+    # to keep it small (p04.7, p04.14 and p04.15; measured by DEMO GRAIN and
+    # DEMO SLICE RENDER_US_MAX).
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/transport.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/step_pattern.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/slice_map.c
         PROPERTIES COMPILE_OPTIONS "-O2")
     # The grain render runs from flash with no instruction cache, and its speed
     # moved about 20 % between builds as the linker shifted it within a 32-byte
     # flash line (p04.14 bench, 2026-10-07). Aligning its functions and loops to
-    # the line keeps its timing the same in every build.
+    # the line keeps its timing the same in every build. Library calls are not
+    # aligned: newlib-nano's byte-wise memset cost the grain render about 360 us
+    # when its loop straddled a line (p04.15 bench), so the renders clear their
+    # mix with their own loop, and -fno-tree-loop-distribute-patterns keeps GCC
+    # from turning that loop back into a memset call.
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
-        PROPERTIES COMPILE_OPTIONS "-O2;-falign-functions=32;-falign-loops=32")
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/slicer.c
+        PROPERTIES COMPILE_OPTIONS
+        "-O2;-falign-functions=32;-falign-loops=32;-fno-tree-loop-distribute-patterns")
 endif()
 
 # Use the same FatFs R0.12c release as the passing sibling SDMMC tests.
