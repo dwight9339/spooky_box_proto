@@ -687,8 +687,10 @@ and demo-only (p04.15) and do not settle C-025 or 0022 item 5.
 - **Main page.** An Encoder 0 turn selects a slice and, with the transport stopped,
   plays it once. An Encoder 0 click runs or stops the transport, as on Granular's page.
   An Encoder 1 turn chooses the slice count (4, 8 or 16) and an Encoder 1 click applies
-  it: the slices become equal, their settings return to the defaults, and each step
-  moves to the new slice that holds the start of its old one. If slice settings or
+  it: the slices become equal, their settings return to the defaults, and the pattern
+  is rebuilt to play the clip through. Each slice fires on the step where it begins,
+  and the steps between are off, so at 4 slices only steps 1, 5, 9 and 13 are on. At
+  16 slices this is the identity pattern again. If slice settings or
   lengths were changed, the display asks first (`DISCARD?`): another Encoder 1 click
   applies the count, anything else keeps the edits.
 - **Open slice.** A long Encoder 0 press opens the selected slice. Encoders 0 to 3 then

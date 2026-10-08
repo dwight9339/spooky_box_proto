@@ -225,19 +225,6 @@ void DemoField_OnDetents(uint8_t encoder, int32_t detents, uint32_t now_ms)
   }
 }
 
-/* Each step moves to the slice of the new map that holds the start of its old
- * slice (0022 item 11). Values are written one at a time, as the step view does. */
-static void RemapSlicePattern(const SliceMap *from, const SliceMap *to)
-{
-  StepPattern *pattern = DemoClip_SlicePattern();
-  uint32_t step;
-
-  for (step = 0U; step < STEP_PATTERN_MAX_STEPS; ++step)
-  {
-    pattern->steps[step].value = SliceMap_Remap(from, (uint8_t)pattern->steps[step].value, to);
-  }
-}
-
 /* The Slicer page's gestures and their effects (demo_slicer.c, p04.15). */
 static bool SlicerGesture(Gesture gesture)
 {
@@ -257,7 +244,9 @@ static bool SlicerGesture(Gesture gesture)
   }
   if (action.count_changed)
   {
-    RemapSlicePattern(&action.old_map, &slicer_page.setup.map);
+    /* The pattern plays the clip through at the new count (user call
+     * 2026-10-07, in place of 0022 item 11 until p04.16). */
+    DemoSlicer_ClipPattern(&slicer_page.setup.map, DemoClip_SlicePattern());
   }
   if (action.audition)
   {

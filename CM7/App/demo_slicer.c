@@ -109,6 +109,30 @@ uint32_t DemoSlicer_LengthMs(const DemoSlicer *slicer, uint8_t slice)
   return (SliceMap_Length(&slicer->setup.map, slice) * 1000U) / SLICER_SOURCE_RATE_HZ;
 }
 
+void DemoSlicer_ClipPattern(const SliceMap *map, StepPattern *pattern)
+{
+  uint32_t length;
+  uint32_t step;
+  uint8_t previous = SLICER_NO_SLICE;
+
+  if ((map == NULL) || (pattern == NULL) || (map->count == 0U) || (map->clip_samples == 0U))
+  {
+    return;
+  }
+  length = ((pattern->length == 0U) || (pattern->length > STEP_PATTERN_MAX_STEPS))
+             ? STEP_PATTERN_MAX_STEPS
+             : pattern->length;
+  for (step = 0U; step < length; ++step)
+  {
+    const uint32_t at = (uint32_t)(((uint64_t)map->clip_samples * step) / length);
+    const uint8_t slice = SliceMap_SliceAt(map, at);
+
+    pattern->steps[step].value = slice;
+    pattern->steps[step].on = slice != previous;
+    previous = slice;
+  }
+}
+
 /* Equal slices at the chosen count with default parameters (0022 item 9). */
 static void ApplyCount(DemoSlicer *slicer, DemoSlicerAction *action)
 {

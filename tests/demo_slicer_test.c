@@ -160,6 +160,53 @@ static void test_count_change_confirm(void)
     CHECK(slicer.setup.slices[0].level_percent == 80u);
 }
 
+/* After a count change each slice fires on the step where its time begins and
+ * the steps between are off, so a round trip gives the identity back (user call
+ * 2026-10-07, p04.15 bench: 0022 item 11's remap made 16, 4, 16 play as 4). */
+static void test_clip_pattern(void)
+{
+    StepPattern pattern;
+    unsigned step;
+
+    StepPattern_InitSweep(&pattern, 16u);
+    setup();
+    send(GESTURE_TURN, 1u, -2);
+    CHECK(send(GESTURE_CLICK, 1u, 0) && action.count_changed && slicer.count == 4u);
+    DemoSlicer_ClipPattern(&slicer.setup.map, &pattern);
+    for (step = 0u; step < 16u; ++step) {
+        CHECK(pattern.steps[step].value == step / 4u);
+        CHECK(pattern.steps[step].on == ((step % 4u) == 0u));
+    }
+
+    send(GESTURE_TURN, 1u, 1);
+    CHECK(send(GESTURE_CLICK, 1u, 0) && action.count_changed && slicer.count == 8u);
+    DemoSlicer_ClipPattern(&slicer.setup.map, &pattern);
+    for (step = 0u; step < 16u; ++step) {
+        CHECK(pattern.steps[step].value == step / 2u);
+        CHECK(pattern.steps[step].on == ((step % 2u) == 0u));
+    }
+
+    send(GESTURE_TURN, 1u, 1);
+    CHECK(send(GESTURE_CLICK, 1u, 0) && action.count_changed && slicer.count == 16u);
+    DemoSlicer_ClipPattern(&slicer.setup.map, &pattern);
+    for (step = 0u; step < 16u; ++step) {
+        CHECK(pattern.steps[step].value == step && pattern.steps[step].on);
+    }
+
+    /* A shorter pattern spreads the clip over its own steps; the rest is kept. */
+    pattern.length = 8u;
+    pattern.steps[12].value = 3u;
+    DemoSlicer_ClipPattern(&slicer.setup.map, &pattern);
+    for (step = 0u; step < 8u; ++step) {
+        CHECK(pattern.steps[step].value == 2u * step && pattern.steps[step].on);
+    }
+    CHECK(pattern.steps[12].value == 3u);
+    /* No clip: nothing changes. */
+    DemoSlicer_Init(&slicer);
+    DemoSlicer_ClipPattern(&slicer.setup.map, &pattern);
+    CHECK(pattern.steps[1].value == 2u);
+}
+
 /* A new clip keeps count and parameters and makes the boundaries equal again
  * (0022 item 14); Reset drops a half-chosen count and closes the slice. */
 static void test_new_clip_and_reset(void)
@@ -195,6 +242,7 @@ int main(void)
     test_last_slice_length();
     test_count_change();
     test_count_change_confirm();
+    test_clip_pattern();
     test_new_clip_and_reset();
     if (failures != 0u) {
         printf("%u failure(s)\n", failures);

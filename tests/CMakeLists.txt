@@ -129,7 +129,8 @@ spooky_test(demo_sequencer_test demo_sequencer_test.c ../CM7/App/demo_sequencer.
 spooky_test(slice_map_test slice_map_test.c ../Common/Src/slice_map.c)
 spooky_test(slicer_test slicer_test.c ../Common/Src/slicer.c ../Common/Src/slice_map.c)
 spooky_test(demo_slicer_test demo_slicer_test.c ../CM7/App/demo_slicer.c
-    ../Common/Src/slicer.c ../Common/Src/slice_map.c)
+    ../Common/Src/slicer.c ../Common/Src/slice_map.c ../Common/Src/step_pattern.c
+    ../Common/Src/transport.c)
 spooky_test(tempo_matrix_test tempo_matrix_test.c ../CM7/App/tempo_matrix.c
     ../Common/Src/matrix_feedback.c)
 add_executable(ipc_smoke_protocol_test

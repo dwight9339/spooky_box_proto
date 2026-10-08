@@ -15,7 +15,8 @@
  *   Encoder 1 click applies it (item 9). If boundaries or slice parameters were
  *   edited, the page asks first: a second Encoder 1 click discards them and
  *   applies; any other gesture cancels. A count change makes equal slices with
- *   default parameters, and the caller remaps the pattern (item 11).
+ *   default parameters, and the caller rebuilds the pattern with
+ *   DemoSlicer_ClipPattern.
  * - Slice open: Encoders 0 to 3 turn pitch, gate, level and length (item 6).
  *   Length moves the slice's end, which is also the next slice's start, in
  *   DEMO_SLICER_LENGTH_STEP_MS steps, never below SLICER_MIN_SLICE_SAMPLES
@@ -37,6 +38,7 @@
 
 #include "sm/gesture.h"
 #include "slicer.h"
+#include "step_pattern.h"
 
 #define DEMO_SLICER_LENGTH_STEP_MS 10U
 #define DEMO_SLICER_GATE_STEP 5U
@@ -63,7 +65,7 @@ typedef struct
 {
   bool toggle_run;         /* run or stop the transport */
   bool setup_changed;      /* stage setup in the engine */
-  bool count_changed;      /* remap the pattern from old_map to setup.map */
+  bool count_changed;      /* rebuild the pattern for setup.map */
   bool audition;           /* play audition_slice once (the transport is stopped) */
   uint8_t audition_slice;
   SliceMap old_map;        /* valid with count_changed */
@@ -89,5 +91,14 @@ bool DemoSlicer_Edited(const DemoSlicer *slicer);
 uint8_t DemoSlicer_NextCount(uint8_t count, int32_t detents);
 /* A slice's length in milliseconds of clip. */
 uint32_t DemoSlicer_LengthMs(const DemoSlicer *slicer, uint8_t slice);
+/* The pattern a count change leaves: each step holds the slice under its time
+ * in the clip, and only a step where a new slice begins is on, so the slices
+ * play through and the pattern sounds like the clip at any count. With 16
+ * equal slices it is the identity pattern (0022 item 10). This replaces 0022
+ * item 11's remap by time while the Slicer's steps are read-only, so a count
+ * round trip (16, 4, 16) gives the identity back (user call 2026-10-07,
+ * p04.15 bench); p04.16 decides how an edited pattern follows the map.
+ * Written one step at a time, as the step view edits. */
+void DemoSlicer_ClipPattern(const SliceMap *map, StepPattern *pattern);
 
 #endif /* SPOOKY_DEMO_SLICER_H */
