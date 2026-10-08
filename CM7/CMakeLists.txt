@@ -240,10 +240,15 @@ if(SPOOKY_DEMO)
     # The grain render runs from flash with no instruction cache, and its speed
     # moved about 20 % between builds as the linker shifted it within a 32-byte
     # flash line (p04.14 bench, 2026-10-07). Aligning its functions and loops to
-    # the line keeps its timing the same in every build.
+    # the line keeps its timing the same in every build. Library calls are not
+    # aligned: newlib-nano's byte-wise memset cost the grain render about 360 us
+    # when its loop straddled a line (p04.15 bench), so the renders clear their
+    # mix with their own loop, and -fno-tree-loop-distribute-patterns keeps GCC
+    # from turning that loop back into a memset call.
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/granular.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/slicer.c
-        PROPERTIES COMPILE_OPTIONS "-O2;-falign-functions=32;-falign-loops=32")
+        PROPERTIES COMPILE_OPTIONS
+        "-O2;-falign-functions=32;-falign-loops=32;-fno-tree-loop-distribute-patterns")
 endif()
 
 # Use the same FatFs R0.12c release as the passing sibling SDMMC tests.

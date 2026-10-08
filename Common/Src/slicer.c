@@ -368,6 +368,18 @@ static uint16_t Saturate(int32_t value)
   return (uint16_t)(int16_t)value;
 }
 
+/* Word stores, not memset, as in granular.c: newlib-nano's byte loop costs
+ * whatever its place in flash makes it cost. */
+static void ClearMix(int32_t *mix, uint32_t frames)
+{
+  uint32_t frame;
+
+  for (frame = 0U; frame < frames; ++frame)
+  {
+    mix[frame] = 0;
+  }
+}
+
 bool Slicer_Render(SlicerEngine *engine, uint16_t *stereo, uint32_t frame_count)
 {
   const int16_t *samples;
@@ -394,7 +406,7 @@ bool Slicer_Render(SlicerEngine *engine, uint16_t *stereo, uint32_t frame_count)
     uint32_t voice;
     uint32_t frame;
 
-    (void)memset(engine->mix, 0, chunk * sizeof(engine->mix[0]));
+    ClearMix(engine->mix, chunk);
     for (voice = 0U; voice < 2U; ++voice)
     {
       if (engine->voices[voice].active)
