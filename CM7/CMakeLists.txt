@@ -54,6 +54,12 @@ if(SPOOKY_RADIO_TUNE_QUALIFICATION)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_RADIO_TUNE_QUALIFICATION=1)
 endif()
 
+option(SPOOKY_SPEAKER_MONITOR
+    "Monitor on the line-out speaker amplifier unless headphones are in (jr0)" OFF)
+if(SPOOKY_SPEAKER_MONITOR)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_SPEAKER_MONITOR=1)
+endif()
+
 option(SPOOKY_LOGGER_LOAD_QUALIFICATION
     "Add LOG LOAD and LOG FAULT for logger saturation bench qualification (jjy.6)" OFF)
 if(SPOOKY_LOGGER_LOAD_QUALIFICATION)
