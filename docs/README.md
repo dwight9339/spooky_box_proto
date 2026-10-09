@@ -43,6 +43,8 @@ Updated in the same change as the code they describe.
   wiring, clocks and bus devices.
 - [USB CLI contract](design/usb-cli.md): target commands, responses and the EMF
   metric definition.
+- [Session format](design/session-format.md): Field session folder, manifest and
+  event-log byte layouts (decision 0030; target, not yet written by firmware).
 - [Foreground latency](design/foreground-latency.md): recording-time service
   budgets, queue-headroom rationale and violation diagnostics.
 - [Repository layout](design/repository-layout.md): canonical build and generated-file

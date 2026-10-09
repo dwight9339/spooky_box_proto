@@ -420,7 +420,9 @@ The following questions should remain visible as prototypes are tested:
 11. Which settings persist across power cycles, and which should reset to safe defaults?
 12. Resolved for sessions (decision 0008): a top-level mode change requested during a session is rejected with a visible reason. The session keeps recording; nothing is deferred.
 13. Should Playback remain inside the Settings hub, receive a direct Shift shortcut, or both?
-14. What file formats should store EMF, semantic events, and sequencer or MIDI data?
+14. What file formats should store EMF, radio-activity metrics, and sequencer or MIDI data?
+    Semantic events are resolved (decision 0030): each session folder holds a versioned
+    binary event log on the session sample timeline.
 15. Resolved for Field (decision 0009): actions resolve on release with push-turn cancellation; hold thresholds and chord timings stay configurable until bench trials (D-006).
 16. Should tunes and band transitions play generated transition noise in the monitored mix, and which of its qualities, such as level, color and duration, should the user be able to tune? Transition noise would never be written to a raw track.
 
