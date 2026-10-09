@@ -71,6 +71,14 @@ uint8_t DemoSlicer_NextCount(uint8_t count, int32_t detents)
   return counts[Clamp(index + detents, 0, 2)];
 }
 
+void DemoSlicer_MarkPatternEdited(DemoSlicer *slicer)
+{
+  if (slicer != NULL)
+  {
+    slicer->pattern_edited = true;
+  }
+}
+
 bool DemoSlicer_Edited(const DemoSlicer *slicer)
 {
   SlicerSetup equal;
@@ -79,6 +87,10 @@ bool DemoSlicer_Edited(const DemoSlicer *slicer)
   if (slicer == NULL)
   {
     return false;
+  }
+  if (slicer->pattern_edited)
+  {
+    return true;
   }
   Slicer_DefaultSetup(&equal, slicer->setup.map.clip_samples, slicer->count);
   if (memcmp(equal.map.starts, slicer->setup.map.starts, sizeof(equal.map.starts)) != 0)
@@ -133,11 +145,13 @@ void DemoSlicer_ClipPattern(const SliceMap *map, StepPattern *pattern)
   }
 }
 
-/* Equal slices at the chosen count with default parameters (0022 item 9). */
+/* Equal slices at the chosen count with default parameters (0022 item 9); the
+ * caller rebuilds the pattern. */
 static void ApplyCount(DemoSlicer *slicer, DemoSlicerAction *action)
 {
   action->old_map = slicer->setup.map;
   slicer->count = slicer->count_choice;
+  slicer->pattern_edited = false;
   Slicer_DefaultSetup(&slicer->setup, action->old_map.clip_samples, slicer->count);
   slicer->selected = SliceMap_Remap(&action->old_map, slicer->selected, &slicer->setup.map);
   action->count_changed = true;

@@ -244,8 +244,9 @@ static bool SlicerGesture(Gesture gesture)
   }
   if (action.count_changed)
   {
-    /* The pattern plays the clip through at the new count (user call
-     * 2026-10-07, in place of 0022 item 11 until p04.16). */
+    /* The pattern plays the clip through at the new count, edited or not:
+     * the page asked before discarding edits (user calls 2026-10-07 and
+     * 2026-10-08, in place of 0022 item 11). */
     DemoSlicer_ClipPattern(&slicer_page.setup.map, DemoClip_SlicePattern());
   }
   if (action.audition)
@@ -304,15 +305,22 @@ static bool InstrumentGesture(Gesture gesture)
     return SlicerGesture(gesture);
   }
   target.pattern = DemoClip_ActivePattern();
-  /* The Slicer's steps are shown, not edited, until p04.16 binds them. */
-  target.read_only = slicing;
+  /* A Slicer step holds a slice, one a detent (p04.16); a Granular step a clip
+   * position in permille. */
+  target.value_max = slicing ? (uint16_t)(slicer_page.count - 1U) : (uint16_t)DEMO_SEQ_VALUE_MAX;
+  target.value_step = slicing ? 1U : (uint16_t)DEMO_SEQ_VALUE_STEP;
   target.engine = slicing ? (uint8_t)DEMO_SEQ_ENGINE_SLICER : (uint8_t)DEMO_SEQ_ENGINE_GRANULAR;
   target.tempo_x100 = DemoClip_TempoTarget();
   target.toggle_run = false;
   target.tempo_changed = false;
   target.engine_chosen = false;
+  target.pattern_edited = false;
   if (DemoSequencer_OnGesture(&seq, gesture, &target, Now()))
   {
+    if (target.pattern_edited && slicing)
+    {
+      DemoSlicer_MarkPatternEdited(&slicer_page);
+    }
     if (target.toggle_run)
     {
       DemoClip_SetRunning(!DemoClip_RunTarget());
@@ -1625,13 +1633,15 @@ static bool HandleSlice(const char *command)
   DemoClip_GetSlicerStatus(&slices);
   used = (size_t)snprintf(response, sizeof(response),
                           "OK DEMO SLICE ACTIVE=%u COUNT=%u CHOICE=%u SELECTED=%u FOCUS=%s "
-                          "EDITED=%u SOUNDING=%ld TRIGGERS=%lu SILENT=%lu FADES_CUT=%lu "
+                          "EDITED=%u PATTERN_EDITED=%u SOUNDING=%ld TRIGGERS=%lu SILENT=%lu "
+                          "FADES_CUT=%lu "
                           "RENDER_US_MAX=%lu SWITCHES=%lu SLICES=",
                           (voice.voice == (uint8_t)DEMO_VOICE_SLICE) ? 1U : 0U,
                           (unsigned)slicer_page.count, (unsigned)slicer_page.count_choice,
                           (unsigned)slicer_page.selected + 1U,
                           (slicer_page.focus < 3U) ? focuses[slicer_page.focus] : "?",
                           DemoSlicer_Edited(&slicer_page) ? 1U : 0U,
+                          slicer_page.pattern_edited ? 1U : 0U,
                           (slices.sounding == SLICER_NO_SLICE) ? -1L : (long)slices.sounding + 1L,
                           (unsigned long)slices.triggers, (unsigned long)slices.silent,
                           (unsigned long)slices.fades_cut,

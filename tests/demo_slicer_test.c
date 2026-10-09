@@ -160,6 +160,38 @@ static void test_count_change_confirm(void)
     CHECK(slicer.setup.slices[0].level_percent == 80u);
 }
 
+/* A hand-edited pattern counts as an edit (user call 2026-10-08, p04.16): the
+ * count change asks first, a cancel keeps the pattern edited, and applying it
+ * rebuilds the pattern, which then counts as unedited. */
+static void test_pattern_edit_confirm(void)
+{
+    setup();
+    CHECK(!slicer.pattern_edited && !DemoSlicer_Edited(&slicer));
+    DemoSlicer_MarkPatternEdited(&slicer);
+    DemoSlicer_MarkPatternEdited(NULL);
+    CHECK(DemoSlicer_Edited(&slicer));
+
+    send(GESTURE_TURN, 1u, -2);
+    CHECK(send(GESTURE_CLICK, 1u, 0) && !action.count_changed);
+    CHECK(slicer.focus == DEMO_SLICER_CONFIRM);
+    CHECK(send(GESTURE_TURN, 0u, 1) && !action.count_changed); /* cancels */
+    CHECK(slicer.count == 16u && slicer.pattern_edited);
+
+    send(GESTURE_TURN, 1u, -2);
+    send(GESTURE_CLICK, 1u, 0);
+    CHECK(send(GESTURE_CLICK, 1u, 0) && action.count_changed && slicer.count == 4u);
+    CHECK(!slicer.pattern_edited && !DemoSlicer_Edited(&slicer));
+
+    /* Unedited, the next count change applies at once. */
+    send(GESTURE_TURN, 1u, 2);
+    CHECK(send(GESTURE_CLICK, 1u, 0) && action.count_changed && slicer.count == 16u);
+
+    /* A new clip keeps the pattern, so it stays edited (0022 item 14). */
+    DemoSlicer_MarkPatternEdited(&slicer);
+    DemoSlicer_OnClip(&slicer, 120000u);
+    CHECK(slicer.pattern_edited);
+}
+
 /* After a count change each slice fires on the step where its time begins and
  * the steps between are off, so a round trip gives the identity back (user call
  * 2026-10-07, p04.15 bench: 0022 item 11's remap made 16, 4, 16 play as 4). */
@@ -242,6 +274,7 @@ int main(void)
     test_last_slice_length();
     test_count_change();
     test_count_change_confirm();
+    test_pattern_edit_confirm();
     test_clip_pattern();
     test_new_clip_and_reset();
     if (failures != 0u) {

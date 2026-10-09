@@ -19,10 +19,11 @@
  *   Encoder 0 click selects, an Encoder 1 click closes without a change, and the
  *   menu closes after DEMO_SEQ_MENU_TIMEOUT_MS without input.
  * - Step view, steps: Encoder 0 browses (C-072); its click edits the step
- *   (C-073) unless the pattern is read-only (the Slicer's until p04.16); its
- *   long press moves to the settings row (C-077).
- * - Step edit: Encoder 0 changes the value at once (C-074); an Encoder 1 click
- *   turns the step on or off (C-075); an Encoder 0 click returns (C-076).
+ *   (C-073); its long press moves to the settings row (C-077).
+ * - Step edit: Encoder 0 changes the value at once (C-074), value_step a detent
+ *   within 0..value_max (1 % of the clip for Granular, one slice for the
+ *   Slicer, p04.16); an Encoder 1 click turns the step on or off (C-075); an
+ *   Encoder 0 click returns (C-076).
  * - Settings row: Tempo and Division. Encoder 0 browses (C-078); its click edits
  *   (C-079); its long press returns to the steps (0026 item 8). An edit is heard
  *   at once (C-080); an Encoder 0 click keeps it (C-082) and an Encoder 1 click
@@ -42,8 +43,8 @@
 #include "step_pattern.h"
 
 #define DEMO_SEQ_MENU_TIMEOUT_MS 5000U /* decision 0009 menu inactivity */
-#define DEMO_SEQ_VALUE_STEP 10U        /* a step value moves 1 % of the clip a detent */
-#define DEMO_SEQ_VALUE_MAX 1000U
+#define DEMO_SEQ_VALUE_STEP 10U        /* Granular: a step value moves 1 % of the clip a detent */
+#define DEMO_SEQ_VALUE_MAX 1000U       /* Granular: the clip's end in permille */
 #define DEMO_SEQ_TEMPO_STEP_X100 100U  /* 1 BPM a detent (0026 item 8) */
 
 typedef enum
@@ -101,12 +102,14 @@ typedef struct
 typedef struct
 {
   StepPattern *pattern;   /* edited in place */
-  bool read_only;         /* in: the steps are shown, not edited */
+  uint16_t value_max;     /* in: the largest step value */
+  uint16_t value_step;    /* in: how far a detent moves a step value */
   uint8_t engine;         /* in: the engine now; out: the engine chosen */
   uint32_t tempo_x100;    /* in: the tempo now; out: the tempo to set */
   bool toggle_run;        /* out: run or stop the transport */
   bool tempo_changed;     /* out */
   bool engine_chosen;     /* out: the engine menu committed engine */
+  bool pattern_edited;    /* out: a step's value or on flag changed */
 } DemoSeqTarget;
 
 void DemoSequencer_Init(DemoSequencer *seq);

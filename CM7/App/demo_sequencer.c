@@ -161,7 +161,7 @@ static void Steps(DemoSequencer *seq, Gesture gesture, DemoSeqTarget *target)
         seq->step = (uint8_t)Clamp((int32_t)seq->step + gesture.detents, 0,
                                    (int32_t)pattern->length - 1);
       }
-      else if (Is(gesture, GESTURE_CLICK, 0U) && !target->read_only)
+      else if (Is(gesture, GESTURE_CLICK, 0U))
       {
         seq->focus = (uint8_t)DEMO_SEQ_FOCUS_STEP_EDIT;
       }
@@ -173,13 +173,20 @@ static void Steps(DemoSequencer *seq, Gesture gesture, DemoSeqTarget *target)
     case DEMO_SEQ_FOCUS_STEP_EDIT:
       if (Is(gesture, GESTURE_TURN, 0U))
       {
-        step->value = (uint16_t)Clamp((int32_t)step->value +
-                                        (gesture.detents * (int32_t)DEMO_SEQ_VALUE_STEP),
-                                      0, (int32_t)DEMO_SEQ_VALUE_MAX);
+        const uint16_t value = (uint16_t)Clamp((int32_t)step->value +
+                                                 (gesture.detents * (int32_t)target->value_step),
+                                               0, (int32_t)target->value_max);
+
+        if (value != step->value)
+        {
+          step->value = value;
+          target->pattern_edited = true;
+        }
       }
       else if (Is(gesture, GESTURE_CLICK, 1U))
       {
         step->on = !step->on;
+        target->pattern_edited = true;
       }
       else if (Is(gesture, GESTURE_CLICK, 0U))
       {
