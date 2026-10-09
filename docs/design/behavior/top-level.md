@@ -118,7 +118,7 @@ restarts the model at its initial state.
 | DEV-I1 | Target | Constitution Principle I |
 | DEV-I2 | Target | Constitution Principle III |
 | DEV-I3 | Target | Implemented; no bench evidence |
-| DEV-I4 | Target | Product intent: [roadmap](../../../spec/product/roadmap.md) M3 scope, in-band tuning while recording, and M4 scope, band transitions qualified during recording; [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions; [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
+| DEV-I4 | Target | Product intent: [roadmap](../../../spec/product/roadmap.md) M3 scope, in-band tuning and band transitions while recording; [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions; [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
 | DEV-I5 | Target | [Decision 0004](../../decisions/0004-radio-track-continuity-across-transitions.md); [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions |
 | DEV-01 | Proven | Sleep entry while idle: [radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | DEV-02 | Target | Implemented in the IPC experiment builds; no bench evidence |
