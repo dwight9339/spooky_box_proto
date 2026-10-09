@@ -425,6 +425,10 @@ static void UsbCliCommand(const char *line)
   {
     return;
   }
+  if (AudioPath_HandleCommand(command))
+  {
+    return;
+  }
   if (!AudioPath_IsRunning())
   {
     (void)UsbTest_SendText("ERR RADIO audio path is not running\r\n");

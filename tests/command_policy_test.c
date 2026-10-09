@@ -108,6 +108,11 @@ static void current_cli_commands_map_to_the_shared_actions(void)
     CHECK(CommandPolicy_ActionFromCli("UI DISPLAY TEST 2") ==
           COMMAND_ACTION_UI_TEST_PATTERN);
     CHECK(CommandPolicy_ActionFromCli("UI STATUS") == COMMAND_ACTION_NONE);
+    CHECK(CommandPolicy_ActionFromCli("MONITOR") == COMMAND_ACTION_STATUS_READ);
+    CHECK(CommandPolicy_ActionFromCli("MONITOR STATUS") == COMMAND_ACTION_STATUS_READ);
+    CHECK(CommandPolicy_ActionFromCli("MONITOR PTT ON") == COMMAND_ACTION_PTT);
+    CHECK(CommandPolicy_ActionFromCli("MONITOR PTT OFF") == COMMAND_ACTION_PTT);
+    CHECK(CommandPolicy_ActionFromCli("MONITORS") == COMMAND_ACTION_NONE);
     CHECK(CommandPolicy_ActionFromCli("EMF ZERO") == COMMAND_ACTION_EMF_ZERO);
     CHECK(CommandPolicy_ActionFromCli("EMF READ") == COMMAND_ACTION_NONE);
     CHECK(CommandPolicy_ActionFromCli("BAND FM") == COMMAND_ACTION_RADIO_BAND);

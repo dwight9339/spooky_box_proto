@@ -4,8 +4,10 @@
 
 #include "diagnostics.h"
 #include "main.h"
+#include "monitor_ptt.h"
 #include "radio_activity_feed.h"
 #include "radio_recorder.h"
+#include "usb_test.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +15,13 @@
 #define AUDIO_PATH_BUFFER_SAMPLES      2048U
 #define AUDIO_PATH_HALF_SAMPLES        (AUDIO_PATH_BUFFER_SAMPLES / 2U)
 #define AUDIO_PATH_START_TIMEOUT_MS    500U
+/* Decision 0028: PTT fades the monitored radio over 5 ms (240 frames at 48 kHz),
+ * like an engine switch (decision 0027). Configurable until a bench sets it. */
+#ifndef SPOOKY_PTT_RAMP_FRAMES
+#define SPOOKY_PTT_RAMP_FRAMES         240U
+#endif
+/* Decision 0012 item 6: a foreground observation, at most one 75 ms pass. */
+#define AUDIO_PATH_PTT_UNCERTAINTY_FRAMES 3600U
 
 static DMA_HandleTypeDef hdma_sai2_a;
 static SAI_HandleTypeDef *radio_rx_sai;
@@ -29,6 +38,8 @@ static volatile uint32_t fault_flags;
 static volatile bool stream_enabled;
 static bool running;
 static AudioTimelineStream radio_timeline;
+static MonitorPtt monitor_ptt;
+static AudioPathPttStatus ptt_status; /* foreground only */
 
 static uint32_t __attribute__((optimize("O3")))
 MeasureFs(GPIO_TypeDef *port, uint32_t pin)
@@ -113,6 +124,9 @@ bool AudioPath_Init(SAI_HandleTypeDef *radio_rx, SAI_HandleTypeDef *monitor_tx)
   radio_rx_sai = radio_rx;
   monitor_tx_sai = monitor_tx;
   running = false;
+  MonitorPtt_Init(&monitor_ptt, SPOOKY_PTT_RAMP_FRAMES);
+  (void)memset(&ptt_status, 0, sizeof(ptt_status));
+  ptt_status.ramp_frames = SPOOKY_PTT_RAMP_FRAMES;
   return true;
 }
 
@@ -237,13 +251,14 @@ bool AudioPath_StartCapture(void)
   return true;
 }
 
-/* Monitor stage: builds the headphone signal from raw radio samples. It is a
- * pass-through today; microphone mixing and PTT belong here. The input is
- * read-only and the recorder has already copied it. */
+/* Monitor stage: builds the headphone signal from raw radio samples, then PTT
+ * fades the radio out of it (decision 0028). The microphone is not monitored.
+ * The input is read-only and the recorder has already copied it. */
 static void RenderMonitor(const uint16_t *raw, uint16_t *monitor,
                           uint32_t sample_count)
 {
   memcpy(monitor, raw, sample_count * sizeof(uint16_t));
+  MonitorPtt_Apply(&monitor_ptt, (int16_t *)monitor, sample_count / 2U);
 }
 
 static void ProcessHalf(uint32_t offset)
@@ -471,6 +486,132 @@ bool AudioPath_AlignCaptureLocked(uint32_t mic_latency_frames,
     start->monitor_phase_valid = true;
   }
   return true;
+}
+
+void AudioPath_SetPtt(bool on)
+{
+  AudioTimelineStamp stamp;
+
+  if (on == MonitorPtt_IsOn(&monitor_ptt))
+  {
+    return;
+  }
+  MonitorPtt_Set(&monitor_ptt, on);
+  (void)memset(&stamp, 0, sizeof(stamp));
+  stamp.uncertainty_frames = AUDIO_PATH_PTT_UNCERTAINTY_FRAMES;
+  if (!AudioPath_GetPosition(&stamp.position))
+  {
+    ++ptt_status.unstamped; /* the radio stream is not running */
+  }
+  if (on)
+  {
+    ++ptt_status.presses;
+    ptt_status.last_on = stamp;
+  }
+  else
+  {
+    ++ptt_status.releases;
+    ptt_status.last_off = stamp;
+  }
+}
+
+bool AudioPath_GetPttStatus(AudioPathPttStatus *status)
+{
+  if (status == NULL)
+  {
+    return false;
+  }
+  *status = ptt_status;
+  status->on = MonitorPtt_IsOn(&monitor_ptt);
+  status->gain_q15 = MonitorPtt_GainQ15(&monitor_ptt);
+  return true;
+}
+
+/* Decimal text of a 64-bit frame count; newlib-nano printf has no %llu. */
+static void FormatFrame(uint64_t frame, char text[21])
+{
+  char digits[21];
+  uint32_t count = 0U;
+  uint32_t index;
+
+  do
+  {
+    digits[count++] = (char)('0' + (frame % 10U));
+    frame /= 10U;
+  } while ((frame != 0U) && (count < 20U));
+  for (index = 0U; index < count; ++index)
+  {
+    text[index] = digits[count - 1U - index];
+  }
+  text[count] = '\0';
+}
+
+/* A stamp as epoch:frame, or NONE before the first. */
+static void FormatStamp(char *text, size_t size, const AudioTimelineStamp *stamp)
+{
+  char frame[21];
+
+  if (stamp->position.epoch == 0U)
+  {
+    (void)snprintf(text, size, "NONE");
+  }
+  else
+  {
+    FormatFrame(stamp->position.frame, frame);
+    (void)snprintf(text, size, "%lu:%s", (unsigned long)stamp->position.epoch, frame);
+  }
+}
+
+static void SendMonitorStatus(void)
+{
+  AudioPathPttStatus status;
+  char on_text[32];
+  char off_text[32];
+  char line[200];
+
+  (void)AudioPath_GetPttStatus(&status);
+  FormatStamp(on_text, sizeof(on_text), &status.last_on);
+  FormatStamp(off_text, sizeof(off_text), &status.last_off);
+  (void)snprintf(line, sizeof(line),
+                 "OK MONITOR PTT=%u GAIN_Q15=%lu RAMP_FRAMES=%lu MIC=OFF PRESSES=%lu "
+                 "RELEASES=%lu UNSTAMPED=%lu LAST_ON=%s LAST_OFF=%s UNCERTAINTY=%lu\r\n",
+                 status.on ? 1U : 0U, (unsigned long)status.gain_q15,
+                 (unsigned long)status.ramp_frames, (unsigned long)status.presses,
+                 (unsigned long)status.releases, (unsigned long)status.unstamped,
+                 on_text, off_text, (unsigned long)AUDIO_PATH_PTT_UNCERTAINTY_FRAMES);
+  (void)UsbTest_SendText(line);
+}
+
+bool AudioPath_HandleCommand(const char *command)
+{
+  if (command == NULL)
+  {
+    return false;
+  }
+  if ((strcmp(command, "MONITOR") == 0) || (strcmp(command, "MONITOR STATUS") == 0))
+  {
+    SendMonitorStatus();
+    return true;
+  }
+  if (strcmp(command, "MONITOR PTT ON") == 0)
+  {
+    AudioPath_SetPtt(true);
+    SendMonitorStatus();
+    return true;
+  }
+  if (strcmp(command, "MONITOR PTT OFF") == 0)
+  {
+    AudioPath_SetPtt(false);
+    SendMonitorStatus();
+    return true;
+  }
+  if ((strncmp(command, "MONITOR", 7U) == 0) &&
+      ((command[7] == ' ') || (command[7] == '\t')))
+  {
+    (void)UsbTest_SendText("ERR usage: MONITOR [STATUS] | MONITOR PTT ON|OFF\r\n");
+    return true;
+  }
+  return false;
 }
 
 void DMA1_Stream4_IRQHandler(void)
