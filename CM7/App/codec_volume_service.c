@@ -18,6 +18,8 @@
 #define SGTL5000_CHIP_ANA_CTRL         0x0024U
 #define SGTL5000_CHIP_LINREG_CTRL      0x0026U
 #define SGTL5000_CHIP_REF_CTRL         0x0028U
+#define SGTL5000_CHIP_LINE_OUT_CTRL    0x002CU
+#define SGTL5000_CHIP_LINE_OUT_VOL     0x002EU
 #define SGTL5000_CHIP_ANA_POWER        0x0030U
 #define SGTL5000_CHIP_SHORT_CTRL       0x003CU
 
@@ -27,6 +29,18 @@
 #define VOLUME_MUTE_THRESHOLD          1024U
 #define HP_VOLUME_0DB_CODE             0x18U
 #define HP_VOLUME_MIN_CODE             0x7FU
+
+#if SPOOKY_SPEAKER_MONITOR
+/* Experiment full_spooky_proto-jr0: line out (J5) feeds the PAM8302 speaker
+ * amplifier, which monitors whenever no headphones are present. Line out has
+ * no analog volume stage, so on the speaker the pot sets the DAC volume over
+ * the same attenuation range it gives the headphone amplifier. */
+#define LINE_OUT_CTRL_VALUE            0x0F22U /* LO VAG 1.65 V, 0.54 mA */
+#define LINE_OUT_VOL_VALUE             0x1D1DU /* about 1.3 Vpp full scale */
+#define ANA_CTRL_LINE_OUT_ENABLED      0x0033U /* HP muted, line out live */
+#define DAC_VOLUME_0DB_CODE            0x3CU
+#define JACK_DEBOUNCE_MS               50U
+#endif
 
 typedef struct
 {
@@ -46,6 +60,10 @@ static CodecVolumeError last_error;
 static uint32_t volume_filtered;
 static uint32_t volume_last_sample_tick;
 static uint8_t volume_last_code = DEFAULT_HP_VOLUME_CODE;
+#if SPOOKY_SPEAKER_MONITOR
+static bool jack_candidate;
+static uint32_t jack_candidate_tick;
+#endif
 
 static bool ReadJack(GPIO_TypeDef *port, uint16_t pin)
 {
@@ -175,6 +193,90 @@ static bool WriteChecked(uint16_t reg, uint16_t value)
   return true;
 }
 
+#if SPOOKY_SPEAKER_MONITOR
+static void SetSpeakerAmplifier(bool enabled)
+{
+  /* AMP_SD is open drain here: releasing it lets the breakout's pull-up to
+   * VSYS_RAW enable the amplifier; driving it low shuts the amplifier down. */
+  HAL_GPIO_WritePin(AMP_SD_GPIO_Port, AMP_SD_Pin,
+                    enabled ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+static bool WriteVolumeCode(uint8_t code)
+{
+  if (!headphone_inserted)
+  {
+    const uint8_t dac_code =
+      (uint8_t)(DAC_VOLUME_0DB_CODE + (code - HP_VOLUME_0DB_CODE));
+    return WriteChecked(SGTL5000_CHIP_DAC_VOL,
+                        ((uint16_t)dac_code << 8) | dac_code);
+  }
+  return WriteChecked(SGTL5000_CHIP_ANA_HP_CTRL,
+                      ((uint16_t)code << 8) | code);
+}
+
+static bool ApplyOutputState(void)
+{
+  const bool speaker = !headphone_inserted;
+  const bool effective_mute = transition_muted ||
+                              (volume_ready && volume_muted);
+  const uint8_t volume_code = volume_ready
+    ? volume_last_code : DEFAULT_HP_VOLUME_CODE;
+  const uint8_t idle_code = speaker ? HP_VOLUME_MIN_CODE : DAC_VOLUME_0DB_CODE;
+
+  if (!codec_ready)
+  {
+    return false;
+  }
+  /* Any state change may also change the path, so mute both outputs before
+   * the volume moves between the DAC and the headphone amplifier. */
+  if (!WriteChecked(SGTL5000_CHIP_ANA_CTRL, 0x0133U) ||
+      !WriteChecked(SGTL5000_CHIP_ADCDAC_CTRL, 0x020CU))
+  {
+    return false;
+  }
+  /* A muted line out still leaves the amplifier's noise and wiring pickup
+   * audible, so the amplifier runs only while the speaker is live. */
+  SetSpeakerAmplifier(speaker && !effective_mute);
+  if (!WriteChecked(speaker ? SGTL5000_CHIP_ANA_HP_CTRL
+                            : SGTL5000_CHIP_DAC_VOL,
+                    ((uint16_t)idle_code << 8) | idle_code) ||
+      !WriteVolumeCode(volume_code))
+  {
+    return false;
+  }
+
+  if (!effective_mute)
+  {
+    return WriteChecked(SGTL5000_CHIP_ADCDAC_CTRL, 0x0200U) &&
+           WriteChecked(SGTL5000_CHIP_ANA_CTRL,
+                        speaker ? ANA_CTRL_LINE_OUT_ENABLED : 0x0123U);
+  }
+  return true;
+}
+
+static bool ReadHeadphoneJackDebounced(void)
+{
+  const bool raw = ReadJack(HEADPHONE_JACK_DETECT_GPIO_Port,
+                            HEADPHONE_JACK_DETECT_Pin);
+  const uint32_t now = HAL_GetTick();
+
+  /* A plug bounces on the detect switch, and each bounce would swap paths. */
+  if (raw != jack_candidate)
+  {
+    jack_candidate = raw;
+    jack_candidate_tick = now;
+  }
+  return ((now - jack_candidate_tick) >= JACK_DEBOUNCE_MS)
+           ? jack_candidate : headphone_inserted;
+}
+#else
+static bool WriteVolumeCode(uint8_t code)
+{
+  return WriteChecked(SGTL5000_CHIP_ANA_HP_CTRL,
+                      ((uint16_t)code << 8) | code);
+}
+
 static bool ApplyOutputState(void)
 {
   const bool effective_mute = transition_muted || !headphone_inserted ||
@@ -195,8 +297,7 @@ static bool ApplyOutputState(void)
     }
   }
 
-  if (!WriteChecked(SGTL5000_CHIP_ANA_HP_CTRL,
-                    ((uint16_t)volume_code << 8) | volume_code))
+  if (!WriteVolumeCode(volume_code))
   {
     return false;
   }
@@ -208,6 +309,7 @@ static bool ApplyOutputState(void)
   }
   return true;
 }
+#endif
 
 static bool ReadVolumeRaw(uint16_t *raw)
 {
@@ -321,8 +423,7 @@ static bool ServiceVolume(bool force)
       return false;
     }
   }
-  else if (!WriteChecked(SGTL5000_CHIP_ANA_HP_CTRL,
-                         ((uint16_t)code << 8) | code))
+  else if (!WriteVolumeCode(code))
   {
     volume_last_code = previous_code;
     volume_muted = previous_muted;
@@ -361,7 +462,13 @@ static bool StartDigitalHeadphones(void)
     {SGTL5000_CHIP_DAC_VOL,     0x3C3CU},
     {SGTL5000_CHIP_ANA_HP_CTRL, 0x7F7FU},
     {SGTL5000_CHIP_DIG_POWER,   0x0021U},
+#if SPOOKY_SPEAKER_MONITOR
+    {SGTL5000_CHIP_LINE_OUT_CTRL, LINE_OUT_CTRL_VALUE},
+    {SGTL5000_CHIP_LINE_OUT_VOL,  LINE_OUT_VOL_VALUE},
+    {SGTL5000_CHIP_ANA_POWER,   0x42FDU} /* adds LINEOUT_POWERUP */
+#else
     {SGTL5000_CHIP_ANA_POWER,   0x42FCU}
+#endif
   };
   uint8_t chip_id_data[2];
   uint16_t chip_id;
@@ -421,19 +528,40 @@ bool CodecVolume_Init(I2C_HandleTypeDef *i2c, ADC_HandleTypeDef *volume_adc,
   transition_muted = false;
   headphone_inserted = false;
   last_error = CODEC_VOLUME_ERROR_NONE;
+#if SPOOKY_SPEAKER_MONITOR
+  /* Start on the path the jack already selects, so a boot with headphones in
+   * never opens the speaker. */
+  headphone_inserted = ReadJack(HEADPHONE_JACK_DETECT_GPIO_Port,
+                                HEADPHONE_JACK_DETECT_Pin);
+  jack_candidate = headphone_inserted;
+  jack_candidate_tick = HAL_GetTick();
+  SetSpeakerAmplifier(false);
+#endif
 
   if (!InitVolume() || !StartDigitalHeadphones())
   {
     return false;
   }
   codec_ready = true;
+#if SPOOKY_SPEAKER_MONITOR
+  printf("[audio] speaker experiment: line out on; monitor on %s\r\n",
+         headphone_inserted ? "headphones" : "speaker");
+  if (!ApplyOutputState())
+  {
+    return false;
+  }
+#endif
   return ServiceVolume(true);
 }
 
 bool CodecVolume_Service(void)
 {
+#if SPOOKY_SPEAKER_MONITOR
+  const bool inserted = ReadHeadphoneJackDebounced();
+#else
   const bool inserted = ReadJack(HEADPHONE_JACK_DETECT_GPIO_Port,
                                  HEADPHONE_JACK_DETECT_Pin);
+#endif
 
   last_error = CODEC_VOLUME_ERROR_NONE;
   if (!codec_ready)
@@ -456,10 +584,16 @@ bool CodecVolume_Service(void)
       last_error = CODEC_VOLUME_ERROR_OUTPUT;
       return false;
     }
+#if SPOOKY_SPEAKER_MONITOR
+    printf("[audio] headphones %s; monitor on %s\r\n",
+           inserted ? "inserted" : "removed",
+           inserted ? "headphones" : "speaker");
+#else
     printf("[audio] headphones %s; output %s\r\n",
            inserted ? "inserted" : "removed",
            inserted ? (volume_muted ? "muted by volume pot" :
                          "enabled under volume-pot control") : "muted");
+#endif
   }
   return true;
 }
@@ -492,10 +626,12 @@ bool CodecVolume_SetTransitionMuted(bool muted)
   /* The legacy path did not issue an extra codec transaction when a band
    * transition ended with no headphones present. Clear the gate now; the next
    * insertion event will apply the resulting output state. */
+#if !SPOOKY_SPEAKER_MONITOR
   if (!muted && !headphone_inserted)
   {
     return true;
   }
+#endif
   if (!ApplyOutputState())
   {
     transition_muted = previous;

@@ -25,6 +25,9 @@ Schematics are in [`reference/`](../../reference/). Command behavior is in the
   ST-LINK USB is not used
 - UI board with two standalone buttons, four RGB push encoders, an IS31FL3741
   LED matrix and a 2.42-inch SSD1309 OLED
+- PAM8302 mono amplifier breakout with a speaker, powered from `VSYS_RAW`, its
+  audio input wired to the audio shield's line-out header J5 and its SD pin on
+  the backplane `AMP_SD` net (PG8). The breakout pulls SD up to its own supply.
 
 **Open:** whether to isolate the audio shield's Zio 3.3 V pin and jumper the shield to
 the alternate backplane 3.3 V header. The SD stress and three-channel recording load
@@ -82,6 +85,19 @@ The SGTL5000 remains muted until the bodged PE0 headphone-detect input is low,
 then opens at a conservative fixed `-30 dB`. Removing the plug mutes it again.
 Firmware measures PD12 and PE4 directly and refuses to unmute unless both
 frame-sync signals are between 47.5 and 48.5 kHz.
+
+Normal images keep line out powered down and hold `AMP_SD` low, so the speaker
+amplifier stays shut down. The opt-in `SpeakerMonitor` preset
+(`SPOOKY_SPEAKER_MONITOR`, Beads `full_spooky_proto-jr0`) tests the speaker as the
+default monitor. It powers SGTL5000 line out (VAG 1.65 V, level `0x1D`) and
+sets PG8 as open drain, so the pin never drives the `VSYS_RAW` pull-up. With no
+headphones present (PE0 debounced for 50 ms), the firmware mutes the headphone
+amplifier and opens line out. The pot then sets the DAC volume over the headphone
+range (0 to −51.5 dB). Plugging in headphones mutes line out, restores the DAC to
+0 dB and returns the pot to the headphone amplifier. Both outputs are muted during
+each path change. `AMP_SD` is released only while the speaker path is selected and
+unmuted; with line out muted, the running amplifier remained faintly audible.
+Evidence: [2026-10-09 speaker monitor experiment](../evidence/2026-10-09-speaker-monitor-experiment.md).
 
 PLL3P is 24.576 MHz. SAI1 divides it to the codec's approximately 12.288 MHz MCLK;
 SAI2 uses a direct /16 divider for 1.536 MHz SCK and 48 kHz FS. This also keeps the

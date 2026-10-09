@@ -65,7 +65,8 @@ def elf_ranges(raw, core):
 
 
 # Root CMake presets whose image pairs may be flashed; experiment presets are opt-in.
-PRESETS = ("Debug", "Release", "IpcSmoke", "IpcMismatch", "RadioTuneQual")
+PRESETS = ("Debug", "Release", "IpcSmoke", "IpcMismatch", "RadioTuneQual",
+           "SpeakerMonitor")
 
 
 def _validate_pair(path):
