@@ -6,7 +6,7 @@ import sys
 import time
 from .result import BenchError, exit_code, outcome, utc_now
 from .supervisor import supervise
-from . import regression, wav_align
+from . import regression, wav_align, wav_retune
 from .wav_inspect import filename as wav_filename
 
 
@@ -103,6 +103,12 @@ def parser():
     align.add_argument("--window-seconds", type=duration, default=2.0)
     align.add_argument("--hop-seconds", type=duration, default=5.0)
     align.add_argument("--max-lag-ms", type=duration, default=50.0)
+    retune = wav_commands.add_parser(
+        "retune", help="offline: check radio zero runs against [retune] stamps (decision 0015)")
+    retune.add_argument("--wav", required=True, help="local recorder WAV")
+    retune.add_argument("--log", required=True, help="UART log holding the [retune] lines")
+    retune.add_argument("--origin", required=True,
+                        help="the recording's RECORD TIMELINE origin as EPOCH:FRAME")
     for name in ("power", "trace", "crash"):
         commands.add_parser(name, help="not implemented")
     return p
@@ -132,6 +138,14 @@ def main(argv=None):
             metrics, (result, reason, detail) = wav_align.run_local({
                 "wav": args.wav, "window_seconds": args.window_seconds,
                 "hop_seconds": args.hop_seconds, "max_lag_ms": args.max_lag_ms})
+            metrics["wav"] = args.wav
+            value = outcome(command, execution, started_at, started, result=result,
+                            reason=reason, detail=detail, metrics=metrics)
+            return _emit(value, argv)
+        if command == "wav retune":
+            execution = "offline"
+            metrics, (result, reason, detail) = wav_retune.run_local({
+                "wav": args.wav, "log": args.log, "origin": args.origin})
             metrics["wav"] = args.wav
             value = outcome(command, execution, started_at, started, result=result,
                             reason=reason, detail=detail, metrics=metrics)
