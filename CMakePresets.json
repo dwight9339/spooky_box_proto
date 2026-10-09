@@ -39,6 +39,13 @@
             }
         },
         {
+            "name": "SpeakerMonitor",
+            "inherits": "Debug",
+            "cacheVariables": {
+                "SPOOKY_SPEAKER_MONITOR": "ON"
+            }
+        },
+        {
             "name": "Demo",
             "inherits": "Debug",
             "cacheVariables": {
@@ -65,6 +72,10 @@
         {
             "name": "RadioTuneQual",
             "configurePreset": "RadioTuneQual"
+        },
+        {
+            "name": "SpeakerMonitor",
+            "configurePreset": "SpeakerMonitor"
         },
         {
             "name": "Demo",
