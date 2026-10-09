@@ -149,7 +149,7 @@ foreground service. The budget table and queue-headroom rationale are in
 While Preparing, Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
 transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE`, `UI MATRIX ORIENT`,
 `UI MATRIX FEEDBACK ON` and `UI DISPLAY TEST` patterns, and radio tuning/band changes are rejected before their service handlers
-run. Status and diagnostic reads and `CLASSIC` parameter commands remain available. Every policy rejection is a
+run. Status and diagnostic reads, `CLASSIC` parameter commands and `MONITOR PTT` remain available. Every policy rejection is a
 numeric `COMMAND_REJECTED` diagnostic and returns one stable `ERR` line. No command
 is deferred until the recording ends.
 
@@ -289,6 +289,32 @@ continues to honor the headphone jack detect. `VOLUME READ` (also accepted as
 ```text
 OK VOLUME ADC=32768 LEVEL=50% ATTEN=-26.5 dB MUTED=0
 ```
+
+## Monitor and PTT
+
+The headphone monitor plays the radio. PTT (C-016, C-017; decision 0028) fades the
+radio out of the monitor over `SPOOKY_PTT_RAMP_FRAMES` (240 frames, 5 ms) and back in
+on release; both raw tracks keep recording unchanged. The microphone is not monitored.
+`MONITOR PTT ON` and `MONITOR PTT OFF` set PTT through the same command-policy action
+as Button 1, allowed in every session state. A CLI press is not reconciled: it lasts
+until `MONITOR PTT OFF`. Repeating the current state changes nothing. `MONITOR` (or
+`MONITOR STATUS`) reports, and each `MONITOR PTT` command replies with the same line:
+
+```text
+OK MONITOR PTT=1 GAIN_Q15=0 RAMP_FRAMES=240 MIC=OFF PRESSES=3 RELEASES=2 UNSTAMPED=0 LAST_ON=1:1843200 LAST_OFF=1:1795584 UNCERTAINTY=3600
+```
+
+| Field | Meaning |
+| --- | --- |
+| `PTT`, `GAIN_Q15` | PTT is on; the radio's monitor gain now, 32768 unity and 0 silent |
+| `RAMP_FRAMES`, `MIC` | Frames of a full fade; the microphone is not in the monitor |
+| `PRESSES`, `RELEASES` | PTT changes since boot |
+| `UNSTAMPED` | Changes made while the radio stream was not running, so not stamped |
+| `LAST_ON`, `LAST_OFF` | The latest press and release as `epoch:frame` on the radio timeline (decision 0012), `NONE` before the first |
+| `UNCERTAINTY` | Frames before the stamp in which the change may have happened: one foreground pass (decision 0012 item 6). It excludes the input path's own latency |
+
+Sessions do not store PTT stamps yet; that belongs to the session format
+(`full_spooky_proto-hpq.3`).
 
 ## Magnetometer and EMF
 

@@ -44,6 +44,8 @@ spooky_test(logger_diag_test logger_diag_test.c stubs/fake_hal.c
     ../CM7/App/event_queue.c ../CM7/App/app_events.c)
 spooky_test(event_queue_test event_queue_test.c ../CM7/App/event_queue.c)
 spooky_test(audio_timeline_test audio_timeline_test.c ../Common/Src/audio_timeline.c)
+# Monitor-only PTT ramp (54w.9, decision 0028).
+spooky_test(monitor_ptt_test monitor_ptt_test.c ../Common/Src/monitor_ptt.c)
 spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.c)
 # The same policy test for the opt-in in-band tuning qualification build (54w.6).
 spooky_test(command_policy_qualification_test command_policy_test.c ../CM7/App/command_policy.c)
