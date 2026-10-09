@@ -1164,7 +1164,9 @@ void ctx_integration_command(CtxCommand command, int32_t arg)
     case CTX_CMD_LOAD_CAPTURE:
       RequestLoad();
       break;
-    case CTX_CMD_MONITOR_PTT:  /* no monitor stage yet: full_spooky_proto-54w.9 */
+    case CTX_CMD_MONITOR_PTT:  /* Button 1 (C-016, C-017; decision 0028) */
+      AudioPath_SetPtt(arg != 0);
+      break;
     case CTX_CMD_SELECT_ENGINE:/* followed by CTX_PUB_ENGINE_CHANGED */
     case CTX_CMD_SET_MODE:     /* followed by CTX_PUB_MODE_CHANGED */
     case CTX_CMD_TUNE:         /* Manual is not in the demo */
