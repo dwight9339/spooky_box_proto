@@ -36,7 +36,9 @@ On the `demo/halloween-2026` branch only, the opt-in `Demo` preset builds the
 Halloween 2026 demo image (decision 0011) under `build/Demo/firmware/`. It
 inherits Debug and adds `SPOOKY_DEMO=1` to both cores; demo-only code compiles
 only under that symbol, so Debug and Release on the demo branch behave as on
-`main`. The `spooky_box_demo` PlatformIO environment deploys it. Bench runs on
+`main`. It also turns on the speaker monitor experiment
+(`SPOOKY_SPEAKER_MONITOR`, decision 0029). The `spooky_box_demo` PlatformIO
+environment deploys it. Bench runs on
 this image are demo-image evidence only.
 
 The per-core presets under `CM4/` and `CM7/` remain useful for isolated

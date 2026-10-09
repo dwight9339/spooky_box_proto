@@ -38,6 +38,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0026](0026-transport-tempo-and-fit-on-load.md) | Transport tempo and fit on load | Accepted |
 | [0027](0027-instrument-engine-switching.md) | Instrument engine switching | Accepted |
 | [0028](0028-monitor-only-ptt-without-mic-monitoring.md) | Monitor-only PTT without microphone monitoring | Accepted |
+| [0029](0029-demo-speaker-monitor.md) | Speaker monitoring in the demo image | Accepted |
 
 ## Template
 

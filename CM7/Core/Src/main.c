@@ -1501,6 +1501,10 @@ static void MX_GPIO_Init(void)
 
   HAL_GPIO_WritePin(AMP_SD_GPIO_Port, AMP_SD_Pin, GPIO_PIN_RESET);
   GPIO_InitStruct.Pin = AMP_SD_Pin;
+#if SPOOKY_SPEAKER_MONITOR
+  /* The PAM8302 breakout pulls SD up to VSYS_RAW; never drive it high. */
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+#endif
   HAL_GPIO_Init(AMP_SD_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE END MX_GPIO_Init_2 */

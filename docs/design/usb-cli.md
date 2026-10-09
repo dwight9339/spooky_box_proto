@@ -475,6 +475,10 @@ qualification build, but at most one run per pass while capturing. The `UI` test
 commands still exist; they share the surfaces with the demo and are for bring-up
 only.
 
+The demo image monitors on the speaker unless headphones are plugged in
+([decision 0029](../decisions/0029-demo-speaker-monitor.md); the switching is
+described in [prototype hardware](prototype-hardware.md)). This too is demo-only.
+
 `DEMO` or `DEMO STATUS` reports the demo's counters:
 
 ```text
