@@ -110,7 +110,7 @@ The first coherent instrument experience.
   product state and input-event IPC; M4 inputs and semantic rendering under recording
   load; in-band tuning while recording; Classic territory scanning with reversible
   Manual; semantic EMF, activity and visual feedback; common audio sample timeline;
-  microphone monitoring and monitor-only PTT.
+  monitor-only PTT (microphone monitoring deferred, decision 0028).
 - **Exit:** the integrated Classic/Manual recording acceptance: image-linked audio,
   event, queue and latency evidence; no navigation-induced stop or reset; no stuck
   Shift or PTT; no misleading save or record status; controls stay responsive under

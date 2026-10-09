@@ -166,6 +166,14 @@ CommandAction CommandPolicy_ActionFromCli(const char *command)
   {
     return COMMAND_ACTION_RADIO_TUNE;
   }
+  if (HasWordPrefix(command, "MONITOR PTT"))
+  {
+    return COMMAND_ACTION_PTT; /* the CLI's C-016 and C-017 */
+  }
+  if (HasWordPrefix(command, "MONITOR"))
+  {
+    return COMMAND_ACTION_STATUS_READ;
+  }
   return COMMAND_ACTION_NONE;
 }
 

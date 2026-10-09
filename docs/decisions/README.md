@@ -29,6 +29,15 @@ Each file records one design decision, following the Documentation Classes rules
 | [0017](0017-microphone-start-latency-uncompensated.md) | Microphone start latency stays uncompensated | Accepted |
 | [0018](0018-classic-am-lw-maximum-rate.md) | Classic maximum rate on AM and LW | Accepted |
 | [0019](0019-matrix-emf-four-buckets-and-quiet-baseline.md) | Four matrix EMF buckets, a quiet-field baseline and no trail by default | Accepted |
+| [0020](0020-halloween-demo-slicer-and-sequencers.md) | Halloween demo Instrument scope: Slicer, sequencers and a tempo matrix | Accepted |
+| [0021](0021-instrument-engines-and-performance-views.md) | Instrument engines own their performance-view semantics | Accepted |
+| [0022](0022-slicer-engine.md) | Slicer engine: slice map, slice page and sequencer | Accepted |
+| [0023](0023-clip-selection-and-region-editing.md) | Clip selection, region editing and the empty Instrument | Accepted |
+| [0024](0024-clip-sources-and-track-mixing.md) | Clip sources, track mixing and maximum clip length | Accepted |
+| [0025](0025-demo-clip-in-d2-sram.md) | Demo clip in D2 SRAM, up to 5 s | Accepted |
+| [0026](0026-transport-tempo-and-fit-on-load.md) | Transport tempo and fit on load | Accepted |
+| [0027](0027-instrument-engine-switching.md) | Instrument engine switching | Accepted |
+| [0028](0028-monitor-only-ptt-without-mic-monitoring.md) | Monitor-only PTT without microphone monitoring | Accepted |
 
 ## Template
 

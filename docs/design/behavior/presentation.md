@@ -113,6 +113,7 @@ Published by [ContextSm.puml](ContextSm.puml) and
 | PRES-CTX-03 | `CTX_PUB_PAGE_CHANGED` | Display and the page color of the encoder lights | None |
 | PRES-CTX-04 | `CTX_PUB_MENU_OPENED`, `CTX_PUB_MENU_HIGHLIGHT`, `CTX_PUB_MENU_CLOSED`, `CTX_PUB_MENU_WITHDRAWN` | Display: the engine or band menu, its highlight, and its closing | None |
 | PRES-CTX-05 | `CTX_PUB_ACTION_REJECTED` | Display only: the action and "unavailable while recording" briefly, then the current view. Lights and audio are unchanged ([decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 10). | None |
+| PRES-CTX-06 | PTT on and off (`CTX_CMD_MONITOR_PTT`, C-016, C-017) | Audio: the radio fades out of the monitored mix and back in ([decision 0028](../../decisions/0028-monitor-only-ptt-without-mic-monitoring.md)). Display and lights are open. | `OK MONITOR PTT=...` for `MONITOR PTT ON` and `OFF` |
 | PRES-INP-01 | `INP_PUB_SHIFT_ENTERED`, `INP_PUB_SHIFT_LEFT` | Lights: while Shift is held, only the controls with an available Shift action are lit ([decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 8) | None |
 
 ## Classic scan engine events
@@ -153,6 +154,7 @@ state after the change. Routine jumps change only the frequency and are not even
 | Classic view | How does the display show Classic's run state, rate, distance, edge behavior and hold time, and is scan position expressed on the matrix? | `full_spooky_proto-54w.5` |
 | Band change during a session | How are band changes and radio faults acknowledged on display, lights and audio while recording? | `full_spooky_proto-54w.1`, [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
 | Swallowed presses | Does a button that is pressed while its gesture is swallowed or dismissed still light at 100%? | `full_spooky_proto-54w.18` |
+| PTT on display and lights | Do the display and Button 1's light show that PTT is held? | `full_spooky_proto-54w.5`, `full_spooky_proto-54w.18` |
 | Prompt audio | Is opening, confirming or cancelling the prompt acknowledged with sound? | `full_spooky_proto-54w.1` |
 | Transition noise | Should tunes and band transitions play generated noise in the monitored mix, with user-tunable level, color and duration? It would never reach a stored raw track or the activity metrics. | `full_spooky_proto-54w.16`; product open decision 16 |
 
@@ -189,6 +191,7 @@ state after the change. Routine jumps change only the frequency and are not even
 | PRES-DEV-02 | Target | CLI reply implemented; no bench evidence |
 | PRES-DEV-03 | Target | Product intent. Published by the Context machine and host tested; not wired to firmware or any surface. |
 | PRES-CTX-01 to PRES-CTX-05 | Target | [Decision 0009](../../decisions/0009-first-slice-field-controls.md) and [decision 0008](../../decisions/0008-recording-safe-command-policy.md). Published by the Context machine and host tested; not wired to firmware or any surface. |
+| PRES-CTX-06 | Proven for the audio fade and the CLI reply | [Monitor-only PTT](../../evidence/2026-10-08-monitor-only-ptt.md), through `MONITOR PTT`; [decision 0028](../../decisions/0028-monitor-only-ptt-without-mic-monitoring.md). Button 1 is not wired on `main`. |
 | PRES-INP-01 | Target | [Decision 0008](../../decisions/0008-recording-safe-command-policy.md) item 8. Published by the InputResolution machine and host tested; not wired to firmware or any surface. |
 | PRES-CLS-01 to PRES-CLS-05 | Proven for the CLI reply and log line | [Classic on the M7](../../evidence/2026-10-02-classic-on-m7.md), without the holding run state. No display surface (`full_spooky_proto-54w.5`). |
 | PRES-CLS-01 holding, PRES-CLS-06 | Proven for the CLI reply and log line | [Classic activity hold](../../evidence/2026-10-03-classic-activity-hold.md). When the hold triggers is not settled (spec SC-008 failed; `full_spooky_proto-54w.32`). No display surface (`full_spooky_proto-54w.5`). |
