@@ -244,7 +244,8 @@ lasts while onsets of any size follow within 1.5 s, ends at the hold time at mos
 and happens at most once per landing. A hold never shortens a dwell: when it ends
 before the next jump is due, the jump keeps its time. Onsets come from the decision
 0013 detector, fed one level per radio half-buffer; from each tune or band switch
-until one half-buffer after the radio is seen settled, blocks are not measured
+until the radio is seen settled, plus one half-buffer except after FM and AM tunes,
+blocks are not measured
 ([decision 0015](../decisions/0015-raw-radio-track-during-in-band-tunes.md)), so no
 hold starts there. `CLASSIC ACTIVITY` replies:
 

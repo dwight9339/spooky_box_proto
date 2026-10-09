@@ -146,13 +146,26 @@ static void LogRetune(const char *outcome, uint32_t frequency_khz)
          (unsigned long)frequency_khz);
 }
 
+/* Decision 0015 item 5: the settle margin after an in-band tune's end, in
+ * radio half-buffers. FM and AM are set by the item 10 qualification
+ * (docs/evidence/2026-10-09-retune-qualification.md: no zero run outlasted its
+ * end stamp). SW and LW keep the starting value until qualified with usable
+ * reception. */
+static const uint32_t retune_settle_blocks[RADIO_BAND_COUNT] =
+{
+  [RADIO_BAND_FM] = 0U,
+  [RADIO_BAND_AM] = 0U,
+  [RADIO_BAND_SW] = RADIO_ACTIVITY_FEED_SETTLE_BLOCKS,
+  [RADIO_BAND_LW] = RADIO_ACTIVITY_FEED_SETTLE_BLOCKS
+};
+
 /* Start stamp of a retune interval on the radio sample timeline. */
-static void StartRetune(void)
+static void StartRetune(uint32_t settle_blocks)
 {
   uint32_t block = 0U;
   const bool known = AudioPath_GetBlockInProgress(&block);
 
-  RadioActivityFeed_OnRetuneStart(known, block);
+  RadioActivityFeed_OnRetuneStart(known, block, settle_blocks);
 }
 
 void RadioAdapter_ReportStarted(bool ok)
@@ -294,13 +307,14 @@ bool rad_integration_begin_tune(uint32_t frequency_khz)
   /* The start stamp of the retune interval, before the receiver can change
    * (decision 0015 item 3). It ends once the machine leaves Tuning, including
    * when the tune cannot be issued. */
-  StartRetune();
   {
     RadioControlStatus status;
 
     (void)RadioControl_GetStatus(&status);
     retune_band = status.band;
   }
+  StartRetune((retune_band < RADIO_BAND_COUNT) ? retune_settle_blocks[retune_band]
+                                               : RADIO_ACTIVITY_FEED_SETTLE_BLOCKS);
   retune_target_khz = frequency_khz;
   retune_start_known = AudioPath_GetPosition(&retune_start);
   /* A tune that cannot be issued produces neither event (decision 0015 item 2). */
@@ -321,7 +335,8 @@ bool rad_integration_switch_band(uint32_t band_value)
   }
   /* A band switch is also not a measurement, and the new band's level is not
    * comparable with the old one's. */
-  StartRetune();
+  /* A band switch is a decision 0004 gap, not yet qualified (54w.12). */
+  StartRetune(RADIO_ACTIVITY_FEED_SETTLE_BLOCKS);
   if (!CodecVolume_SetTransitionMuted(true))
   {
     goto failed;

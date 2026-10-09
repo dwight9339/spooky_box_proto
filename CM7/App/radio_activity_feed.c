@@ -25,6 +25,7 @@ static bool feed_running;
 static uint32_t feed_now_ms;
 static bool retune_open;
 static uint32_t retune_from;       /* first unmeasured block of the open interval */
+static uint32_t retune_settle;     /* settle margin of the open interval, in blocks */
 static bool closed_known;
 static uint32_t closed_through;    /* last unmeasured block of closed intervals */
 static uint8_t onset_max[RADIO_ACTIVITY_READER_COUNT];
@@ -53,6 +54,7 @@ bool RadioActivityFeed_Init(void)
   feed_now_ms = 0U;
   retune_open = false;
   retune_from = 0U;
+  retune_settle = RADIO_ACTIVITY_FEED_SETTLE_BLOCKS;
   closed_known = false;
   closed_through = 0U;
   (void)memset(onset_max, 0, sizeof(onset_max));
@@ -135,7 +137,8 @@ static void Drain(void)
   }
 }
 
-void RadioActivityFeed_OnRetuneStart(bool block_known, uint32_t block_in_progress)
+void RadioActivityFeed_OnRetuneStart(bool block_known, uint32_t block_in_progress,
+                                     uint32_t settle_blocks)
 {
   /* A tune issued before the previous interval closed adjoins it (decision
    * 0015 item 8): the open interval simply continues. */
@@ -144,6 +147,11 @@ void RadioActivityFeed_OnRetuneStart(bool block_known, uint32_t block_in_progres
     retune_open = true;
     /* Unknown: every block until the interval closes. */
     retune_from = block_known ? block_in_progress : 0U;
+    retune_settle = settle_blocks;
+  }
+  else if (settle_blocks > retune_settle)
+  {
+    retune_settle = settle_blocks;
   }
   ++retunes;
 }
@@ -162,7 +170,7 @@ void RadioActivityFeed_Service(uint32_t now_ms, bool radio_running, bool radio_t
   Drain();
   if (retune_open && !radio_tuning && block_known)
   {
-    closed_through = block_in_progress + RADIO_ACTIVITY_FEED_SETTLE_BLOCKS;
+    closed_through = block_in_progress + retune_settle;
     closed_known = true;
     retune_open = false;
   }

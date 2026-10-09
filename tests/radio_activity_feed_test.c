@@ -51,9 +51,15 @@ static void service(bool running, bool tuning)
     RadioActivityFeed_Service(now_ms, running, tuning, true, next_block);
 }
 
+static void retune_with(uint32_t settle_blocks)
+{
+    RadioActivityFeed_OnRetuneStart(true, next_block, settle_blocks);
+}
+
+/* An interval with decision 0015 item 5's starting margin, one block. */
 static void retune(void)
 {
-    RadioActivityFeed_OnRetuneStart(true, next_block);
+    retune_with(RADIO_ACTIVITY_FEED_SETTLE_BLOCKS);
 }
 
 /* Blocks at a steady level with the radio settled, drained as they arrive. */
@@ -162,13 +168,45 @@ static void back_to_back_retunes_adjoin(void)
     CHECK(status_now().blocks == 21u && status_now().measured == 11u);
 }
 
+/* Decision 0015 item 10 can set a band's margin to zero: the interval ends
+ * with the block in progress when the radio is seen settled. */
+static void a_zero_margin_measures_the_next_block(void)
+{
+    start();
+    settled(1000, 10u);               /* 0 to 9 */
+    retune_with(0u);                  /* from 10 */
+    post(0, 3u);                      /* 10 to 12 */
+    service(true, true);
+    post(1000, 1u);                   /* 13 */
+    service(true, false);             /* closes through 14, in progress */
+    post(1000, 2u);                   /* 14 unmeasured, 15 measured */
+    service(true, false);
+    CHECK(status_now().blocks == 16u && status_now().measured == 11u);
+}
+
+/* Adjoining intervals keep the larger margin, so an unqualified band switch
+ * is never shortened by a tune that follows it. */
+static void adjoining_intervals_keep_the_larger_margin(void)
+{
+    start();
+    settled(1000, 10u);               /* 0 to 9 */
+    retune_with(2u);                  /* from 10 */
+    post(0, 2u);                      /* 10, 11 */
+    retune_with(0u);                  /* continues; margin stays 2 */
+    post(0, 2u);                      /* 12, 13 */
+    service(true, false);             /* closes through 16 */
+    post(1000, 4u);                   /* 14 to 16 unmeasured, 17 measured */
+    service(true, false);
+    CHECK(status_now().blocks == 18u && status_now().measured == 11u);
+}
+
 /* Without a stream position the interval starts at block 0 and stays open
  * until the position can be read again. */
 static void an_unknown_position_keeps_blocks_unmeasured(void)
 {
     start();
     settled(1000, 10u);
-    RadioActivityFeed_OnRetuneStart(false, 12345u);
+    RadioActivityFeed_OnRetuneStart(false, 12345u, RADIO_ACTIVITY_FEED_SETTLE_BLOCKS);
     post(1000, 3u);
     RadioActivityFeed_Service(now_ms, true, false, false, 12345u);
     CHECK(status_now().retuning && status_now().measured == 10u);
@@ -262,6 +300,8 @@ int main(void)
     a_retune_interval_is_not_measured();
     the_mute_end_is_not_an_onset();
     back_to_back_retunes_adjoin();
+    a_zero_margin_measures_the_next_block();
+    adjoining_intervals_keep_the_larger_margin();
     an_unknown_position_keeps_blocks_unmeasured();
     nothing_is_measured_while_the_radio_is_not_running();
     the_measurement_goes_stale();

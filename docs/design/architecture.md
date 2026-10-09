@@ -88,7 +88,10 @@ radio capture callback posts each half-buffer's level, with its index on the dec
 foreground gives the blocks to the detector, marking those inside a decision 0015
 retune interval, or taken while the radio is not running, as not measuring. The radio
 adapter stamps each interval's start before a tune or band switch is written to the
-receiver; the feed closes it one half-buffer after the radio is seen settled. The
+receiver; the feed closes it when the radio is seen settled, plus a settle margin: none
+for FM and AM tunes, one half-buffer for SW and LW tunes and for band switches
+([retune qualification](../evidence/2026-10-09-retune-qualification.md)). The adapter
+also logs each issued tune's start and end stamps as a `[retune]` line. The
 pixel decisions live in the portable `Common/matrix_feedback` renderer, which takes
 only those semantic facts and the recording state and composes a 9x9 frame. It can run on whichever core renders the
 matrix. [Decision 0019](../decisions/0019-matrix-emf-four-buckets-and-quiet-baseline.md)
