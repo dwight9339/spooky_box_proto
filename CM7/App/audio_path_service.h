@@ -66,4 +66,26 @@ bool AudioPath_GetBlockInProgress(uint32_t *block);
 bool AudioPath_AlignCaptureLocked(uint32_t mic_latency_frames,
                                   AudioPathCaptureStart *start);
 
+/* Monitor-only PTT (C-016, C-017; decision 0028). */
+typedef struct
+{
+  bool on;                       /* the radio is muted, or fading out, in the monitor */
+  uint32_t gain_q15;             /* the radio's monitor gain now; 32768 is unity */
+  uint32_t ramp_frames;          /* frames of a full fade */
+  uint32_t presses;
+  uint32_t releases;
+  uint32_t unstamped;            /* changes made while the radio stream was not running */
+  AudioTimelineStamp last_on;    /* epoch 0 before the first */
+  AudioTimelineStamp last_off;
+} AudioPathPttStatus;
+
+/* Foreground only. Fades the radio out of the monitored mix (true) or back in
+ * (false) and stamps the change on the radio timeline as a foreground
+ * observation. The raw capture is never affected. Repeating the current state
+ * does nothing, so a reconciliation release is safe to send at any time. */
+void AudioPath_SetPtt(bool on);
+bool AudioPath_GetPttStatus(AudioPathPttStatus *status);
+/* MONITOR [STATUS] and MONITOR PTT ON|OFF; true when the command was one of them. */
+bool AudioPath_HandleCommand(const char *command);
+
 #endif /* SPOOKY_AUDIO_PATH_SERVICE_H */

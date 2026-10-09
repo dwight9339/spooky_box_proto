@@ -47,6 +47,14 @@ board must share `board_id`, regardless of artifact root. The local profile is
 ignored by Git. Python's [Windows serial discovery](https://pyserial.readthedocs.io/en/stable/tools.html)
 supplies the device metadata; Spooky Bench adds selection and ambiguity checks.
 
+## Power up and down
+
+Switch the battery on before connecting either USB cable (the target's or the Spooky
+Probe's), and unplug both cables before switching it off. With a cable connected and
+the battery switch off, the rig boots on limited USB power. Switching the battery on
+during that boot hung an SD write and left the card unresponsive until it was reseated
+([2026-10-08 trials](../evidence/2026-10-08-sd-power-up-order.md)).
+
 ## Run
 
 ```powershell
@@ -93,8 +101,8 @@ electrical acceptance is inferred from simulation or tests.
 ## Live acceptance
 
 Use the working SYSOFF/power arrangement recorded in the
-[2026-09-23 bench notes](../evidence/2026-09-23-bench-results.md). Connect both USB
-paths and:
+[2026-09-23 bench notes](../evidence/2026-09-23-bench-results.md). With the battery
+switched on, connect both USB paths and:
 
 1. Verify no-profile status lists both identities, then configure and run status.
 2. Run a short console capture during known target logging. Inspect raw bytes and
