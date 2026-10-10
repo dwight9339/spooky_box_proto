@@ -28,6 +28,8 @@ Schematics are in [`reference/`](../../reference/). Command behavior is in the
 - PAM8302 mono amplifier breakout with a speaker, powered from `VSYS_RAW`, its
   audio input wired to the audio shield's line-out header J5 and its SD pin on
   the backplane `AMP_SD` net (PG8). The breakout pulls SD up to its own supply.
+  Its gain trim pot is at maximum
+  ([2026-10-09 gain trim](../evidence/2026-10-09-pam8302-gain-trim.md)).
 
 **Open:** whether to isolate the audio shield's Zio 3.3 V pin and jumper the shield to
 the alternate backplane 3.3 V header. The SD stress and three-channel recording load
