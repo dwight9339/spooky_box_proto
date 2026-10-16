@@ -9,7 +9,7 @@ the encodings it refers to. It changes only together with a format version.
 - **Folders, index and manifest:** implemented (`full_spooky_proto-hpq.10`), with
   [bench evidence](../evidence/2026-10-16-session-folders.md).
 - **Event log:** implemented (`full_spooky_proto-hpq.11`) for session start and end,
-  tunes, PTT and Classic. Bench evidence is pending. Gap records follow with
+  tunes, PTT and Classic, with [bench evidence](../evidence/2026-10-16-session-event-log.md). Gap records follow with
   `full_spooky_proto-54w.12`. Sessions recorded before it have `events=none` and no
   event counts.
 - **Audio parts:** a session holds one `AUDIO000.WAV` and ends at the WAV size limit
@@ -180,5 +180,7 @@ From decision 0030 items 10 to 13:
   between the loss and that snapshot is unknown.
 - **Retune intervals.** A retune interval is tune start to tune end plus the
   manifest's `retune_settle_frames` for the tune's band (decision 0015 item 4).
+  A tune start with no tune end before session end was still in flight when the
+  session ended; its interval runs to session end.
 - **Gaps.** A gap (decision 0004) runs from gap start to gap end, both exact. The
   radio track is digital silence inside it.

@@ -98,8 +98,11 @@ def summarize(records):
 
 
 def tunes(records):
-    """Tune intervals in session frames, paired start-to-end (one in flight)."""
-    intervals, start = [], None
+    """Tune intervals in session frames, paired start-to-end (one in flight).
+
+    A tune still in flight when the session ends has no end record (its end was
+    observed after the last frame), so its interval runs to session end."""
+    intervals, start, last = [], None, None
     for record in records:
         if record["kind"] == "tune_start":
             start = record
@@ -108,4 +111,9 @@ def tunes(records):
                               "band": record["band"], "outcome": record["outcome"],
                               "target_khz": record["target_khz"]})
             start = None
+        elif record["kind"] == "session_end":
+            last = record["frame"]
+    if start is not None and last is not None:
+        intervals.append({"start": start["frame"], "end": last, "band": start["band"],
+                          "outcome": "open", "target_khz": start["target_khz"]})
     return intervals

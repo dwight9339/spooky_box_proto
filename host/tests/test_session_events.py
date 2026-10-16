@@ -89,6 +89,14 @@ class Summary(unittest.TestCase):
                            "target_khz": 1000}])
 
 
+    def test_tune_open_at_session_end_runs_to_the_end(self):
+        tune_start = record(1, 900, 0x0010, struct.pack("<B3xI", 1, 720))
+        records = session_events.decode(HEADER + start() + tune_start + end(2, 999))[1]
+        self.assertEqual(session_events.tunes(records),
+                         [{"start": 900, "end": 999, "band": "AM", "outcome": "open",
+                           "target_khz": 720}])
+
+
 class RetuneFromEvents(unittest.TestCase):
     def test_wav_retune_reads_events(self):
         with tempfile.TemporaryDirectory() as root:
