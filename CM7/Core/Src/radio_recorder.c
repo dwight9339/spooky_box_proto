@@ -11,6 +11,7 @@
 #include "reply_queue.h"
 #include "sd_diskio.h"
 #include "sd_media.h"
+#include "session_events.h"
 #include "session_files.h"
 #include "storage_margin.h"
 #include "storage_service.h"
@@ -100,6 +101,7 @@ typedef enum
 {
   PREPARE_FOLDER = 0, /* /FIELD, the index, then the session folder */
   PREPARE_MANIFEST,   /* the index's next number and MANIFEST.TXT */
+  PREPARE_EVENTS,     /* EVENTS.BIN and its header */
   PREPARE_CREATE,
   PREPARE_SEARCH,
   PREPARE_ALLOCATE,
@@ -135,6 +137,11 @@ static uint32_t session_number;     /* 0: no folder made */
 static bool session_index_read;
 static bool session_manifest_written;
 static SessionManifest session_manifest;
+/* Decision 0030 items 7-17: EVENTS.BIN, written below audio draining. */
+static FIL events_file;
+static bool events_file_open;
+static bool events_failed;
+static uint32_t events_write_max_ms;
 
 static int32_t pdm_dma_buffer[2U * RECORDER_PDM_BLOCK_SAMPLES]
   __attribute__((section(".dma_buffer"), aligned(32)));
@@ -347,6 +354,15 @@ static void RecorderDiscardFile(void)
     (void)f_close(&recorder_file);
     recorder_file_open = false;
     (void)f_unlink(recorder_filename);
+  }
+  if (events_file_open)
+  {
+    (void)f_close(&events_file);
+    events_file_open = false;
+    if (SessionFiles_Path(session_number, "EVENTS.BIN", path, sizeof(path)))
+    {
+      (void)f_unlink(path);
+    }
   }
   if (session_number != 0U)
   {
@@ -620,6 +636,7 @@ static void RecorderInitManifest(void)
     session_manifest.retune_settle_frames[band] = RadioAdapter_RetuneSettleFrames(band);
   }
   session_manifest.mic_compensation_frames = SPOOKY_RECORD_MIC_LATENCY_FRAMES;
+  session_manifest.events_present = true;
 }
 
 /* Advances the index past this folder, then writes the manifest with
@@ -650,8 +667,92 @@ static PrepareStep RecorderPrepareManifest(void)
     RecorderSend("ERR RECORD session path too long\r\n");
     return PREPARE_FAILED;
   }
+  prepare_phase = PREPARE_EVENTS;
+  return PREPARE_CONTINUE;
+}
+
+static PrepareStep RecorderPrepareEvents(void)
+{
+  uint8_t header[SESSION_EVENT_RECORD_BYTES];
+  char path[SESSION_FILES_PATH_BYTES];
+  UINT written = 0U;
+  FRESULT result;
+
+  events_failed = false;
+  events_write_max_ms = 0U;
+  if (!SessionFiles_Path(session_number, "EVENTS.BIN", path, sizeof(path)))
+  {
+    RecorderSend("ERR RECORD session path too long\r\n");
+    return PREPARE_FAILED;
+  }
+  result = f_open(&events_file, path, FA_CREATE_NEW | FA_WRITE);
+  if (result != FR_OK)
+  {
+    RecorderSend("ERR RECORD event log create failed result=%s(%u)\r\n",
+                 StorageService_ResultName(result), (unsigned int)result);
+    return PREPARE_FAILED;
+  }
+  events_file_open = true;
+  SessionEventLog_EncodeHeader(header);
+  result = f_write(&events_file, header, sizeof(header), &written);
+  if ((result == FR_OK) && (written == sizeof(header)))
+  {
+    result = f_sync(&events_file);
+  }
+  if ((result != FR_OK) || (written != sizeof(header)))
+  {
+    RecorderSend("ERR RECORD event log header write failed\r\n");
+    return PREPARE_FAILED;
+  }
   prepare_phase = PREPARE_CREATE;
   return PREPARE_CONTINUE;
+}
+
+/* Writes the event records that are due: a whole sector, or a partial one
+ * whose oldest record has waited the flush bound, synced so sparse events
+ * reach the card (item 14). A failure is counted as loss and reported once;
+ * the recording continues (item 15). Returns whether records were written. */
+static bool RecorderEventStep(bool flush_all)
+{
+  static uint8_t sector[SESSION_EVENT_SECTOR_BYTES];
+  uint32_t records;
+  uint32_t started;
+  uint32_t write_ms;
+  UINT written = 0U;
+  FRESULT result;
+
+  if (!events_file_open || events_failed)
+  {
+    return false;
+  }
+  records = SessionEvents_Prepare(HAL_GetTick(), flush_all, sector);
+  if (records == 0U)
+  {
+    return false;
+  }
+  started = HAL_GetTick();
+  result = f_write(&events_file, sector, records * SESSION_EVENT_RECORD_BYTES, &written);
+  if ((result == FR_OK) && (records < SESSION_EVENT_SECTOR_RECORDS))
+  {
+    result = f_sync(&events_file);
+  }
+  write_ms = HAL_GetTick() - started;
+  if (write_ms > events_write_max_ms)
+  {
+    events_write_max_ms = write_ms;
+  }
+  if ((result != FR_OK) || (written != (records * SESSION_EVENT_RECORD_BYTES)))
+  {
+    events_failed = true;
+    SessionEvents_WriteFailed();
+    Diagnostics_Record(DIAG_SD_ERROR, (uint32_t)result, written);
+    RecorderSend("ERR RECORD event log write failed result=%s(%u); "
+                 "recording continues\r\n",
+                 StorageService_ResultName(result), (unsigned int)result);
+    return false;
+  }
+  SessionEvents_Commit(records);
+  return true;
 }
 
 static PrepareStep RecorderPrepareCreate(void)
@@ -771,6 +872,9 @@ static void RecorderPrepareStep(void)
       case PREPARE_MANIFEST:
         step = RecorderPrepareManifest();
         break;
+      case PREPARE_EVENTS:
+        step = RecorderPrepareEvents();
+        break;
       case PREPARE_CREATE:
         step = RecorderPrepareCreate();
         break;
@@ -797,12 +901,14 @@ static void RecorderPrepareStep(void)
   if (step == PREPARE_DONE)
   {
     RecorderSend("OK RECORD PREPARED file=%s prealloc-kib=%lu open=%lums "
-                 "folder=%lums manifest=%lums create=%lums search=%lums fat-sectors=%lu "
+                 "folder=%lums manifest=%lums events=%lums create=%lums search=%lums "
+                 "fat-sectors=%lu "
                  "allocate=%lums steps=%lu step-max=%lums elapsed=%lums\r\n",
                  recorder_filename, (unsigned long)(prepare_bytes / 1024U),
                  (unsigned long)prepare_open_ms,
                  (unsigned long)prepare_phase_ms[PREPARE_FOLDER],
                  (unsigned long)prepare_phase_ms[PREPARE_MANIFEST],
+                 (unsigned long)prepare_phase_ms[PREPARE_EVENTS],
                  (unsigned long)prepare_phase_ms[PREPARE_CREATE],
                  (unsigned long)prepare_phase_ms[PREPARE_SEARCH],
                  (unsigned long)prepare_run.fat_sectors,
@@ -1142,6 +1248,31 @@ static bool RecorderFinish(bool aborted, const char *reason)
 
   RadioRecorder_StopCapture();
   finalized = RecorderFinalizeFile();
+  if (events_file_open)
+  {
+    uint32_t events_written = 0U;
+    uint32_t events_lost = 0U;
+    uint32_t events_high = 0U;
+
+    SessionEvents_End((frames_written != 0U) ? (uint64_t)(frames_written - 1U) : 0U,
+                      SessionEvents_EndReasonCode(reason), HAL_GetTick());
+    while (RecorderEventStep(true))
+    {
+    }
+    if (f_close(&events_file) != FR_OK)
+    {
+      events_failed = true;
+    }
+    events_file_open = false;
+    SessionEvents_GetCounts(&events_written, &events_lost, &events_high);
+    session_manifest.events_written = events_written;
+    session_manifest.events_lost = events_lost;
+    RecorderSend("RECORD EVENTS written=%lu lost=%lu queue-max=%lu/%u "
+                 "write-max=%lums failed=%u\r\n",
+                 (unsigned long)events_written, (unsigned long)events_lost,
+                 (unsigned long)events_high, SESSION_EVENT_QUEUE_RECORDS,
+                 (unsigned long)events_write_max_ms, events_failed ? 1U : 0U);
+  }
   if (session_number != 0U)
   {
     /* Decision 0030 item 5: the ended manifest; until it is written the
@@ -1309,6 +1440,7 @@ bool RadioRecorder_StartCapture(void)
   __set_PRIMASK(primask);
   capture_start_valid = true;
   pdm_dma_running = true;
+  SessionEvents_Begin(&capture_start.alignment.origin, HAL_GetTick());
   recording_start_ms = HAL_GetTick();
   progress_last_ms = recording_start_ms;
   Diagnostics_Record(DIAG_RECORD_START, pending_seconds, RECORDER_SAMPLE_RATE_HZ);
@@ -1682,7 +1814,7 @@ void RadioRecorder_Service(void)
     session_event_pending = true;
     SessionControl_ReportBlockWritten();
   }
-  else
+  else if (!RecorderEventStep(false))
   {
     RecorderRunwayStep();
   }

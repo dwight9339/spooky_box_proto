@@ -10,6 +10,7 @@
 #include "radio_activity_feed.h"
 #include "radio_adapter.h"
 #include "radio_control_service.h"
+#include "session_events.h"
 #include "sm/session_port.h"
 #include "usb_test.h"
 
@@ -265,6 +266,18 @@ static const char *BandName(uint8_t band)
   return (info != NULL) ? info->name : "?";
 }
 
+bool ClassicAdapter_GetState(ClassicState *state)
+{
+  ClassicWorld world;
+
+  if (state == NULL)
+  {
+    return false;
+  }
+  ReadWorld(&world);
+  return ClassicService_GetState(&world, state);
+}
+
 void ClassicAdapter_SendStatus(void)
 {
   ClassicWorld world;
@@ -338,6 +351,8 @@ void classic_integration_publish(ClassicPublished event, uint32_t now_ms,
   {
     epoch = (unsigned long)position.epoch;
     FormatFrame(position.frame, frame);
+    /* Spec 001 FR-029, stored with the session (decision 0030 item 9). */
+    SessionEvents_Classic((uint8_t)event, state, &position);
   }
   printf("[classic] t=%lu pos=%lu:%s %s STATE=%s REASON=%s DIR=%s RATE=%u/%u "
          "LIMITED=%u DIST=%u EDGE=%s HOLD=%u BAND=%s FREQ=%lu\r\n",

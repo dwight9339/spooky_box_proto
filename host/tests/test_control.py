@@ -392,6 +392,23 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(manifest["retune_settle_frames"], "FM:0,AM:0,SW:512,LW:512")
         self.assertTrue(Path(result["artifacts"]["manifest"]).is_file())
 
+    def test_session_events_happy_path(self):
+        options = dict(self.options("session events"), session="F0007",
+                       deadline=time.monotonic() + 30)
+        result = execute(options)
+        self.assertEqual(result["result"], "pass", result)
+        events = result["metrics"]["events"]
+        self.assertEqual(events["kinds"], {"session_start": 1, "classic": 1, "tune_start": 1,
+                                           "tune_end": 1, "session_end": 1})
+        self.assertEqual((events["sequence_gaps"], events["problems"]), (0, []))
+        self.assertTrue(Path(result["artifacts"]["events_dump"]).is_file())
+
+    def test_session_events_unreported_loss_fails(self):
+        options = dict(self.options("session events", "events-lost"), session="F0007",
+                       deadline=time.monotonic() + 30)
+        result = execute(options)
+        self.assertEqual((result["result"], result["reason"]), ("fail", "events_invalid"))
+
     def test_session_manifest_parse_rules(self):
         self.assertEqual(wav_inspect.parse_manifest("a=1\r\nb=x=y\r\n\r\n"),
                          {"a": "1", "b": "x=y"})
@@ -476,7 +493,7 @@ class ControlTests(unittest.TestCase):
         metrics = result["metrics"]
         self.assertEqual([stage["name"] for stage in metrics["stages"]],
                          ["boot_smoke", "prerequisites", "recording", "wav_inspect",
-                          "accounting", "manifest", "post_transfer_health"])
+                          "accounting", "manifest", "events", "post_transfer_health"])
         self.assertTrue(all(stage["result"] == "pass" for stage in metrics["stages"]))
         self.assertEqual(metrics["transfer"]["file"], metrics["recording"]["result"]["file"])
         self.assertEqual(metrics["wav"]["frames"], metrics["recording"]["result"]["frames"])
@@ -492,7 +509,7 @@ class ControlTests(unittest.TestCase):
                           metrics["human_required"]), ("healthy", "running", False))
         run_dir = Path(result["artifacts"]["run_dir"])
         for name in ("boot_smoke", "prerequisites", "recording", "wav_inspect",
-                     "accounting", "manifest", "post_transfer_health"):
+                     "accounting", "manifest", "events", "post_transfer_health"):
             self.assertTrue((run_dir / f"stage-{name}.json").is_file(), name)
         for name in ("boot-diagnostics.jsonl", "recording-diagnostics.jsonl",
                      "regression-diagnostics.jsonl", "wav-transfer.jsonl"):

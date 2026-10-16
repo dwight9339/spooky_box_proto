@@ -9,6 +9,7 @@
 #include "main.h"
 #include "radio_activity_feed.h"
 #include "radio_control_service.h"
+#include "session_events.h"
 #include "sm/radio_port.h"
 #include "usb_test.h"
 
@@ -114,9 +115,12 @@ static void FormatFrame(uint64_t frame, char text[21])
  * settled up to RETUNE_END_UNCERTAINTY_FRAMES earlier. The start stamp precedes
  * the receiver's ready wait and the command write, at most
  * RADIO_FAST_CTS_TIMEOUT_MS. */
-static void LogRetune(const char *outcome, uint32_t frequency_khz)
+static void LogRetune(const char *outcome, uint8_t outcome_code,
+                      const RadioTuneStatus *tuned)
 {
   AudioTimelinePosition end;
+  const bool end_known = AudioPath_GetPosition(&end);
+  const uint32_t frequency_khz = (tuned != NULL) ? tuned->frequency_khz : 0U;
   char start_text[21] = "-";
   char end_text[21] = "-";
   unsigned long start_epoch = 0UL;
@@ -132,11 +136,16 @@ static void LogRetune(const char *outcome, uint32_t frequency_khz)
     start_epoch = (unsigned long)retune_start.epoch;
     FormatFrame(retune_start.frame, start_text);
   }
-  if (AudioPath_GetPosition(&end))
+  if (end_known)
   {
     end_epoch = (unsigned long)end.epoch;
     FormatFrame(end.frame, end_text);
   }
+  /* Decision 0030 item 9: the same pair, stored with the session. */
+  SessionEvents_TuneEnd((uint8_t)retune_band, outcome_code,
+                        (tuned != NULL) ? tuned->rssi_dbuv : 0U,
+                        (tuned != NULL) ? tuned->snr_db : 0U,
+                        retune_target_khz, frequency_khz, end_known ? &end : NULL);
   printf("[retune] start=%lu:%s end=%lu:%s unc=%lu band=%s target=%lu "
          "outcome=%s freq=%lu\r\n",
          start_epoch, start_text, end_epoch, end_text,
@@ -158,6 +167,17 @@ static const uint32_t retune_settle_blocks[RADIO_BAND_COUNT] =
   [RADIO_BAND_SW] = RADIO_ACTIVITY_FEED_SETTLE_BLOCKS,
   [RADIO_BAND_LW] = RADIO_ACTIVITY_FEED_SETTLE_BLOCKS
 };
+
+bool RadioAdapter_TuneInFlight(uint8_t *band, uint32_t *target_khz)
+{
+  if (!retune_issued)
+  {
+    return false;
+  }
+  if (band != NULL) *band = (uint8_t)retune_band;
+  if (target_khz != NULL) *target_khz = retune_target_khz;
+  return true;
+}
 
 uint32_t RadioAdapter_RetuneSettleFrames(uint32_t band)
 {
@@ -327,6 +347,11 @@ bool rad_integration_begin_tune(uint32_t frequency_khz)
   retune_start_known = AudioPath_GetPosition(&retune_start);
   /* A tune that cannot be issued produces neither event (decision 0015 item 2). */
   retune_issued = RadioControl_BeginTune(frequency_khz);
+  if (retune_issued)
+  {
+    SessionEvents_TuneStart((uint8_t)retune_band, retune_target_khz,
+                            retune_start_known ? &retune_start : NULL);
+  }
   return retune_issued;
 }
 
@@ -403,7 +428,7 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
   switch (event)
   {
     case RAD_PUB_TUNED:
-      LogRetune("TUNED", status.tune.frequency_khz);
+      LogRetune("TUNED", SESSION_EVENT_TUNE_TUNED, &status.tune);
       RadioControl_LogTune("tuned", &status.tune);
       if (to_cli)
       {
@@ -411,7 +436,7 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
       }
       break;
     case RAD_PUB_TUNE_FAILED:
-      LogRetune("FAILED", 0U);
+      LogRetune("FAILED", SESSION_EVENT_TUNE_FAILED, NULL);
       printf("[radio] tune failed at %lu kHz\r\n", (unsigned long)status.target_khz);
       if (to_cli)
       {
@@ -450,7 +475,7 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
       }
       break;
     case RAD_PUB_ABANDONED:
-      LogRetune("ABANDONED", 0U);
+      LogRetune("ABANDONED", SESSION_EVENT_TUNE_ABANDONED, NULL);
       if (to_cli)
       {
         (void)UsbTest_SendText("ERR RADIO abandoned; radio fault\r\n");

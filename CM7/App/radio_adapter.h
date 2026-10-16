@@ -27,6 +27,9 @@ bool RadioAdapter_CliCommandPending(void);
  * (radio_control_service RadioBand), in frames; the session manifest records
  * it (decision 0030 item 4). */
 uint32_t RadioAdapter_RetuneSettleFrames(uint32_t band);
+/* An issued in-band tune whose outcome is not yet published: its band and
+ * target (decision 0030 item 11, the state at frame 0). */
+bool RadioAdapter_TuneInFlight(uint8_t *band, uint32_t *target_khz);
 
 /* The boot sequence finished; called once after the dispatcher is initialized. */
 void RadioAdapter_ReportStarted(bool ok);

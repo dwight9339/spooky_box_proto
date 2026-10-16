@@ -55,7 +55,7 @@ def parser():
     p.add_argument("--json", action="store_true", help="emit one machine-readable result")
     p.add_argument("--profile", help="JSON bench profile; optional only for discovery status")
     p.add_argument("--simulate", action="store_true", help="use fake devices; never hardware acceptance")
-    p.add_argument("--scenario", choices=("happy", "missing", "ambiguous", "disconnect", "incomplete", "invalid-schema", "no-response", "m4-unavailable", "tool-timeout", "tool-failure", "partial-flash", "cdc-missing", "com-renumber", "uart-empty", "ipc-disabled", "ipc-stale", "ipc-error", "diag-fault", "record-abort", "record-overrun", "record-ipc-stale", "record-disconnect", "record-busy", "wav-missing", "wav-corrupt-frame", "wav-truncated", "wav-silent", "wav-bad-header", "sd-no-card", "sd-existing", "sd-corrupt", "sd-cleanup", "sd-timeout", "sd-disconnect", "sd-card-changed", "sd-full", "audio-stopped", "loopback-missing", "identity-v2", "identity-mismatch", "identity-reset"), default="happy")
+    p.add_argument("--scenario", choices=("happy", "missing", "ambiguous", "disconnect", "incomplete", "invalid-schema", "no-response", "m4-unavailable", "tool-timeout", "tool-failure", "partial-flash", "cdc-missing", "com-renumber", "uart-empty", "ipc-disabled", "ipc-stale", "ipc-error", "diag-fault", "record-abort", "record-overrun", "record-ipc-stale", "record-disconnect", "record-busy", "wav-missing", "wav-corrupt-frame", "wav-truncated", "wav-silent", "wav-bad-header", "sd-no-card", "sd-existing", "sd-corrupt", "sd-cleanup", "sd-timeout", "sd-disconnect", "sd-card-changed", "sd-full", "audio-stopped", "loopback-missing", "identity-v2", "identity-mismatch", "identity-reset", "events-lost"), default="happy")
     commands = p.add_subparsers(dest="action", required=True)
     commands.add_parser("status", help="list ports; with profile, validate both selections")
     capture = commands.add_parser("console", help="bounded receive-only Pico UART capture")
@@ -107,15 +107,20 @@ def parser():
     retune = wav_commands.add_parser(
         "retune", help="offline: check radio zero runs against [retune] stamps (decision 0015)")
     retune.add_argument("--wav", required=True, help="local recorder WAV")
-    retune.add_argument("--log", required=True, help="UART log holding the [retune] lines")
-    retune.add_argument("--origin", required=True,
-                        help="the recording's RECORD TIMELINE origin as EPOCH:FRAME")
+    retune.add_argument("--events", help="the session's EVENTS.BIN (decision 0030)")
+    retune.add_argument("--log", help="UART log holding the [retune] lines")
+    retune.add_argument("--origin",
+                        help="with --log: the recording's RECORD TIMELINE origin as EPOCH:FRAME")
     session = commands.add_parser("session", help="Field session files (decision 0030)")
     session_commands = session.add_subparsers(dest="query", required=True)
     manifest = session_commands.add_parser("manifest", help="CRC-transfer and parse one MANIFEST.TXT")
     manifest.add_argument("--session", type=session_name, required=True, help="Fnnnn")
     manifest.add_argument("--timeout", type=duration, default=120.0,
                           help="whole-operation deadline in seconds (default 120)")
+    events = session_commands.add_parser("events", help="CRC-transfer, decode and check EVENTS.BIN")
+    events.add_argument("--session", type=session_name, required=True, help="Fnnnn")
+    events.add_argument("--timeout", type=duration, default=300.0,
+                        help="whole-operation deadline in seconds (default 300)")
     for name in ("power", "trace", "crash"):
         commands.add_parser(name, help="not implemented")
     return p
@@ -152,7 +157,8 @@ def main(argv=None):
         if command == "wav retune":
             execution = "offline"
             metrics, (result, reason, detail) = wav_retune.run_local({
-                "wav": args.wav, "log": args.log, "origin": args.origin})
+                "wav": args.wav, "log": args.log, "origin": args.origin,
+                "events": args.events})
             metrics["wav"] = args.wav
             value = outcome(command, execution, started_at, started, result=result,
                             reason=reason, detail=detail, metrics=metrics)
@@ -170,7 +176,7 @@ def main(argv=None):
         if command == "test recording-regression":
             seconds = args.timeout or regression.budget(args.seconds, args.stimulus)
         else:
-            seconds = args.timeout if command in ("wav inspect", "session manifest", "test sd-basic") else args.seconds + 60.0 if command == "test ipc-load" else 240.0 if command == "test boot-smoke" else 120.0 if command == "flash" else 10.0 if command == "status" else args.seconds + 12.0 if command == "console" else 15.0
+            seconds = args.timeout if command in ("wav inspect", "session manifest", "session events", "test sd-basic") else args.seconds + 60.0 if command == "test ipc-load" else 240.0 if command == "test boot-smoke" else 120.0 if command == "flash" else 10.0 if command == "status" else args.seconds + 12.0 if command == "console" else 15.0
         value = supervise(options, seconds)
     except BenchError as exc:
         value = outcome(command, execution, started_at, started, result=exc.result, reason=exc.reason, detail=str(exc))

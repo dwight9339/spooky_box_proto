@@ -531,6 +531,22 @@ Every recording is a Field session folder
   audio is finalized.
 - **Audio:** `AUDIO000.WAV`, so the reply's `file=` is a path such as
   `FIELD/F0007/AUDIO000.WAV`.
+- **Event log:** `EVENTS.BIN`, created with its header while preparing.
+  - **Producers:** while the session captures, it receives session start and end,
+    tune start and end, PTT and every Classic event, each stamped on the session
+    timeline. At frame 0 it also holds a Classic snapshot, PTT if held, and any tune in
+    flight.
+  - **Queue:** records wait in a 64-record queue. Recorder passes with no audio work
+    write each full 512-byte sector, and write and sync a partial one whose oldest
+    record has waited 2 s.
+  - **Loss:** a full queue drops the newest record, and the next accepted record
+    follows an events-lost record and a fresh snapshot.
+  - **Write failure:** a failed write reports
+    `ERR RECORD event log write failed ...; recording continues` and counts the
+    waiting records as lost.
+  - **At the end:** the recorder posts session end, writes what remains, and reports
+    `RECORD EVENTS written=... lost=... queue-max=.../64 write-max=...ms failed=0|1`
+    after `RECORD DIAG`. The manifest records `events_written` and `events_lost`.
 - **Cancelled start:** a start that never captures removes its audio, manifest and
   folder. The number is not reused.
 - **Old files:** root `REC###.WAV` files from earlier firmware stay readable, and
@@ -542,7 +558,7 @@ found, the file is allocated and its header written; `OK RECORD PREPARED` report
 time spent in each step, and `OK RECORD START` follows when capture starts:
 
 ```text
-OK RECORD PREPARED file=FIELD/F0006/AUDIO000.WAV prealloc-kib=16875 open=...ms folder=...ms manifest=...ms create=...ms search=...ms fat-sectors=... allocate=...ms steps=... step-max=...ms elapsed=...ms
+OK RECORD PREPARED file=FIELD/F0006/AUDIO000.WAV prealloc-kib=16875 open=...ms folder=...ms manifest=...ms events=...ms create=...ms search=...ms fat-sectors=... allocate=...ms steps=... step-max=...ms elapsed=...ms
 ```
 
 When no contiguous run is long enough anywhere on the volume, the start is refused
@@ -609,6 +625,7 @@ OK RECORD START file=FIELD/F0001/AUDIO000.WAV duration=open format=48000Hz/16-bi
 ...
 OK RECORD PASS file=FIELD/F0001/AUDIO000.WAV ... reason=stopped
 RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,... margin=OK|LOW
+RECORD EVENTS written=... lost=0 queue-max=.../64 write-max=...ms failed=0
 ```
 
 `RECORD STATUS` reports progress, current queue depths, the longest SD write and the

@@ -50,6 +50,8 @@ removes old runs.
 | `recording` | The IPC load criteria: PASS accounting, queue high-water below capacity, IPC progress during and after, clean DIAG/LOG, gap-free dump |
 | `wav_inspect` | CRC-verified transfer of the recorded file, valid 48 kHz/16-bit/3-channel container, no constant channel |
 | `accounting` | Retrieved file is the new recorded file; WAV frames and data bytes equal the recorder's PASS values |
+| `manifest` | For a session recording: its `MANIFEST.TXT` is a version 1 manifest with `state=ended`, `audio_parts=1` and the recorder's frames ([decision 0030](../decisions/0030-field-session-folder-and-event-log.md)) |
+| `events` | Its `EVENTS.BIN` decodes and follows the reader rules (session start at frame 0, session end at the last frame, sequence gaps matching events-lost counts); its record count equals the manifest's `events_written`, and no record was lost |
 | `alignment` | `loopback` only, as above |
 | `post_transfer_health` | Clean DIAG/LOG after the transfer, IPC still progressing, recorder idle, same SD card, and free space reduced by the one new file within 1 MiB |
 
