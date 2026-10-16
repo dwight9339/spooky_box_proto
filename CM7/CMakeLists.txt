@@ -157,6 +157,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/session_control.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/recording_limits.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/recording_result.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/session_files.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/reply_queue.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/sd_media.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_margin.c

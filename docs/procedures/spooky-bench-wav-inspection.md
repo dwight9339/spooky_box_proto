@@ -1,8 +1,11 @@
 # Spooky Bench: host-side WAV inspection
 
 Requires Spooky Bench 0.5.0 or later. This procedure retrieves one
-completed `REC###.WAV` from the target's SD card, proves transport integrity, and
-analyzes the exact saved bytes on the Windows host.
+completed recording from the target's SD card, proves transport integrity, and
+analyzes the exact saved bytes on the Windows host. Recordings are Field session
+folders ([decision 0030](../decisions/0030-field-session-folder-and-event-log.md)),
+so the file is `FIELD/Fnnnn/AUDIO000.WAV`. Root `REC###.WAV` files from earlier
+firmware can still be fetched.
 
 ## Command and prerequisites
 
@@ -11,19 +14,32 @@ connected, leave the SD card inserted, and stop any recording or SD operation.
 Run:
 
 ```powershell
-host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json wav inspect --file REC004.WAV --timeout 600
+host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json wav inspect --file FIELD/F0004/AUDIO000.WAV --timeout 600
 ```
 
-Only names matching `REC000.WAV` through `REC999.WAV` are accepted. The default
+Only `FIELD/Fnnnn/AUDIOnnn.WAV` and `REC000.WAV` through `REC999.WAV` are accepted.
+The run saves the file as `audio/FIELD_F0004_AUDIO000.WAV`, with `/` replaced by `_`.
+
+A session's manifest is fetched and parsed the same way:
+
+```powershell
+host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json session manifest --session F0004
+```
+
+It saves `session/FIELD_F0004_MANIFEST.TXT` and reports the parsed keys. It fails
+unless the file is at most 1,024 ASCII bytes of `key=value` lines with
+`format=spooky-session` and `format_version=1`. The recording regression fetches the
+manifest after the WAV and requires `state=ended`, `audio_parts=1` and the recorder's
+frame count. The default
 whole-operation deadline is 600 seconds; `--timeout` may be set from greater than
 zero through 3600 seconds. At the cooperative 5 ms service cadence, a 17.3 MB
 (one-minute) file takes about 4.5 minutes.
 
 ## Bounded transfer protocol
 
-`WAV FETCH REC###.WAV` opens a read-only FatFs session after confirming that no
-recording owns the card. The target rejects files smaller than 44 bytes or larger
-than 256 MiB. It first reports the exact size, 1008-byte payload limit, and
+`WAV FETCH <path>` opens a read-only FatFs session after confirming that no
+recording owns the card. The target rejects a WAV smaller than 44 bytes, any other
+file smaller than one byte, and any file larger than 256 MiB. It first reports the exact size, 1008-byte payload limit, and
 protocol version in an ASCII start line.
 
 The remainder is framed binary. Each frame contains magic/version, absolute file
@@ -37,8 +53,8 @@ is still able to write.
 The end frame carries the whole-file CRC32. The host also calculates SHA-256,
 reserves the target-declared size against the run artifact budget before
 accepting data, flushes progress every MiB, and retains interrupted evidence as
-`REC###.WAV.partial`. It atomically publishes `audio/REC###.WAV` only after the
-declared size and final CRC match.
+`<name>.partial`. It atomically publishes `audio/<name>` only after the declared
+size and final CRC match.
 
 ## Inspection verdict
 

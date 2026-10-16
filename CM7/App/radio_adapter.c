@@ -159,6 +159,14 @@ static const uint32_t retune_settle_blocks[RADIO_BAND_COUNT] =
   [RADIO_BAND_LW] = RADIO_ACTIVITY_FEED_SETTLE_BLOCKS
 };
 
+uint32_t RadioAdapter_RetuneSettleFrames(uint32_t band)
+{
+  const uint32_t blocks = (band < (uint32_t)RADIO_BAND_COUNT) ?
+    retune_settle_blocks[band] : RADIO_ACTIVITY_FEED_SETTLE_BLOCKS;
+
+  return blocks * 512U; /* one radio half-buffer per block */
+}
+
 /* Start stamp of a retune interval on the radio sample timeline. */
 static void StartRetune(uint32_t settle_blocks)
 {

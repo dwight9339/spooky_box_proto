@@ -1,4 +1,7 @@
-"""Retrieve one recorded WAV through bounded CDC frames and inspect it locally."""
+"""Retrieve one recorded WAV through bounded CDC frames and inspect it locally.
+
+The same transfer fetches a Field session's manifest (decision 0030 item 18).
+"""
 from array import array
 import hashlib
 import math
@@ -12,19 +15,42 @@ from . import fake, serial_io
 from .artifacts import JsonLines
 from .result import BenchError
 
-START = re.compile(rb"^OK WAV START file=(REC[0-9]{3}\.WAV) bytes=([0-9]+) "
+WAV_PATH = r"REC[0-9]{3}\.WAV|FIELD/F[0-9]{4}/AUDIO[0-9]{3}\.WAV"
+SESSION = r"F[0-9]{4}"
+START = re.compile(rb"^OK WAV START file=([A-Z0-9_./]+) bytes=([0-9]+) "
                    rb"chunk=([0-9]+) protocol=([0-9]+)\r?\n$")
 HEADER = struct.Struct("<4sIHHI")
 MAGIC = b"WV01"
 DATA, END, ERROR = 1, 2, 4
 MAX_FILE_BYTES = 256 * 1024 * 1024
+MANIFEST_MAX_BYTES = 1024
 
 
 def filename(text):
     value = text.upper()
-    if not re.fullmatch(r"REC[0-9]{3}\.WAV", value):
-        raise ValueError("WAV filename must be REC###.WAV")
+    if not re.fullmatch(WAV_PATH, value):
+        raise ValueError("WAV filename must be REC###.WAV or FIELD/Fnnnn/AUDIOnnn.WAV")
     return value
+
+
+def session(text):
+    value = text.upper()
+    if not re.fullmatch(SESSION, value):
+        raise ValueError("session must be Fnnnn")
+    return value
+
+
+def parse_manifest(text):
+    """MANIFEST.TXT key=value lines (docs/design/session-format.md)."""
+    fields = {}
+    for line in text.splitlines():
+        if not line:
+            continue
+        key, sep, value = line.partition("=")
+        if not sep or not key:
+            raise BenchError("protocol_error", f"Invalid manifest line: {line[:60]}", "fail")
+        fields[key] = value
+    return fields
 
 
 def _read_exact(serial, pending, length, clock, deadline):
@@ -173,41 +199,33 @@ def _analyze(path):
         "correlations": correlations}
 
 
-def run(options, profile, run, metrics, artifacts):
-    clock = fake.Clock() if options["simulate"] else serial_io.Clock()
-    shared = options.get("sim_state", {})
-    serial = fake.Serial(clock, "device", options["scenario"], shared) if options["simulate"] \
-        else serial_io.open_serial(metrics["selected"]["device"]["port"])
-    records = JsonLines(run, "wav-transfer.jsonl", profile["limits"]["diag_bytes"])
-    artifacts["transfer"] = str(run.path / "wav-transfer.jsonl")
-    pending = bytearray()
+def _transfer(serial, pending, records, clock, deadline, run, name, directory, minimum):
+    """Fetch one file into directory; returns (path, transfer metrics).
+
+    On any failure after the device started sending, the transfer is aborted.
+    """
+    started = clock.now()
     transfer_started = False
     completed = False
-    partial = final = None
     stream = None
-    started = clock.now()
-    deadline = clock.now() + max(0, options["deadline"] - time.monotonic())
+    _write(serial, f"WAV FETCH {name}\n".encode("ascii"))
+    line = _read_line(serial, pending, clock, deadline)
+    records.emit({"kind": "wav_start", "raw": line.decode("ascii", errors="replace"),
+                  "host_receive_ns": time.time_ns()})
+    if line.startswith(b"ERR WAV"):
+        raise BenchError("wav_unavailable", line.decode("ascii", errors="replace").strip(), "fail")
+    match = START.fullmatch(line)
+    if not match:
+        raise BenchError("protocol_error", "Invalid WAV transfer start response", "fail")
+    got, size, chunk, protocol = match[1].decode(), int(match[2]), int(match[3]), int(match[4])
+    if got != name or protocol != 1 or not 1 <= chunk <= 65519 or \
+       not minimum <= size <= MAX_FILE_BYTES:
+        raise BenchError("protocol_error", "Invalid WAV transfer parameters", "fail")
     try:
-        serial_io.settle(serial, records.emit, clock,
-                         min(clock.now() + 14.0, deadline - 1.0))
-        _write(serial, f"WAV FETCH {options['filename']}\n".encode("ascii"))
-        line = _read_line(serial, pending, clock, deadline)
-        records.emit({"kind": "wav_start", "raw": line.decode("ascii", errors="replace"),
-                      "host_receive_ns": time.time_ns()})
-        if line.startswith(b"ERR WAV"):
-            raise BenchError("wav_unavailable", line.decode("ascii", errors="replace").strip(), "fail")
-        match = START.fullmatch(line)
-        if not match:
-            raise BenchError("protocol_error", "Invalid WAV transfer start response", "fail")
-        name, size, chunk, protocol = match[1].decode(), int(match[2]), int(match[3]), int(match[4])
-        if name != options["filename"] or protocol != 1 or not 1 <= chunk <= 65519 or \
-           not 44 <= size <= MAX_FILE_BYTES:
-            raise BenchError("protocol_error", "Invalid WAV transfer parameters", "fail")
         run.reserve(size)
-        audio_dir = run.path / "audio"
-        audio_dir.mkdir()
-        partial, final = audio_dir / (name + ".partial"), audio_dir / name
-        artifacts["wav_partial"] = str(partial)
+        directory.mkdir(exist_ok=True)
+        local = name.replace("/", "_")
+        partial, final = directory / (local + ".partial"), directory / local
         stream = partial.open("xb")
         transfer_started = True
         expected = frames = whole_crc = 0
@@ -244,30 +262,93 @@ def run(options, profile, run, metrics, artifacts):
         stream.close()
         stream = None
         partial.replace(final)
-        artifacts["wav"] = str(final)
-        artifacts.pop("wav_partial", None)
-        analysis = _analyze(final)
-        metrics["transfer"] = {"file": name, "bytes": size, "frames": frames,
-            "crc32": f"{whole_crc:08x}", "sha256": sha256.hexdigest(),
-            "duration_ms": round((clock.now() - started) * 1000)}
-        metrics["wav"] = analysis
-        metrics.update(target_health="healthy", final_target_state="running",
-                       human_required=False)
-        records.emit({"kind": "wav_end", **metrics["transfer"],
-                      "host_receive_ns": time.time_ns()})
-    except BaseException as exc:
+    except BaseException:
         if transfer_started and not completed:
             try:
                 _write(serial, b"WAV ABORT\n")
             except BaseException:
                 pass
+        raise
+    finally:
+        if stream is not None:
+            stream.close()
+    transfer = {"file": name, "bytes": size, "frames": frames,
+                "crc32": f"{whole_crc:08x}", "sha256": sha256.hexdigest(),
+                "duration_ms": round((clock.now() - started) * 1000)}
+    records.emit({"kind": "wav_end", **transfer, "host_receive_ns": time.time_ns()})
+    return final, transfer
+
+
+def _session_io(options, profile, run, metrics, artifacts, log="wav-transfer.jsonl"):
+    clock = fake.Clock() if options["simulate"] else serial_io.Clock()
+    shared = options.get("sim_state", {})
+    serial = fake.Serial(clock, "device", options["scenario"], shared) if options["simulate"] \
+        else serial_io.open_serial(metrics["selected"]["device"]["port"])
+    records = JsonLines(run, log, profile["limits"]["diag_bytes"])
+    artifacts["transfer"] = str(run.path / log)
+    deadline = clock.now() + max(0, options["deadline"] - time.monotonic())
+    return clock, serial, records, deadline
+
+
+def run(options, profile, run, metrics, artifacts):
+    clock, serial, records, deadline = _session_io(options, profile, run, metrics, artifacts)
+    pending = bytearray()
+    completed = False
+    try:
+        serial_io.settle(serial, records.emit, clock,
+                         min(clock.now() + 14.0, deadline - 1.0))
+        final, transfer = _transfer(serial, pending, records, clock, deadline, run,
+                                    options["filename"], run.path / "audio", 44)
+        completed = True
+        artifacts["wav"] = str(final)
+        metrics["transfer"] = transfer
+        metrics["wav"] = _analyze(final)
+        metrics.update(target_health="healthy", final_target_state="running",
+                       human_required=False)
+    except BaseException as exc:
         metrics.setdefault("human_required", False)
         metrics["target_health"] = ("failed" if isinstance(exc, BenchError) and
                                     exc.result == "fail" else "not_checked")
         metrics["final_target_state"] = "running" if completed else "unknown"
         raise
     finally:
-        if stream is not None:
-            stream.close()
+        records.close()
+        serial.close()
+
+
+def run_manifest(options, profile, run, metrics, artifacts):
+    """Fetch and parse one Field session's MANIFEST.TXT."""
+    clock, serial, records, deadline = _session_io(options, profile, run, metrics, artifacts,
+                                                   "manifest-transfer.jsonl")
+    pending = bytearray()
+    completed = False
+    try:
+        serial_io.settle(serial, records.emit, clock,
+                         min(clock.now() + 14.0, deadline - 1.0))
+        name = f"FIELD/{options['session']}/MANIFEST.TXT"
+        final, transfer = _transfer(serial, pending, records, clock, deadline, run,
+                                    name, run.path / "session", 1)
+        completed = True
+        artifacts["manifest"] = str(final)
+        metrics["transfer"] = transfer
+        if transfer["bytes"] > MANIFEST_MAX_BYTES:
+            raise BenchError("manifest_invalid", "Manifest exceeds 1,024 bytes", "fail")
+        try:
+            text = final.read_bytes().decode("ascii")
+        except UnicodeDecodeError:
+            raise BenchError("manifest_invalid", "Manifest is not ASCII", "fail")
+        manifest = parse_manifest(text)
+        metrics["manifest"] = manifest
+        if manifest.get("format") != "spooky-session" or manifest.get("format_version") != "1":
+            raise BenchError("manifest_invalid", "Not a version 1 session manifest", "fail")
+        metrics.update(target_health="healthy", final_target_state="running",
+                       human_required=False)
+    except BaseException as exc:
+        metrics.setdefault("human_required", False)
+        metrics["target_health"] = ("failed" if isinstance(exc, BenchError) and
+                                    exc.result == "fail" else "not_checked")
+        metrics["final_target_state"] = "running" if completed else "unknown"
+        raise
+    finally:
         records.close()
         serial.close()

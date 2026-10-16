@@ -252,8 +252,9 @@ changing directories during a run.
   test-results.json             # authoritative completed operation result
   uart/raw.bin, chunks.jsonl, session.json    # console, reset, flash and tests
   diagnostics.jsonl             # diagnostic queries
-  audio/REC###.WAV              # completed WAV inspection only
+  audio/<file>                  # completed WAV inspection only; / becomes _
   wav-transfer.jsonl            # transfer start/end identity and checksums
+  session/<file>, manifest-transfer.jsonl     # session manifest
   operation.cfg, scripts/, openocd-command.json, openocd.log   # controls
   build-info.json, firmware/CM7.elf, firmware/CM4.elf          # flash
   source-snapshot              # dirty source archive, when manifest supplies bytes

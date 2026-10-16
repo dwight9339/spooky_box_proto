@@ -110,6 +110,9 @@ def execute(options, run_notice=lambda path: None):
                 if command == "wav inspect":
                     wav_inspect.run(options, profile, run, metrics, artifacts)
                     return finish(reason="simulated" if options["simulate"] else None)
+                if command == "session manifest":
+                    wav_inspect.run_manifest(options, profile, run, metrics, artifacts)
+                    return finish(reason="simulated" if options["simulate"] else None)
                 clock = fake.Clock() if options["simulate"] else serial_io.Clock()
                 role = "probe" if command == "console" else "device"
                 serial = fake.Serial(clock, role, options["scenario"]) if options["simulate"] else serial_io.open_serial(selected[role]["port"])

@@ -4,8 +4,14 @@ Byte layouts for a Field session folder. The decision is
 [0030](../decisions/0030-field-session-folder-and-event-log.md); this document holds
 the encodings it refers to. It changes only together with a format version.
 
-**Status:** target. No firmware writes this format yet (`full_spooky_proto-hpq.3`).
-Recordings today are root `REC###.WAV` files.
+**Status:**
+
+- **Folders, index and manifest:** implemented (`full_spooky_proto-hpq.10`), with
+  [bench evidence](../evidence/2026-10-16-session-folders.md).
+- **Event log:** target (`full_spooky_proto-hpq.11`). Until it exists, manifests say
+  `events=none` and carry no event counts.
+- **Audio parts:** a session holds one `AUDIO000.WAV` and ends at the WAV size limit
+  until continuation lands (`full_spooky_proto-hpq.12`).
 
 ## Folder
 
@@ -44,12 +50,12 @@ unknown keys ignored. Every value is bounded, as the table below shows.
 | `frames` | decimal, 64-bit | 20 digits |
 | `audio_parts` | decimal, 1 to 1000 | 4 digits |
 | `part_frames` | decimal | 10 digits |
-| `events` | `EVENTS.BIN` | fixed |
+| `events` | `EVENTS.BIN`, or `none` when the firmware writes no event log | fixed |
 | `event_format_version` | decimal | 3 digits |
 | `events_written` | decimal | 10 digits |
 | `events_lost` | decimal | 10 digits |
 | `retune_settle_frames` | `FM:n,AM:n,SW:n,LW:n` | 40 |
-| `origin` | `epoch:frame` | 31 |
+| `origin` | `epoch:frame`, or `unknown` before capture starts | 31 |
 | `mic_compensation_frames` | decimal | 10 digits |
 
 With every value at its largest, including the 128-byte build ID, the manifest is
