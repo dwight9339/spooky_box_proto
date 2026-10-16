@@ -131,6 +131,20 @@ bd update <id> --append-notes "<what is done, what was validated, what remains>"
   its unvalidated work (rebuild if sources are newer than build outputs), then
   append a handoff note before continuing.
 
+## Cloud Sessions
+
+A cloud session (`CLAUDE_CODE_REMOTE=true`) cannot push the Beads Dolt remote. It
+follows [cloud sessions](docs/procedures/cloud-sessions.md):
+
+- Run every Beads write (`create`, `q`, `update`, `close`, `dep add`, `label`,
+  `comments add`, `remember`, ...) as `python3 host/tools/bd_outbox.py bd <args>`,
+  including the progress notes above. Reads may call `bd` directly.
+- Never run `bd dolt push`, `bd sync`, `bd import` or `bd bootstrap` yourself; the
+  SessionStart hook bootstraps the session's copy.
+- Commit `.beads/outbox/<branch>.jsonl` with the branch, and say in the handoff that
+  it is waiting to be applied on the dev machine.
+- Hardware steps (flash, bench, evidence runs) wait for a local session.
+
 ## Non-Interactive Shell Commands
 
 **ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
