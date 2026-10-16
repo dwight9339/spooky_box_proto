@@ -6,8 +6,8 @@ the encodings it refers to. It changes only together with a format version.
 
 **Status:**
 
-- **Folders, index and manifest:** implemented (`full_spooky_proto-hpq.10`). Bench
-  evidence is pending.
+- **Folders, index and manifest:** implemented (`full_spooky_proto-hpq.10`), with
+  [bench evidence](../evidence/2026-10-16-session-folders.md).
 - **Event log:** target (`full_spooky_proto-hpq.11`). Until it exists, manifests say
   `events=none` and carry no event counts.
 - **Audio parts:** a session holds one `AUDIO000.WAV` and ends at the WAV size limit
