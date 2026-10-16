@@ -189,9 +189,14 @@ completion within 2 s), `ERR RADIO abandoned; radio fault` for a command still
 waiting when the radio faults, and `ERR RADIO audio path is not running` once the
 radio is out of service. A band switch is still one synchronous step.
 
-Band and tuning changes are rejected while recording is active. The opt-in
-`RadioTuneQual` preset admits in-band tuning while recording, for the bench
-qualification in `full_spooky_proto-54w.6` only.
+In-band tuning (`TUNE`, `UP`, `DOWN` and Classic's jumps) is allowed while
+recording ([decision 0003](../decisions/0003-radio-control-during-recording.md);
+[evidence](../evidence/2026-10-16-tune-guard-lift.md)). Each tune is stored in the
+session's event log, and the radio track inside a retune interval holds receiver output
+that is not a measurement ([decision 0015](../decisions/0015-raw-radio-track-during-in-band-tunes.md)).
+Band changes are still rejected while recording, with
+`ERR RADIO band changes disabled while recording`, until `full_spooky_proto-54w.12`
+qualifies them.
 
 The radio is also tuned by the Classic scan engine, which runs from power-on (next
 section). Band and frequency are shared: a CLI `TUNE`, `UP`, `DOWN` or `BAND` moves

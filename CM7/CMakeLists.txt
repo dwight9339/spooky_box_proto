@@ -48,12 +48,6 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
 )
 
-option(SPOOKY_RADIO_TUNE_QUALIFICATION
-    "Allow in-band tuning while recording for bench qualification (54w.6)" OFF)
-if(SPOOKY_RADIO_TUNE_QUALIFICATION)
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_RADIO_TUNE_QUALIFICATION=1)
-endif()
-
 option(SPOOKY_SPEAKER_MONITOR
     "Monitor on the line-out speaker amplifier unless headphones are in (jr0)" OFF)
 if(SPOOKY_SPEAKER_MONITOR)
