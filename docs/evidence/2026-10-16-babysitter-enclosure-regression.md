@@ -81,7 +81,7 @@ the cell.
 | `MAG READ` | `X=0uT Y=105uT Z=105uT DIAG=0` |
 | `UI STATUS` | Documented idle levels, `DROPPED=0` |
 | `UI WATCH` | Every button and encoder pushbutton pressed and released once; each encoder 4 to 6 detents CW then CCW, one step per event, no reversals |
-| `UI LEDS` | `OK UI LEDS PASS channels=14 all-off=1` |
+| `UI LEDS` | `OK UI LEDS PASS channels=14 all-off=1`; operator confirmed the chase |
 | `UI MATRIX PROBE`, `UI MATRIX ANIMATE` | ACK at `0x30`; `PASS pixels=81`; operator confirmed the comet |
 | `UI DISPLAY TEST` | `PASS`; operator confirmed the test image |
 | `SD STATUS` | Mounted, four-bit, `CLOCKDIV=2` |
