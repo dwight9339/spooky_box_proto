@@ -200,6 +200,13 @@ def _cross_check(recording, transfer, wav, previous_file):
                          "PASS accounting", "fail")
 
 
+def _check_manifest(manifest, result):
+    if manifest.get("state") != "ended" or manifest.get("audio_parts") != "1" or \
+       manifest.get("frames") != str(result["frames"]):
+        raise BenchError("manifest_accounting", "Session manifest is not ended or its frames "
+                         "differ from the recorder's accounting", "fail")
+
+
 def _summary(details, stimulus):
     """Bounded result: full stage metrics live in stage-<name>.json."""
     summary = {}
@@ -328,6 +335,14 @@ def run(options, profile, run, metrics, artifacts):
                          prerequisites["record_status"]["last_file"])
             detail.update(file=name, frames=inspected["wav"]["frames"])
         stage("accounting", cross_check)
+
+        if name.startswith("FIELD/"):
+            # Decision 0030 item 5: the ended manifest agrees with the recording.
+            def manifest_check(detail, found):
+                wav_inspect.run_manifest(dict(options, session=name.split("/")[1]),
+                                         profile, run, detail, found)
+                _check_manifest(detail["manifest"], recording["recording"]["result"])
+            stage("manifest", manifest_check, base={"selected": selected})
 
         if stimulus == "loopback":
             stage("alignment", lambda detail, found: _alignment(

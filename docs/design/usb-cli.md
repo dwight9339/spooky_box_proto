@@ -64,7 +64,7 @@ SD STRESS STOP
 SD CLEAN
 SD FORMAT
 SD FORMAT CONFIRM
-WAV FETCH REC000.WAV
+WAV FETCH FIELD/F0001/AUDIO000.WAV
 WAV ABORT
 UI STATUS
 UI WATCH START
@@ -513,10 +513,28 @@ the microphone.
 Capture starts only after the file is preallocated, so no allocation search runs while
 recording. `RECORD START` mounts and checks the card and replies
 `OK RECORD PREPARING prealloc-kib=...`; the Session state is then Preparing, which
-follows the recording command policy. The following foreground passes probe
-`REC###.WAV` names, create the file and search the FAT for one contiguous free run
-long enough for the preallocation. Each pass spends about `SPOOKY_RECORD_PREPARE_STEP_MS`
-(32 ms by default) and always makes progress (one name probe or one FAT sector).
+follows the recording command policy. The following foreground passes make the
+session folder, write its manifest, create the audio file and search the FAT for one
+contiguous free run long enough for the preallocation. Each pass spends about
+`SPOOKY_RECORD_PREPARE_STEP_MS` (32 ms by default) and always makes progress (one
+directory call or one FAT sector).
+
+Every recording is a Field session folder
+([decision 0030](../decisions/0030-field-session-folder-and-event-log.md); layouts in
+[session format](session-format.md)):
+
+- **Folder:** `/FIELD/Fnnnn`, numbered from `/FIELD/INDEX.TXT` (`next=<n>`). A missing
+  or unreadable index starts the search at 1, and each taken number costs one
+  directory call.
+- **`MANIFEST.TXT`:** written with `state=recording` while preparing, and rewritten
+  with `state=ended`, the end reason, the frame total and the timeline origin once the
+  audio is finalized.
+- **Audio:** `AUDIO000.WAV`, so the reply's `file=` is a path such as
+  `FIELD/F0007/AUDIO000.WAV`.
+- **Cancelled start:** a start that never captures removes its audio, manifest and
+  folder. The number is not reused.
+- **Old files:** root `REC###.WAV` files from earlier firmware stay readable, and
+  recordings no longer create them.
 The preallocation is the first 60 seconds, or the whole requested duration when it is
 shorter, but never more than the free space above the card reserve. The search starts
 at the volume's next-free hint and wraps once around the volume. Once the run is
@@ -524,7 +542,7 @@ found, the file is allocated and its header written; `OK RECORD PREPARED` report
 time spent in each step, and `OK RECORD START` follows when capture starts:
 
 ```text
-OK RECORD PREPARED file=REC006.WAV prealloc-kib=16875 open=...ms name=...ms create=...ms search=...ms fat-sectors=... allocate=...ms steps=... step-max=...ms elapsed=...ms
+OK RECORD PREPARED file=FIELD/F0006/AUDIO000.WAV prealloc-kib=16875 open=...ms folder=...ms manifest=...ms create=...ms search=...ms fat-sectors=... allocate=...ms steps=... step-max=...ms elapsed=...ms
 ```
 
 When no contiguous run is long enough anywhere on the volume, the start is refused
@@ -557,9 +575,10 @@ longest used stretch crossed in clusters (`gap-max`). The preallocated length is
 build setting `SPOOKY_RECORDING_PREALLOC_SECONDS`, and the step budget is
 `SPOOKY_RECORD_PREPARE_STEP_MS`.
 
-The step budget bounds the FAT search but not a single directory call: each name
-probe, the file creation and the deletion of a discarded file scan the directory in
-one FatFs call. On a root of about 1,900 entries they took 60-116 ms, against 33 ms or
+The step budget bounds the FAT search but not a single directory call: each folder
+creation, the file creation and the deletion of a discarded file scan a directory in
+one FatFs call. Session folders keep the card root small; `/FIELD` grows by one entry
+per session. Root measurements before session folders: On a root of about 1,900 entries they took 60-116 ms, against 33 ms or
 less with 83 files ([evidence](../evidence/2026-10-02-stepped-preallocation.md);
 `full_spooky_proto-jjy.18`).
 
@@ -576,18 +595,19 @@ additional data-allocation contribution is zero. These three build settings are
 `SPOOKY_ROLLING_CAPTURE_RESERVE_BYTES`, and
 `SPOOKY_RECORDING_FINALIZE_RESERVE_BYTES`.
 
-Until session folders are implemented, a recording also finalizes cleanly before
-another block would exceed the RIFF/WAV 32-bit size limit (about 4 hours 8 minutes).
+Until a session continues into a next audio part (`full_spooky_proto-hpq.12`), a
+recording also finalizes cleanly before another block would exceed the RIFF/WAV 32-bit
+size limit (about 4 hours 8 minutes), and its manifest reports `audio_parts=1`.
 
 The requested duration is rounded up to the next 4096-frame block, so a 60-second
 request produces about 60.075 seconds of audio:
 
 ```text
 OK RECORD PREPARING prealloc-kib=16875
-OK RECORD PREPARED file=REC000.WAV prealloc-kib=16875 ...
-OK RECORD START file=REC000.WAV duration=open format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]
+OK RECORD PREPARED file=FIELD/F0001/AUDIO000.WAV prealloc-kib=16875 ...
+OK RECORD START file=FIELD/F0001/AUDIO000.WAV duration=open format=48000Hz/16-bit/3ch [radio-L,radio-R,mic]
 ...
-OK RECORD PASS file=REC000.WAV ... reason=stopped
+OK RECORD PASS file=FIELD/F0001/AUDIO000.WAV ... reason=stopped
 RECORD DIAG queues radio=.../8 pdm=.../8 max-write=...ms peaks=...,...,... margin=OK|LOW
 ```
 
@@ -668,10 +688,13 @@ querying the filesystem.
 
 ## WAV transfer (protocol v1)
 
-`WAV FETCH REC###.WAV` emits a versioned binary stream intended for the bench client
+`WAV FETCH <path>` emits a versioned binary stream intended for the bench client
 rather than a text terminal. Each data frame requires an offset acknowledgement, has
-its own CRC32, and contributes to a final whole-file CRC32. The target accepts only
-`REC###.WAV`, rejects transfer during recording, limits files to 256 MiB, and closes
+its own CRC32, and contributes to a final whole-file CRC32. The target accepts a root
+`REC###.WAV` or a session file, `FIELD/Fnnnn/` followed by `AUDIOnnn.WAV`,
+`MANIFEST.TXT` or `EVENTS.BIN` (decision 0030 item 18). A WAV must hold at least its
+44-byte header, and other files at least one byte. It rejects transfer during
+recording, limits files to 256 MiB (about 15.5 minutes of audio), and closes
 the file after ten seconds without an acknowledgement. `WAV ABORT` closes an active
 transfer explicitly. No other CLI command may be issued during the binary exchange.
 The host side is described in the

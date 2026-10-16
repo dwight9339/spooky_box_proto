@@ -6,12 +6,13 @@ from . import boot_smoke, fake, serial_io
 from .artifacts import JsonLines
 from .result import BenchError
 
-START = re.compile(r"^OK RECORD START file=(REC[0-9]{3}\.WAV) duration=([0-9]+)s "
+RECORDING = r"(REC[0-9]{3}\.WAV|FIELD/F[0-9]{4}/AUDIO[0-9]{3}\.WAV)"
+START = re.compile(r"^OK RECORD START file=" + RECORDING + r" duration=([0-9]+)s "
                    r"format=48000Hz/16-bit/3ch \[radio-L,radio-R,mic\]$")
 PROGRESS = re.compile(r"^RECORD progress=([0-9]+)\.([0-9])s "
                       r"queues=([0-9]+)/([0-9]+),([0-9]+)/([0-9]+) "
                       r"max-write=([0-9]+)ms$")
-PASS = re.compile(r"^OK RECORD PASS file=(REC[0-9]{3}\.WAV) frames=([0-9]+) "
+PASS = re.compile(r"^OK RECORD PASS file=" + RECORDING + r" frames=([0-9]+) "
                   r"bytes=([0-9]+) audio=([0-9]+)\.([0-9]{3})s elapsed=([0-9]+)ms"
                   r"(?: reason=(.+))?$")
 DIAG = re.compile(r"^RECORD DIAG queues radio=([0-9]+)/([0-9]+) "

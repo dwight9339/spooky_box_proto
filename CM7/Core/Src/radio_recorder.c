@@ -1,6 +1,8 @@
 #include "radio_recorder.h"
 #include "audio_path_service.h"
+#include "build_identity.h"
 #include "diagnostics.h"
+#include "radio_adapter.h"
 #include "recording_limits.h"
 #include "session_control.h"
 
@@ -9,6 +11,7 @@
 #include "reply_queue.h"
 #include "sd_diskio.h"
 #include "sd_media.h"
+#include "session_files.h"
 #include "storage_margin.h"
 #include "storage_service.h"
 #include "usb_test.h"
@@ -34,7 +37,6 @@
 #define RECORDER_QUEUE_DEPTH                  8U
 #define RECORDER_MAX_SECONDS               3600U
 #define RECORDER_RUNWAY_LOOKAHEAD_SECONDS    30U
-#define RECORDER_FILENAME_LIMIT            1000U
 #define RECORDER_PROGRESS_PERIOD_MS        5000U
 #define RECORDER_WRITE_HIST_BIN_MS           10U
 #define RECORDER_WRITE_HIST_BINS              8U
@@ -96,7 +98,8 @@ typedef enum
 /* Preparation runs in bounded foreground steps before capture (jjy.9). */
 typedef enum
 {
-  PREPARE_NAME = 0,
+  PREPARE_FOLDER = 0, /* /FIELD, the index, then the session folder */
+  PREPARE_MANIFEST,   /* the index's next number and MANIFEST.TXT */
   PREPARE_CREATE,
   PREPARE_SEARCH,
   PREPARE_ALLOCATE,
@@ -125,7 +128,13 @@ static volatile bool radio_error;
 static volatile bool pdm_error;
 static volatile bool radio_overrun;
 static volatile bool pdm_overrun;
-static char recorder_filename[13];
+static char recorder_filename[SESSION_FILES_PATH_BYTES];
+/* Decision 0030: the session folder, its manifest and the index. */
+static FIL session_aux_file;
+static uint32_t session_number;     /* 0: no folder made */
+static bool session_index_read;
+static bool session_manifest_written;
+static SessionManifest session_manifest;
 
 static int32_t pdm_dma_buffer[2U * RECORDER_PDM_BLOCK_SAMPLES]
   __attribute__((section(".dma_buffer"), aligned(32)));
@@ -173,7 +182,6 @@ static uint32_t recorder_usb_detached;
 static RecordingResult last_result;
 static StorageMargin storage_margin;
 static PreparePhase prepare_phase;
-static unsigned int prepare_name_index;
 static uint32_t prepare_bytes;
 static uint32_t prepare_started_ms;
 static uint32_t prepare_open_ms;
@@ -299,13 +307,60 @@ static void RecorderUnmount(void)
   }
 }
 
+/* One small file written whole: the index or the manifest. */
+static bool RecorderWriteText(const char *path, const char *text, size_t length)
+{
+  UINT written = 0U;
+  FRESULT result = f_open(&session_aux_file, path, FA_CREATE_ALWAYS | FA_WRITE);
+
+  if (result != FR_OK)
+  {
+    return false;
+  }
+  result = f_write(&session_aux_file, text, (UINT)length, &written);
+  if (f_close(&session_aux_file) != FR_OK)
+  {
+    result = FR_DISK_ERR;
+  }
+  return (result == FR_OK) && (written == length);
+}
+
+static bool RecorderWriteManifest(void)
+{
+  static char text[SESSION_FILES_MANIFEST_BYTES + 1U];
+  char path[SESSION_FILES_PATH_BYTES];
+  const size_t length = SessionManifest_Format(&session_manifest, text, sizeof(text));
+
+  return (length != 0U) &&
+         SessionFiles_Path(session_number, SESSION_FILES_MANIFEST, path, sizeof(path)) &&
+         RecorderWriteText(path, text, length);
+}
+
+/* A session that never started capture leaves nothing behind: its audio,
+ * manifest and folder are removed. Its number is not reused. */
 static void RecorderDiscardFile(void)
 {
+  char path[SESSION_FILES_PATH_BYTES];
+
   if (recorder_file_open)
   {
     (void)f_close(&recorder_file);
     recorder_file_open = false;
     (void)f_unlink(recorder_filename);
+  }
+  if (session_number != 0U)
+  {
+    if (session_manifest_written &&
+        SessionFiles_Path(session_number, SESSION_FILES_MANIFEST, path, sizeof(path)))
+    {
+      (void)f_unlink(path);
+    }
+    if (SessionFiles_Folder(session_number, path, sizeof(path)))
+    {
+      (void)f_unlink(path);
+    }
+    session_number = 0U;
+    session_manifest_written = false;
   }
   RecorderUnmount();
 }
@@ -386,8 +441,10 @@ bool RadioRecorder_OpenFile(uint32_t requested_seconds)
   }
 
   recorder_filename[0] = '\0';
-  prepare_phase = PREPARE_NAME;
-  prepare_name_index = 0U;
+  session_number = 0U;
+  session_index_read = false;
+  session_manifest_written = false;
+  prepare_phase = PREPARE_FOLDER;
   (void)memset(prepare_phase_ms, 0, sizeof(prepare_phase_ms));
   (void)memset(&prepare_run, 0, sizeof(prepare_run));
   prepare_step_max_ms = 0U;
@@ -488,36 +545,113 @@ static uint32_t RecorderClustersKib(uint32_t clusters)
   return (uint32_t)(((uint64_t)clusters * prepare_run.cluster_bytes) / 1024U);
 }
 
-/* Probes REC###.WAV names until one is free. Each probe scans the directory. */
-static PrepareStep RecorderPrepareName(uint32_t step_start)
-{
-  FILINFO info;
-  FRESULT result;
+/* Decision 0030 item 1: the next number comes from /FIELD/INDEX.TXT, so a
+ * normal start makes one folder. A missing or unreadable index starts the
+ * search at 1; each taken number costs one directory search, bounded per step. */
+static uint32_t prepare_session_candidate;
 
-  while (prepare_name_index < RECORDER_FILENAME_LIMIT)
+static PrepareStep RecorderPrepareFolder(uint32_t step_start)
+{
+  char text[SESSION_FILES_INDEX_BYTES];
+  char path[SESSION_FILES_PATH_BYTES];
+  FRESULT result;
+  UINT read = 0U;
+
+  if (!session_index_read)
   {
-    (void)snprintf(recorder_filename, sizeof(recorder_filename),
-                   "REC%03u.WAV", prepare_name_index);
-    result = f_stat(recorder_filename, &info);
-    if (result == FR_NO_FILE)
+    result = f_mkdir(SESSION_FILES_ROOT);
+    if ((result != FR_OK) && (result != FR_EXIST))
     {
-      prepare_phase = PREPARE_CREATE;
-      return PREPARE_CONTINUE;
-    }
-    if (result != FR_OK)
-    {
-      RecorderSend("ERR RECORD filename scan failed result=%s(%u)\r\n",
+      RecorderSend("ERR RECORD session root create failed result=%s(%u)\r\n",
                    StorageService_ResultName(result), (unsigned int)result);
       return PREPARE_FAILED;
     }
-    ++prepare_name_index;
+    prepare_session_candidate = SESSION_FILES_NUMBER_MIN;
+    if (f_open(&session_aux_file, SESSION_FILES_INDEX, FA_READ) == FR_OK)
+    {
+      if (f_read(&session_aux_file, text, sizeof(text) - 1U, &read) == FR_OK)
+      {
+        (void)SessionFiles_ParseIndex(text, read, &prepare_session_candidate);
+      }
+      (void)f_close(&session_aux_file);
+    }
+    session_index_read = true;
+    return PREPARE_CONTINUE;
+  }
+  while (prepare_session_candidate <= SESSION_FILES_NUMBER_MAX)
+  {
+    (void)SessionFiles_Folder(prepare_session_candidate, path, sizeof(path));
+    result = f_mkdir(path);
+    if (result == FR_OK)
+    {
+      session_number = prepare_session_candidate;
+      prepare_phase = PREPARE_MANIFEST;
+      return PREPARE_CONTINUE;
+    }
+    if (result != FR_EXIST)
+    {
+      RecorderSend("ERR RECORD session folder create failed folder=%s result=%s(%u)\r\n",
+                   path, StorageService_ResultName(result), (unsigned int)result);
+      return PREPARE_FAILED;
+    }
+    ++prepare_session_candidate;
     if ((HAL_GetTick() - step_start) >= SPOOKY_RECORD_PREPARE_STEP_MS)
     {
       return PREPARE_CONTINUE;
     }
   }
-  RecorderSend("ERR RECORD no free REC###.WAV filename\r\n");
+  RecorderSend("ERR RECORD no free session number\r\n");
   return PREPARE_FAILED;
+}
+
+static void RecorderInitManifest(void)
+{
+  (void)memset(&session_manifest, 0, sizeof(session_manifest));
+  session_manifest.state = SESSION_STATE_RECORDING;
+  (void)snprintf(session_manifest.build, sizeof(session_manifest.build), "%s",
+                 BuildIdentity_Id());
+  session_manifest.boot = BuildIdentity_BootEpoch();
+  session_manifest.start_uptime_ms = prepare_started_ms;
+  session_manifest.audio_parts = 1U;
+  session_manifest.part_frames =
+    (RECORDING_LIMIT_WAV_MAX_FRAMES / RECORDER_BLOCK_FRAMES) * RECORDER_BLOCK_FRAMES;
+  for (uint32_t band = 0U; band < SESSION_FILES_BANDS; ++band)
+  {
+    session_manifest.retune_settle_frames[band] = RadioAdapter_RetuneSettleFrames(band);
+  }
+  session_manifest.mic_compensation_frames = SPOOKY_RECORD_MIC_LATENCY_FRAMES;
+}
+
+/* Advances the index past this folder, then writes the manifest with
+ * state=recording, so an interrupted session is recognizable (0030 item 5). */
+static PrepareStep RecorderPrepareManifest(void)
+{
+  char text[SESSION_FILES_INDEX_BYTES];
+  const uint32_t next = (session_number < SESSION_FILES_NUMBER_MAX) ?
+                        (session_number + 1U) : SESSION_FILES_NUMBER_MAX;
+  const size_t length = SessionFiles_FormatIndex(next, text, sizeof(text));
+
+  /* A stale index only lengthens the next search, so it does not fail the
+   * session. */
+  if ((length == 0U) || !RecorderWriteText(SESSION_FILES_INDEX, text, length))
+  {
+    printf("[record] session index not updated; next start searches\r\n");
+  }
+  RecorderInitManifest();
+  if (!RecorderWriteManifest())
+  {
+    RecorderSend("ERR RECORD manifest write failed\r\n");
+    return PREPARE_FAILED;
+  }
+  session_manifest_written = true;
+  if (!SessionFiles_Path(session_number, SESSION_FILES_FIRST_AUDIO,
+                         recorder_filename, sizeof(recorder_filename)))
+  {
+    RecorderSend("ERR RECORD session path too long\r\n");
+    return PREPARE_FAILED;
+  }
+  prepare_phase = PREPARE_CREATE;
+  return PREPARE_CONTINUE;
 }
 
 static PrepareStep RecorderPrepareCreate(void)
@@ -631,8 +765,11 @@ static void RecorderPrepareStep(void)
   {
     switch (phase)
     {
-      case PREPARE_NAME:
-        step = RecorderPrepareName(step_start);
+      case PREPARE_FOLDER:
+        step = RecorderPrepareFolder(step_start);
+        break;
+      case PREPARE_MANIFEST:
+        step = RecorderPrepareManifest();
         break;
       case PREPARE_CREATE:
         step = RecorderPrepareCreate();
@@ -660,11 +797,12 @@ static void RecorderPrepareStep(void)
   if (step == PREPARE_DONE)
   {
     RecorderSend("OK RECORD PREPARED file=%s prealloc-kib=%lu open=%lums "
-                 "name=%lums create=%lums search=%lums fat-sectors=%lu "
+                 "folder=%lums manifest=%lums create=%lums search=%lums fat-sectors=%lu "
                  "allocate=%lums steps=%lu step-max=%lums elapsed=%lums\r\n",
                  recorder_filename, (unsigned long)(prepare_bytes / 1024U),
                  (unsigned long)prepare_open_ms,
-                 (unsigned long)prepare_phase_ms[PREPARE_NAME],
+                 (unsigned long)prepare_phase_ms[PREPARE_FOLDER],
+                 (unsigned long)prepare_phase_ms[PREPARE_MANIFEST],
                  (unsigned long)prepare_phase_ms[PREPARE_CREATE],
                  (unsigned long)prepare_phase_ms[PREPARE_SEARCH],
                  (unsigned long)prepare_run.fat_sectors,
@@ -693,7 +831,6 @@ static bool RecorderFinalizeFile(void)
 
   if (!recorder_file_open)
   {
-    RecorderUnmount();
     return true;
   }
   if ((f_lseek(&recorder_file,
@@ -719,7 +856,6 @@ static bool RecorderFinalizeFile(void)
     ok = false;
   }
   recorder_file_open = false;
-  RecorderUnmount();
   return ok;
 }
 
@@ -1006,6 +1142,25 @@ static bool RecorderFinish(bool aborted, const char *reason)
 
   RadioRecorder_StopCapture();
   finalized = RecorderFinalizeFile();
+  if (session_number != 0U)
+  {
+    /* Decision 0030 item 5: the ended manifest; until it is written the
+     * folder still reads as an incomplete session. */
+    session_manifest.state = SESSION_STATE_ENDED;
+    (void)snprintf(session_manifest.end_reason, sizeof(session_manifest.end_reason),
+                   "%s", reason);
+    session_manifest.frames = frames_written;
+    session_manifest.origin_known = capture_start_valid;
+    session_manifest.origin_epoch = capture_start.alignment.origin.epoch;
+    session_manifest.origin_frame = capture_start.alignment.origin.frame;
+    if (!RecorderWriteManifest())
+    {
+      RecorderSend("ERR RECORD manifest update failed file=%s\r\n", recorder_filename);
+      finalized = false;
+    }
+    session_number = 0U;
+  }
+  RecorderUnmount();
   recorder_state = RECORDER_IDLE;
   stop_requested = false;
   elapsed_ms = HAL_GetTick() - recording_start_ms;

@@ -23,6 +23,10 @@ bool RadioAdapter_RequestBand(uint32_t band); /* radio_control_service RadioBand
 bool RadioAdapter_RequestInternalTune(uint32_t frequency_khz);
 /* A CLI radio command was posted and the Radio machine has not answered it. */
 bool RadioAdapter_CliCommandPending(void);
+/* Decision 0015 item 5: the settle margin after an in-band tune in this band
+ * (radio_control_service RadioBand), in frames; the session manifest records
+ * it (decision 0030 item 4). */
+uint32_t RadioAdapter_RetuneSettleFrames(uint32_t band);
 
 /* The boot sequence finished; called once after the dispatcher is initialized. */
 void RadioAdapter_ReportStarted(bool ok);

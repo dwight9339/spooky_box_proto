@@ -7,7 +7,7 @@ import time
 from .result import BenchError, exit_code, outcome, utc_now
 from .supervisor import supervise
 from . import regression, wav_align, wav_retune
-from .wav_inspect import filename as wav_filename
+from .wav_inspect import filename as wav_filename, session as session_name
 
 
 class Parser(argparse.ArgumentParser):
@@ -93,7 +93,8 @@ def parser():
                     help="whole-operation deadline in seconds, 30..1800 (default 180)")
     wav = commands.add_parser("wav", help="retrieve and inspect a recorded WAV")
     wav_commands = wav.add_subparsers(dest="query", required=True)
-    inspect = wav_commands.add_parser("inspect", help="CRC-transfer and analyze one REC###.WAV")
+    inspect = wav_commands.add_parser(
+        "inspect", help="CRC-transfer and analyze one REC###.WAV or FIELD/Fnnnn/AUDIOnnn.WAV")
     inspect.add_argument("--file", type=wav_filename, required=True, dest="filename")
     inspect.add_argument("--timeout", type=duration, default=600.0,
                          help="whole-operation deadline in seconds (default 600)")
@@ -109,6 +110,12 @@ def parser():
     retune.add_argument("--log", required=True, help="UART log holding the [retune] lines")
     retune.add_argument("--origin", required=True,
                         help="the recording's RECORD TIMELINE origin as EPOCH:FRAME")
+    session = commands.add_parser("session", help="Field session files (decision 0030)")
+    session_commands = session.add_subparsers(dest="query", required=True)
+    manifest = session_commands.add_parser("manifest", help="CRC-transfer and parse one MANIFEST.TXT")
+    manifest.add_argument("--session", type=session_name, required=True, help="Fnnnn")
+    manifest.add_argument("--timeout", type=duration, default=120.0,
+                          help="whole-operation deadline in seconds (default 120)")
     for name in ("power", "trace", "crash"):
         commands.add_parser(name, help="not implemented")
     return p
@@ -156,13 +163,14 @@ def main(argv=None):
                    "scenario": args.scenario, "seconds": getattr(args, "seconds", None),
                    "manifest": getattr(args, "manifest", None),
                    "filename": getattr(args, "filename", None),
+                   "session": getattr(args, "session", None),
                    "size_mib": getattr(args, "size_mib", None),
                    "passes": getattr(args, "passes", None),
                    "stimulus": getattr(args, "stimulus", None)}
         if command == "test recording-regression":
             seconds = args.timeout or regression.budget(args.seconds, args.stimulus)
         else:
-            seconds = args.timeout if command in ("wav inspect", "test sd-basic") else args.seconds + 60.0 if command == "test ipc-load" else 240.0 if command == "test boot-smoke" else 120.0 if command == "flash" else 10.0 if command == "status" else args.seconds + 12.0 if command == "console" else 15.0
+            seconds = args.timeout if command in ("wav inspect", "session manifest", "test sd-basic") else args.seconds + 60.0 if command == "test ipc-load" else 240.0 if command == "test boot-smoke" else 120.0 if command == "flash" else 10.0 if command == "status" else args.seconds + 12.0 if command == "console" else 15.0
         value = supervise(options, seconds)
     except BenchError as exc:
         value = outcome(command, execution, started_at, started, result=exc.result, reason=exc.reason, detail=str(exc))

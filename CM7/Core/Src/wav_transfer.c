@@ -1,6 +1,7 @@
 #include "wav_transfer.h"
 
 #include "ff.h"
+#include "session_files.h"
 #include "storage_service.h"
 #include "usb_test.h"
 
@@ -30,7 +31,7 @@ static uint32_t wav_offset;
 static uint32_t wav_crc_state;
 static uint32_t wav_ack_deadline;
 static uint16_t wav_frame_length;
-static char wav_filename[13];
+static char wav_filename[SESSION_FILES_PATH_BYTES];
 static uint8_t wav_frame[WAV_TRANSFER_FRAME_BYTES];
 
 static void WavPutLe16(uint8_t *destination, uint16_t value)
@@ -76,16 +77,6 @@ static void WavClose(void)
   wav_frame_ready = false;
   wav_waiting_ack = false;
   wav_close_after_send = false;
-}
-
-static bool WavFilenameValid(const char *name)
-{
-  return (name != NULL) && (strlen(name) == 10U) &&
-    (name[0] == 'R') && (name[1] == 'E') && (name[2] == 'C') &&
-    (name[3] >= '0') && (name[3] <= '9') &&
-    (name[4] >= '0') && (name[4] <= '9') &&
-    (name[5] >= '0') && (name[5] <= '9') &&
-    (strcmp(&name[6], ".WAV") == 0);
 }
 
 static bool WavParseUint(const char *text, uint32_t *value)
@@ -171,9 +162,12 @@ static bool WavStart(const char *name)
   }
   wav_file_open = true;
   wav_size = f_size(&wav_file);
-  if ((wav_size < 44U) || (wav_size > WAV_TRANSFER_MAX_FILE_BYTES))
+  /* A WAV needs at least its header; a manifest or event log at least a byte
+   * (decision 0030 item 18: the same transfer carries a session's files). */
+  if ((wav_size < (SessionFiles_PathIsWav(name) ? 44U : 1U)) ||
+      (wav_size > WAV_TRANSFER_MAX_FILE_BYTES))
   {
-    (void)UsbTest_SendText("ERR WAV file size outside 44..268435456 bytes\r\n");
+    (void)UsbTest_SendText("ERR WAV file size outside the transferable range\r\n");
     WavClose();
     return false;
   }
@@ -249,9 +243,9 @@ bool WavTransfer_HandleCommand(const char *command)
     {
       (void)UsbTest_SendText("ERR WAV transfer already active\r\n");
     }
-    else if (!WavFilenameValid(argument))
+    else if (!SessionFiles_FetchPathValid(argument))
     {
-      (void)UsbTest_SendText("ERR usage: WAV FETCH REC###.WAV\r\n");
+      (void)UsbTest_SendText("ERR usage: WAV FETCH REC###.WAV|FIELD/Fnnnn/<file>\r\n");
     }
     else
     {
@@ -261,7 +255,7 @@ bool WavTransfer_HandleCommand(const char *command)
   }
   if (!wav_active)
   {
-    (void)UsbTest_SendText("ERR usage: WAV FETCH REC###.WAV|ABORT\r\n");
+    (void)UsbTest_SendText("ERR usage: WAV FETCH REC###.WAV|FIELD/Fnnnn/<file>|ABORT\r\n");
   }
   return true;
 }

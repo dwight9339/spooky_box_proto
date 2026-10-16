@@ -55,6 +55,7 @@ spooky_test(storage_lease_test storage_lease_test.c ../CM7/App/storage_lease.c)
 spooky_test(reply_queue_test reply_queue_test.c ../CM7/App/reply_queue.c)
 # The RECORD RESULT outcome record (jjy.12).
 spooky_test(recording_result_test recording_result_test.c ../CM7/App/recording_result.c)
+spooky_test(session_files_test session_files_test.c ../CM7/App/session_files.c)
 # SD FORMAT alignment and confirmation (jjy.14).
 spooky_test(sd_media_test sd_media_test.c ../CM7/App/sd_media.c)
 # Decision 0014 storage-margin warning.

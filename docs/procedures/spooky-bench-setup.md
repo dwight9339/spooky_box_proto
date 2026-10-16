@@ -67,7 +67,7 @@ host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.j
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test boot-smoke --manifest build/ipc-build-info.json
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test ipc-load --seconds 60
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json test sd-basic --size-mib 8 --passes 1 --timeout 180
-host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json wav inspect --file REC004.WAV --timeout 600
+host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json wav inspect --file FIELD/F0004/AUDIO000.WAV --timeout 600
 ```
 
 - Put global options before the command.

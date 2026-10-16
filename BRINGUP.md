@@ -152,7 +152,7 @@ Retrieve the finished file with the card left inserted, using firmware that
 implements WAV transfer protocol v1:
 
 ```powershell
-host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json wav inspect --file REC000.WAV --timeout 600
+host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json wav inspect --file FIELD/F0001/AUDIO000.WAV --timeout 600
 ```
 
 The host saves the exact WAV plus SHA-256, validates RIFF sizes and PCM format,
@@ -175,9 +175,9 @@ The retrieved artifact can be cross-checked with `ffprobe`, which should report
 extracted on a computer with:
 
 ```text
-ffmpeg -i REC000.WAV -map_channel 0.0.0 radio-left.wav
-ffmpeg -i REC000.WAV -map_channel 0.0.1 radio-right.wav
-ffmpeg -i REC000.WAV -map_channel 0.0.2 microphone.wav
+ffmpeg -i FIELD_F0001_AUDIO000.WAV -map_channel 0.0.0 radio-left.wav
+ffmpeg -i FIELD_F0001_AUDIO000.WAV -map_channel 0.0.1 radio-right.wav
+ffmpeg -i FIELD_F0001_AUDIO000.WAV -map_channel 0.0.2 microphone.wav
 ```
 
 ## SDMMC current-load test
