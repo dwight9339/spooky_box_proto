@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "classic_service.h"
 #include "event_queue.h"
 #include "sm/context_port.h"
 #include "sm/radio_port.h"
@@ -35,5 +36,7 @@ void ClassicAdapter_OnRadioAnswer(RadPublished event, const RadCommand *command)
 bool ClassicAdapter_HandleCommand(const char *command);
 /* Reply `OK CLASSIC STATE=...` with Classic's published state. */
 void ClassicAdapter_SendStatus(void);
+/* The published Classic state now (decision 0030 snapshots). */
+bool ClassicAdapter_GetState(ClassicState *state);
 
 #endif /* SPOOKY_CLASSIC_ADAPTER_H */

@@ -5,13 +5,16 @@ exact-zero radio run of 1 ms or more after the first tune must lie inside a
 marked retune interval. The per-band settle margin is the largest overhang of a
 zero run past its tune's end stamp, rounded up to a whole radio half-buffer.
 
-Inputs are the WAV, the UART log holding the firmware's [retune] lines, and the
-recording's timeline origin from RECORD TIMELINE (WAV frame 0 is that position).
+Inputs are the WAV and either the session's EVENTS.BIN (tune events already in
+session frames, decision 0030), or the UART log holding the firmware's [retune]
+lines with the recording's timeline origin from RECORD TIMELINE (WAV frame 0 is
+that position).
 """
 from array import array
 from pathlib import Path
 import re
 import sys
+from . import session_events
 from .result import BenchError
 from .wav_inspect import read_format
 
@@ -107,7 +110,7 @@ def tune_summary(tunes):
     return summary
 
 
-def analyze(wav_path, log_lines, origin):
+def analyze(wav_path, log_lines, origin, tunes=None):
     _fmt, data_offset, data_size = read_format(wav_path)
     samples = array("h")
     with wav_path.open("rb") as stream:
@@ -116,7 +119,10 @@ def analyze(wav_path, log_lines, origin):
     if sys.byteorder != "little":
         samples.byteswap()
     left, right = samples[0::3], samples[1::3]
-    tunes, unstamped = parse_retunes(log_lines, origin)
+    if tunes is None:
+        tunes, unstamped = parse_retunes(log_lines, origin)
+    else:
+        unstamped = 0
     metrics = classify(zero_runs(left, right), tunes, len(left))
     metrics.update({"frames": len(left), "unstamped_tunes": unstamped,
                     "bands": tune_summary([t for t in tunes if t["end"] >= 0
@@ -136,10 +142,23 @@ def verdict(metrics):
 
 
 def run_local(options):
-    wav_path, log_path = Path(options["wav"]), Path(options["log"])
-    for path in (wav_path, log_path):
-        if not path.is_file():
-            raise BenchError("invalid_invocation", f"file not found: {path}")
+    wav_path = Path(options["wav"])
+    if not wav_path.is_file():
+        raise BenchError("invalid_invocation", f"file not found: {wav_path}")
+    if options.get("events"):
+        events_path = Path(options["events"])
+        if not events_path.is_file():
+            raise BenchError("invalid_invocation", f"file not found: {events_path}")
+        _header, records = session_events.decode(events_path.read_bytes())
+        metrics = analyze(wav_path, None, None, session_events.tunes(records))
+        metrics["source"] = "events"
+        return metrics, verdict(metrics)
+    if not options.get("log") or not options.get("origin"):
+        raise BenchError("invalid_invocation", "give --events, or --log with --origin")
+    log_path = Path(options["log"])
+    if not log_path.is_file():
+        raise BenchError("invalid_invocation", f"file not found: {log_path}")
     lines = log_path.read_bytes().decode("utf-8", errors="replace").splitlines()
     metrics = analyze(wav_path, lines, parse_origin(options["origin"]))
+    metrics["source"] = "uart_log"
     return metrics, verdict(metrics)

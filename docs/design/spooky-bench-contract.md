@@ -121,8 +121,8 @@ The bench procedure defines the controlled acoustic stimulus and evidence requir
 
 `test recording-regression` composes the existing runners in one run directory:
 boot smoke, a prerequisite session, IPC load, WAV inspection of the file the
-recorder reported, an accounting cross-check, optional loopback alignment, and a
-post-transfer health session. `metrics.stages` lists each stage with its result and
+recorder reported, an accounting cross-check, optional loopback alignment, the
+session's manifest and event log checks, and a post-transfer health session. `metrics.stages` lists each stage with its result and
 reason; the first non-pass stage decides the verdict. Each stage's full metrics are
 archived as `stage-<name>.json`, and stage artifacts are prefixed with the stage
 name. The result keeps a bounded summary.
@@ -255,6 +255,7 @@ changing directories during a run.
   audio/<file>                  # completed WAV inspection only; / becomes _
   wav-transfer.jsonl            # transfer start/end identity and checksums
   session/<file>, manifest-transfer.jsonl     # session manifest
+  session/<file>.jsonl, events-transfer.jsonl # decoded session event log
   operation.cfg, scripts/, openocd-command.json, openocd.log   # controls
   build-info.json, firmware/CM7.elf, firmware/CM4.elf          # flash
   source-snapshot              # dirty source archive, when manifest supplies bytes

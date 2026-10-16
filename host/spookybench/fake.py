@@ -48,6 +48,29 @@ def _recorded_wav(frames, scenario):
     return _container(samples.tobytes(), scenario)
 
 
+def _events_bytes(frames, scenario):
+    """EVENTS.BIN for a simulated session: start, frame-0 Classic snapshot, one
+    tune, end (docs/design/session-format.md)."""
+    last = (frames or 48000) - 1
+    header = b"SPKYEVTS" + struct.pack("<HHHHI12x", 1, 0, 32, 32, 48000)
+
+    def record(sequence, frame, kind, payload, uncertainty=0):
+        return struct.pack("<QIHHI", frame, uncertainty, kind, 0, sequence) + \
+            payload.ljust(12, b"\x00")
+    body = [record(0, 0, 0x0001, struct.pack("<B3xI", 0, 98100)),
+            record(1, 0, 0x0040, struct.pack("<6B3H", 255, 0, 0, 0, 1, 0, 120, 120, 1)),
+            record(2, 1000, 0x0010, struct.pack("<B3xI", 0, 98200)),
+            record(3, 2000, 0x0011, struct.pack("<4B2I", 0, 1, 20, 3, 98200, 98200), 3600),
+            record(4, last, 0x0002, bytes([2]))]
+    if scenario == "events-lost":
+        # A record was dropped without its events-lost record: a sequence gap.
+        body = body[:2] + [record(sequence + 1, *fields) for sequence, fields in enumerate(
+            ((1000, 0x0010, struct.pack("<B3xI", 0, 98200)),
+             (2000, 0x0011, struct.pack("<4B2I", 0, 1, 20, 3, 98200, 98200), 3600),
+             (last, 0x0002, bytes([2]))), start=2)]
+    return header + b"".join(body)
+
+
 def _manifest_bytes(frames):
     """MANIFEST.TXT for a simulated session (docs/design/session-format.md);
     a session with no finished recording still reads state=recording."""
@@ -58,7 +81,9 @@ def _manifest_bytes(frames):
              "build=simulated", "boot=1", "start_uptime_ms=1000", "start_time=unknown",
              "sample_rate_hz=48000", "channels=radio-L,radio-R,mic",
              f"frames={frames if ended else 0}", "audio_parts=1", "part_frames=715825152",
-             "events=none", "retune_settle_frames=FM:0,AM:0,SW:512,LW:512",
+             "events=EVENTS.BIN", "event_format_version=1",
+             f"events_written={5 if ended else 0}", "events_lost=0",
+             "retune_settle_frames=FM:0,AM:0,SW:512,LW:512",
              "origin=1:48000" if ended else "origin=unknown", "mic_compensation_frames=0"]
     return ("\r\n".join(lines) + "\r\n").encode("ascii")
 
@@ -219,6 +244,14 @@ class Serial:
             name = command[10:]
             if self.scenario == "wav-missing":
                 self.pending = b"ERR WAV open failed result=4\r\n"
+            elif name.endswith("/EVENTS.BIN"):
+                folder = name[:-len("EVENTS.BIN")]
+                recorded = self.state.get("recordings", {}).get(folder + "AUDIO000.WAV")
+                wav = _events_bytes(recorded, self.scenario)
+                self.state.update(wav_active=True, wav_data=wav, wav_offset=0,
+                                  wav_chunk=16384, wav_waiting_ack=False, wav_bulk=True)
+                self.pending = (f"OK WAV START file={name} bytes={len(wav)} "
+                                f"chunk=16384 protocol=1\r\n").encode()
             elif name.endswith("/MANIFEST.TXT"):
                 folder = name[:-len("MANIFEST.TXT")]
                 recorded = self.state.get("recordings", {}).get(folder + "AUDIO000.WAV")

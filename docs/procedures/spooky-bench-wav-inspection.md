@@ -26,7 +26,21 @@ A session's manifest is fetched and parsed the same way:
 host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json session manifest --session F0004
 ```
 
-It saves `session/FIELD_F0004_MANIFEST.TXT` and reports the parsed keys. It fails
+It saves `session/FIELD_F0004_MANIFEST.TXT` and reports the parsed keys. The
+session's event log is fetched, decoded and checked with:
+
+```powershell
+host/.venv/Scripts/python.exe -m spookybench --json --profile host/bench.local.json session events --session F0004
+```
+
+It saves `EVENTS.BIN` and one JSON line per record (`FIELD_F0004_EVENTS.BIN.jsonl`).
+It reports counts by kind, sequence gaps and records dropped. It fails unless the log
+follows decision 0030's reader rules: session start at frame 0, session end last, no
+record after it, increasing sequence numbers, and every gap reported by an
+events-lost record. The checks on tune and settle timing against the audio are
+`wav retune --wav <WAV> --events <EVENTS.BIN>`, offline.
+
+The manifest command The manifest command fails
 unless the file is at most 1,024 ASCII bytes of `key=value` lines with
 `format=spooky-session` and `format_version=1`. The recording regression fetches the
 manifest after the WAV and requires `state=ended`, `audio_parts=1` and the recorder's

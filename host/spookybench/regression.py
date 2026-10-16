@@ -207,6 +207,15 @@ def _check_manifest(manifest, result):
                          "differ from the recorder's accounting", "fail")
 
 
+def _check_events(events, manifest, result):
+    if manifest.get("events") != "EVENTS.BIN" or \
+       manifest.get("events_written") != str(events["records"]) or \
+       manifest.get("events_lost") != "0" or events["records_dropped"] or \
+       events["last_frame"] != result["frames"] - 1:
+        raise BenchError("events_accounting", "Session event log differs from the manifest "
+                         "or the recording, or lost records", "fail")
+
+
 def _summary(details, stimulus):
     """Bounded result: full stage metrics live in stage-<name>.json."""
     summary = {}
@@ -343,6 +352,13 @@ def run(options, profile, run, metrics, artifacts):
                                          profile, run, detail, found)
                 _check_manifest(detail["manifest"], recording["recording"]["result"])
             stage("manifest", manifest_check, base={"selected": selected})
+
+            def events_check(detail, found):
+                wav_inspect.run_events(dict(options, session=name.split("/")[1]),
+                                       profile, run, detail, found)
+                _check_events(detail["events"], details["manifest"]["manifest"],
+                              recording["recording"]["result"])
+            stage("events", events_check, base={"selected": selected})
 
         if stimulus == "loopback":
             stage("alignment", lambda detail, found: _alignment(

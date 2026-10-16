@@ -4,6 +4,7 @@ The same transfer fetches a Field session's manifest (decision 0030 item 18).
 """
 from array import array
 import hashlib
+import json
 import math
 import re
 import struct
@@ -11,7 +12,7 @@ import sys
 import time
 import zlib
 from pathlib import Path
-from . import fake, serial_io
+from . import fake, serial_io, session_events
 from .artifacts import JsonLines
 from .result import BenchError
 
@@ -341,6 +342,44 @@ def run_manifest(options, profile, run, metrics, artifacts):
         metrics["manifest"] = manifest
         if manifest.get("format") != "spooky-session" or manifest.get("format_version") != "1":
             raise BenchError("manifest_invalid", "Not a version 1 session manifest", "fail")
+        metrics.update(target_health="healthy", final_target_state="running",
+                       human_required=False)
+    except BaseException as exc:
+        metrics.setdefault("human_required", False)
+        metrics["target_health"] = ("failed" if isinstance(exc, BenchError) and
+                                    exc.result == "fail" else "not_checked")
+        metrics["final_target_state"] = "running" if completed else "unknown"
+        raise
+    finally:
+        records.close()
+        serial.close()
+
+
+def run_events(options, profile, run, metrics, artifacts):
+    """Fetch, decode and check one Field session's EVENTS.BIN."""
+    clock, serial, records, deadline = _session_io(options, profile, run, metrics, artifacts,
+                                                   "events-transfer.jsonl")
+    pending = bytearray()
+    completed = False
+    try:
+        serial_io.settle(serial, records.emit, clock,
+                         min(clock.now() + 14.0, deadline - 1.0))
+        name = f"FIELD/{options['session']}/EVENTS.BIN"
+        final, transfer = _transfer(serial, pending, records, clock, deadline, run,
+                                    name, run.path / "session", session_events.SIZE)
+        completed = True
+        artifacts["events"] = str(final)
+        metrics["transfer"] = transfer
+        header, decoded = session_events.decode(final.read_bytes())
+        dump = run.path / "session" / (final.name + ".jsonl")
+        with dump.open("x", encoding="utf-8") as stream:
+            for record in decoded:
+                stream.write(json.dumps(record) + "\n")
+        artifacts["events_dump"] = str(dump)
+        summary = session_events.summarize(decoded)
+        metrics["events"] = dict(summary, header=header)
+        if summary["problems"]:
+            raise BenchError("events_invalid", "; ".join(summary["problems"]), "fail")
         metrics.update(target_health="healthy", final_target_state="running",
                        human_required=False)
     except BaseException as exc:

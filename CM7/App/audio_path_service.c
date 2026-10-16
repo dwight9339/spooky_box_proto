@@ -7,6 +7,7 @@
 #include "monitor_ptt.h"
 #include "radio_activity_feed.h"
 #include "radio_recorder.h"
+#include "session_events.h"
 #include "usb_test.h"
 
 #include <stdio.h>
@@ -502,6 +503,11 @@ void AudioPath_SetPtt(bool on)
   if (!AudioPath_GetPosition(&stamp.position))
   {
     ++ptt_status.unstamped; /* the radio stream is not running */
+  }
+  else
+  {
+    /* Decision 0028 item 4, stored with the session (decision 0030 item 9). */
+    SessionEvents_Ptt(on, &stamp.position, stamp.uncertainty_frames);
   }
   if (on)
   {
