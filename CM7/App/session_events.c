@@ -183,6 +183,29 @@ void SessionEvents_Classic(uint8_t published, const ClassicState *state,
   }
 }
 
+void SessionEvents_GapStart(uint8_t band_before, const AudioTimelinePosition *first)
+{
+  SessionEvent event = Blank(SESSION_EVENT_GAP_START);
+
+  if (session_active && Place(first, 0U, &event))
+  {
+    SessionEvent_SetGap(&event, SESSION_EVENT_GAP_BAND_SWITCH, band_before, 0U);
+    Post(&event, HAL_GetTick());
+  }
+}
+
+void SessionEvents_GapEnd(uint8_t band_after, uint32_t frequency_khz,
+                          const AudioTimelinePosition *last)
+{
+  SessionEvent event = Blank(SESSION_EVENT_GAP_END);
+
+  if (session_active && Place(last, 0U, &event))
+  {
+    SessionEvent_SetGap(&event, SESSION_EVENT_GAP_BAND_SWITCH, band_after, frequency_khz);
+    Post(&event, HAL_GetTick());
+  }
+}
+
 uint32_t SessionEvents_Prepare(uint32_t now_ms, bool flush_all,
                                uint8_t out[SESSION_EVENT_SECTOR_BYTES])
 {

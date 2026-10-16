@@ -47,6 +47,9 @@ spooky_test(audio_timeline_test audio_timeline_test.c ../Common/Src/audio_timeli
 # Monitor-only PTT ramp (54w.9, decision 0028).
 spooky_test(monitor_ptt_test monitor_ptt_test.c ../Common/Src/monitor_ptt.c)
 spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.c)
+# The same policy test for the opt-in band-change qualification build (54w.12).
+spooky_test(command_policy_band_qualification_test command_policy_test.c ../CM7/App/command_policy.c)
+target_compile_definitions(command_policy_band_qualification_test PRIVATE SPOOKY_RADIO_BAND_QUALIFICATION)
 spooky_test(storage_lease_test storage_lease_test.c ../CM7/App/storage_lease.c)
 # The recorder USB reply queue policy (jjy.10).
 spooky_test(reply_queue_test reply_queue_test.c ../CM7/App/reply_queue.c)
@@ -54,6 +57,8 @@ spooky_test(reply_queue_test reply_queue_test.c ../CM7/App/reply_queue.c)
 spooky_test(recording_result_test recording_result_test.c ../CM7/App/recording_result.c)
 spooky_test(session_files_test session_files_test.c ../CM7/App/session_files.c)
 spooky_test(session_event_log_test session_event_log_test.c ../CM7/App/session_event_log.c)
+# Decision 0004 gap bookkeeping (54w.12.1).
+spooky_test(radio_gap_test radio_gap_test.c ../Common/Src/radio_gap.c)
 # SD FORMAT alignment and confirmation (jjy.14).
 spooky_test(sd_media_test sd_media_test.c ../CM7/App/sd_media.c)
 # Decision 0014 storage-margin warning.

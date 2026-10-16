@@ -73,13 +73,18 @@ def zero_runs(left, right, minimum=MIN_RUN_FRAMES):
     return runs
 
 
-def classify(runs, tunes, frames):
-    """Match each zero run after the first tune to the tune intervals it overlaps."""
+def classify(runs, tunes, frames, gaps=()):
+    """Match each zero run after the first tune to the tune intervals it overlaps.
+    A run inside a decision 0004 gap is explained by the gap: it is silence."""
     in_file = [tune for tune in tunes if tune["end"] >= 0 and tune["start"] < frames]
     first = in_file[0]["start"] if in_file else None
-    explained, unexplained, overhang = 0, [], {}
+    explained, unexplained, overhang, in_gap = 0, [], {}, 0
     for first_frame, last_frame in runs:
         if first is None or last_frame < first:
+            continue
+        if any(gap["start"] <= first_frame and last_frame <= gap["end"] for gap in gaps):
+            explained += 1
+            in_gap += 1
             continue
         overlapping = [tune for tune in in_file
                        if tune["start"] <= last_frame and first_frame <= tune["end"]]
@@ -95,7 +100,8 @@ def classify(runs, tunes, frames):
     margins = {band: -(-value // HALF_BUFFER_FRAMES) * HALF_BUFFER_FRAMES
                for band, value in overhang.items()}
     return {"tunes_in_file": len(in_file), "zero_runs_checked": explained + len(unexplained),
-            "explained": explained, "unexplained": len(unexplained),
+            "explained": explained, "explained_by_gaps": in_gap,
+            "unexplained": len(unexplained),
             "unexplained_examples": unexplained[:EXAMPLES],
             "max_overhang_frames": overhang, "settle_margin_frames": margins}
 
@@ -110,7 +116,20 @@ def tune_summary(tunes):
     return summary
 
 
-def analyze(wav_path, log_lines, origin, tunes=None):
+def check_gaps(left, right, gaps):
+    """Every frame inside each gap must be exact silence on both radio channels."""
+    checked = []
+    for gap in gaps:
+        start, end = max(0, gap["start"]), min(len(left) - 1, gap["end"])
+        nonzero = sum(1 for index in range(start, end + 1)
+                      if left[index] != 0 or right[index] != 0) if end >= start else 0
+        checked.append({"start": gap["start"], "end": gap["end"], "frames": end - start + 1,
+                        "nonzero_frames": nonzero, "open": gap["open"],
+                        "bands": f"{gap['band_before']}->{gap['band_after']}"})
+    return checked
+
+
+def analyze(wav_path, log_lines, origin, tunes=None, gaps=()):
     _fmt, data_offset, data_size = read_format(wav_path)
     samples = array("h")
     with wav_path.open("rb") as stream:
@@ -123,7 +142,8 @@ def analyze(wav_path, log_lines, origin, tunes=None):
         tunes, unstamped = parse_retunes(log_lines, origin)
     else:
         unstamped = 0
-    metrics = classify(zero_runs(left, right), tunes, len(left))
+    metrics = classify(zero_runs(left, right), tunes, len(left), gaps)
+    metrics["gaps"] = check_gaps(left, right, gaps)
     metrics.update({"frames": len(left), "unstamped_tunes": unstamped,
                     "bands": tune_summary([t for t in tunes if t["end"] >= 0
                                            and t["start"] < len(left)])})
@@ -135,6 +155,8 @@ def verdict(metrics):
         return "fail", "no_tunes", "no stamped tune falls inside the WAV"
     if metrics["unstamped_tunes"]:
         return "fail", "unstamped_tunes", f"{metrics['unstamped_tunes']} tune(s) without stamps"
+    if any(gap["nonzero_frames"] for gap in metrics.get("gaps", ())):
+        return "fail", "gap_not_silent", "a decision 0004 gap holds nonzero radio samples"
     if metrics["unexplained"]:
         return "fail", "zero_run_outside_retune", \
             f"{metrics['unexplained']} zero run(s) outside every retune interval"
@@ -150,7 +172,8 @@ def run_local(options):
         if not events_path.is_file():
             raise BenchError("invalid_invocation", f"file not found: {events_path}")
         _header, records = session_events.decode(events_path.read_bytes())
-        metrics = analyze(wav_path, None, None, session_events.tunes(records))
+        metrics = analyze(wav_path, None, None, session_events.tunes(records),
+                          session_events.gaps(records))
         metrics["source"] = "events"
         return metrics, verdict(metrics)
     if not options.get("log") or not options.get("origin"):

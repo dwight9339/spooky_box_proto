@@ -97,6 +97,26 @@ def summarize(records):
             "records_dropped": reported, "last_frame": last, "problems": problems}
 
 
+def gaps(records):
+    """Decision 0004 gaps in session frames, both edges exact and inclusive. A gap
+    still open at session end runs to session end."""
+    intervals, start, last = [], None, None
+    for record in records:
+        if record["kind"] == "gap_start":
+            start = record
+        elif record["kind"] == "gap_end" and start is not None:
+            intervals.append({"start": start["frame"], "end": record["frame"],
+                              "band_before": start["band"], "band_after": record["band"],
+                              "frequency_khz": record["frequency_khz"], "open": False})
+            start = None
+        elif record["kind"] == "session_end":
+            last = record["frame"]
+    if start is not None and last is not None:
+        intervals.append({"start": start["frame"], "end": last, "band_before": start["band"],
+                          "band_after": None, "frequency_khz": None, "open": True})
+    return intervals
+
+
 def tunes(records):
     """Tune intervals in session frames, paired start-to-end (one in flight).
 

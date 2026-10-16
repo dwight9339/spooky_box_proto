@@ -6,6 +6,7 @@
 #include "main.h"
 #include "monitor_ptt.h"
 #include "radio_activity_feed.h"
+#include "radio_gap.h"
 #include "radio_recorder.h"
 #include "session_events.h"
 #include "usb_test.h"
@@ -37,7 +38,11 @@ static volatile uint32_t rx_half_count;
 static volatile uint32_t rx_full_count;
 static volatile uint32_t fault_flags;
 static volatile bool stream_enabled;
-static bool running;
+static volatile bool running;
+/* Decision 0004: what the recorder and the monitor receive while the gate is
+ * closed, and which blocks were silenced. */
+static const int16_t silent_half[AUDIO_PATH_HALF_SAMPLES];
+static RadioGap radio_gap;
 static AudioTimelineStream radio_timeline;
 static MonitorPtt monitor_ptt;
 static AudioPathPttStatus ptt_status; /* foreground only */
@@ -289,6 +294,24 @@ static void ProcessHalf(uint32_t offset)
                             AUDIO_PATH_HALF_SAMPLES);
 }
 
+/* Decision 0004 item 1 and decision 0012 item 3: while the stream gate is
+ * closed, each half-buffer reaches the recorder as digital silence of the same
+ * length, so radio and microphone keep the same block count, and the monitor
+ * plays silence. The activity feed gets no block: no measurement. */
+static void ProcessGatedHalf(uint32_t offset)
+{
+  RadioRecorder_OnRadioSamples(silent_half, AUDIO_PATH_HALF_SAMPLES);
+  (void)memset(&monitor_tx_buffer[offset], 0, AUDIO_PATH_HALF_SAMPLES * sizeof(uint16_t));
+#if (__DCACHE_PRESENT == 1U)
+  if ((SCB->CCR & SCB_CCR_DC_Msk) != 0U)
+  {
+    SCB_CleanDCache_by_Addr((uint32_t *)&monitor_tx_buffer[offset],
+                            AUDIO_PATH_HALF_SAMPLES * sizeof(uint16_t));
+  }
+#endif
+  RadioGap_OnSilencedBlock(&radio_gap, rx_half_count + rx_full_count);
+}
+
 bool AudioPath_StartMonitor(void)
 {
   SAI_HandleTypeDef * const sai = monitor_tx_sai;
@@ -363,7 +386,30 @@ bool AudioPath_StartMonitor(void)
 
 void AudioPath_SetStreamEnabled(bool enabled)
 {
+  const uint32_t primask = __get_PRIMASK();
+
+  __disable_irq();
   stream_enabled = enabled;
+  if (enabled)
+  {
+    RadioGap_Close(&radio_gap); /* the next half is delivered as received */
+  }
+  __set_PRIMASK(primask);
+}
+
+bool AudioPath_GetGap(RadioGapSnapshot *snapshot)
+{
+  uint32_t primask;
+
+  if (snapshot == NULL)
+  {
+    return false;
+  }
+  primask = __get_PRIMASK();
+  __disable_irq();
+  RadioGap_Snapshot(&radio_gap, snapshot);
+  __set_PRIMASK(primask);
+  return true;
 }
 
 void AudioPath_MarkStopped(void)
@@ -641,6 +687,10 @@ void HAL_SAI_RxHalfCpltCallback(SAI_HandleTypeDef *hsai)
     {
       ProcessHalf(0U);
     }
+    else if (running)
+    {
+      ProcessGatedHalf(0U);
+    }
     ++rx_half_count;
   }
 }
@@ -652,6 +702,10 @@ void HAL_SAI_RxCpltCallback(SAI_HandleTypeDef *hsai)
     if (stream_enabled)
     {
       ProcessHalf(AUDIO_PATH_HALF_SAMPLES);
+    }
+    else if (running)
+    {
+      ProcessGatedHalf(AUDIO_PATH_HALF_SAMPLES);
     }
     ++rx_full_count;
   }

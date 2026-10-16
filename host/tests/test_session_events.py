@@ -97,6 +97,20 @@ class Summary(unittest.TestCase):
                            "target_khz": 720}])
 
 
+class Gaps(unittest.TestCase):
+    def test_gap_pairs_and_open_gap(self):
+        gap_start = record(1, 100, 0x0020, bytes([1, 0]))
+        gap_end = record(2, 611, 0x0021, bytes([1, 1, 0, 0]) + struct.pack("<I", 1000))
+        late = record(3, 900, 0x0020, bytes([1, 1]))
+        records = session_events.decode(HEADER + start() + gap_start + gap_end + late +
+                                        end(4, 999))[1]
+        self.assertEqual(session_events.gaps(records), [
+            {"start": 100, "end": 611, "band_before": "FM", "band_after": "AM",
+             "frequency_khz": 1000, "open": False},
+            {"start": 900, "end": 999, "band_before": "AM", "band_after": None,
+             "frequency_khz": None, "open": True}])
+
+
 class RetuneFromEvents(unittest.TestCase):
     def test_wav_retune_reads_events(self):
         with tempfile.TemporaryDirectory() as root:
@@ -115,6 +129,30 @@ class RetuneFromEvents(unittest.TestCase):
         self.assertEqual(verdict[0], "pass")
         self.assertEqual((metrics["source"], metrics["tunes_in_file"],
                           metrics["settle_margin_frames"]), ("events", 1, {"FM": 512}))
+
+    def write(self, root, radio, *events):
+        wav, path = Path(root, "AUDIO000.WAV"), Path(root, "EVENTS.BIN")
+        data = b"".join(struct.pack("<hhh", value, value, 7) for value in radio)
+        wav.write_bytes(b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " +
+                        struct.pack("<IHHIIHH", 16, 1, 3, 48000, 288000, 6, 16) +
+                        b"data" + struct.pack("<I", len(data)) + data)
+        path.write_bytes(HEADER + start() + b"".join(events) + end(9, len(radio) - 1))
+        return {"wav": str(wav), "events": str(path)}
+
+    def test_gaps_explain_their_silence_and_must_be_silent(self):
+        tune = (record(1, 100, 0x0010, struct.pack("<B3xI", 0, 99200)) +
+                record(2, 150, 0x0011, struct.pack("<4B2I", 0, 1, 20, 3, 99200, 99200)))
+        gap = (record(3, 2048, 0x0020, bytes([1, 0])) +
+               record(4, 2559, 0x0021, bytes([1, 1, 0, 0]) + struct.pack("<I", 1000)))
+        with tempfile.TemporaryDirectory() as root:
+            radio = [5] * 2048 + [0] * 512 + [5] * 1000
+            metrics, verdict = wav_retune.run_local(self.write(root, radio, tune, gap))
+            self.assertEqual(verdict[0], "pass")
+            self.assertEqual((metrics["explained_by_gaps"], metrics["gaps"][0]["nonzero_frames"]),
+                             (1, 0))
+            radio[2300] = 3
+            metrics, verdict = wav_retune.run_local(self.write(root, radio, tune, gap))
+            self.assertEqual(verdict[1], "gap_not_silent")
 
     def test_needs_events_or_log_and_origin(self):
         with self.assertRaises(BenchError):

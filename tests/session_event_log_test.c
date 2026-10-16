@@ -76,6 +76,17 @@ static void TestClassicPayloadOffsets(void)
   CHECK(out[30] == 20U && out[31] == 0U);
 }
 
+static void TestGapPayload(void)
+{
+  uint8_t out[32];
+  SessionEvent event = Event(SESSION_EVENT_GAP_END, 51200U);
+
+  SessionEvent_SetGap(&event, SESSION_EVENT_GAP_BAND_SWITCH, 1U, 1000U);
+  SessionEvent_Encode(&event, 3U, out);
+  CHECK(out[12] == 0x21U && out[20] == 1U && out[21] == 1U);
+  CHECK(Le32(&out[24]) == 1000U && Le32(&out[8]) == 0U);
+}
+
 static void TestStampConversion(void)
 {
   SessionEvent event = Event(SESSION_EVENT_PTT_ON, 0U);
@@ -176,6 +187,7 @@ int main(void)
 {
   TestEncodingMatchesTheDesignExample();
   TestClassicPayloadOffsets();
+  TestGapPayload();
   TestStampConversion();
   TestSectorAndSparseFlush();
   TestLossInsertsARecordAndRequestsResync();

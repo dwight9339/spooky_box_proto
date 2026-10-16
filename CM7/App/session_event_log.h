@@ -101,5 +101,9 @@ void SessionEvent_SetClassic(SessionEvent *event, uint8_t published, uint8_t run
                              uint16_t rate_setting_per_min, uint16_t rate_per_min,
                              uint16_t distance_channels);
 void SessionEvent_SetCount(SessionEvent *event, uint32_t count);
+/* Gap start carries the band before; gap end the band after and its frequency. */
+#define SESSION_EVENT_GAP_BAND_SWITCH 1U
+void SessionEvent_SetGap(SessionEvent *event, uint8_t cause, uint8_t band,
+                         uint32_t frequency_khz);
 
 #endif /* SPOOKY_SESSION_EVENT_LOG_H */

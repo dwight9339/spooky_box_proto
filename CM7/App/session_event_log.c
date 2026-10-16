@@ -215,3 +215,11 @@ void SessionEvent_SetCount(SessionEvent *event, uint32_t count)
 {
   PutLe32(&event->payload[0], count);
 }
+
+void SessionEvent_SetGap(SessionEvent *event, uint8_t cause, uint8_t band,
+                         uint32_t frequency_khz)
+{
+  event->payload[0] = cause;
+  event->payload[1] = band;
+  PutLe32(&event->payload[4], frequency_khz);
+}
