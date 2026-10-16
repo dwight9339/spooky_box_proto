@@ -128,6 +128,6 @@ restarts the model at its initial state.
 
 | Row | Firmware today | Tracked by |
 |---|---|---|
-| DEV-I4 | Tune, band, `UP` and `DOWN` are rejected while a session is active with `ERR RADIO tuning disabled while recording`, shown in the [radio regression](../../evidence/2026-09-24-radio-regression.md). Principle VI keeps this guard until bench qualification passes. | `full_spooky_proto-54w.6`, `full_spooky_proto-54w.12` |
+| DEV-I4 | Band changes are rejected while a session is active with `ERR RADIO band changes disabled while recording`. Principle VI keeps this guard until bench qualification passes. In-band tuning (tune, `UP`, `DOWN`, Classic) is allowed in every session state since the [tune guard lift](../../evidence/2026-10-16-tune-guard-lift.md) (`full_spooky_proto-54w.6`). | `full_spooky_proto-54w.12` |
 | DEV-I5 | The band-switch stream gate drops radio half-buffers instead of passing silence. Unreachable during a session today, because the DEV-I4 guard rejects band changes while recording. | `full_spooky_proto-54w.12` |
 | Session domain events | The authoritative machine publishes semantic events to the recorder/CLI adapter; outbound presentation IPC is not wired yet. | `full_spooky_proto-54w.4` |

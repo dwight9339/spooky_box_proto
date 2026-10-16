@@ -32,13 +32,6 @@
             }
         },
         {
-            "name": "RadioTuneQual",
-            "inherits": "Debug",
-            "cacheVariables": {
-                "SPOOKY_RADIO_TUNE_QUALIFICATION": "ON"
-            }
-        },
-        {
             "name": "SpeakerMonitor",
             "inherits": "Debug",
             "cacheVariables": {
@@ -61,10 +54,6 @@
         {
             "name": "IpcMismatch",
             "configurePreset": "IpcMismatch"
-        },
-        {
-            "name": "RadioTuneQual",
-            "configurePreset": "RadioTuneQual"
         },
         {
             "name": "SpeakerMonitor",

@@ -35,18 +35,14 @@ static const CommandPolicyRule rules[COMMAND_ACTION_COUNT] = {
     ALLOW, REJECT, REJECT, "ERR UI unavailable while recording\r\n"},
   [COMMAND_ACTION_EMF_ZERO] = {
     ALLOW, REJECT, REJECT, "ERR EMF unavailable while recording\r\n"},
-  /* Decision 0003 guard: in-band tuning stays rejected while recording until
-   * 54w.6 qualifies it on the bench. The opt-in qualification build allows it so
-   * the bench can measure it (constitution, opt-in experiments). */
-#if defined(SPOOKY_RADIO_TUNE_QUALIFICATION)
+  /* Decision 0003: in-band tuning is legal in every session state. Its
+   * questions were answered for tuning by the 54w.6 bench runs, decision 0015
+   * and the session event log (hpq.11); see
+   * docs/evidence/2026-10-16-tune-guard-lift.md. */
   [COMMAND_ACTION_RADIO_TUNE] = {ALLOW, ALLOW, ALLOW, NULL},
-#else
-  [COMMAND_ACTION_RADIO_TUNE] = {
-    ALLOW, REJECT, REJECT, "ERR RADIO tuning disabled while recording\r\n"},
-#endif
-  /* Band changes stay rejected until 54w.12 qualifies them. */
+  /* Band changes stay rejected while recording until 54w.12 qualifies them. */
   [COMMAND_ACTION_RADIO_BAND] = {
-    ALLOW, REJECT, REJECT, "ERR RADIO tuning disabled while recording\r\n"},
+    ALLOW, REJECT, REJECT, "ERR RADIO band changes disabled while recording\r\n"},
   [COMMAND_ACTION_SCAN_PARAMETER] = {ALLOW, ALLOW, ALLOW, NULL}
 };
 
