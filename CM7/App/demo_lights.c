@@ -15,6 +15,8 @@ static uint16_t encoder_lightness;
 static uint16_t balance[DEMO_LIGHT_CHANNELS];
 static bool fault_active;
 static uint32_t fault_start_ms;
+static LightFlash flash;
+static DemoLightsFlashCounters flash_counters;
 
 uint16_t DemoLights_LightnessToDuty(uint16_t lightness_permille)
 {
@@ -41,6 +43,14 @@ void DemoLights_Init(void)
   balance[2] = DEMO_LIGHTS_BALANCE_BLUE;
   fault_active = false;
   fault_start_ms = 0U;
+  {
+    LightFlashConfig config;
+
+    LightFlash_DefaultConfig(&config);
+    (void)LightFlash_Init(&flash, &config);
+  }
+  flash_counters.onsets = 0U;
+  flash_counters.suppressed = 0U;
 }
 
 void DemoLights_SetIdleLightness(uint16_t lightness_permille)
@@ -94,6 +104,27 @@ void DemoLights_GetBalance(uint16_t balance_permille[DEMO_LIGHT_CHANNELS])
   }
 }
 
+bool DemoLights_SetFlash(const LightFlashConfig *config)
+{
+  return LightFlash_Init(&flash, config);
+}
+
+void DemoLights_GetFlash(LightFlashConfig *config)
+{
+  if (config != NULL)
+  {
+    *config = flash.config;
+  }
+}
+
+void DemoLights_GetFlashCounters(DemoLightsFlashCounters *counters)
+{
+  if (counters != NULL)
+  {
+    *counters = flash_counters;
+  }
+}
+
 void DemoLights_OnSessionFault(uint32_t now_ms)
 {
   fault_active = true;
@@ -128,8 +159,11 @@ static bool FaultBlink(uint32_t now_ms, uint16_t *lightness)
   return true;
 }
 
-static void Buttons(const DemoLightsInput *input, uint32_t now_ms, uint16_t lightness[2])
+/* boost: the radio onset flash now, permille of the headroom (decision 0031). */
+static void Buttons(const DemoLightsInput *input, uint32_t now_ms, uint16_t boost,
+                    uint16_t lightness[2])
 {
+  bool exempt[2] = {false, false}; /* decision 0031 item 2 */
   uint32_t button;
 
   for (button = 0U; button < 2U; ++button)
@@ -144,16 +178,28 @@ static void Buttons(const DemoLightsInput *input, uint32_t now_ms, uint16_t ligh
   else if (input->session_active)
   {
     lightness[0] = Breath(now_ms);
+    exempt[0] = true;
   }
   for (button = 0U; button < 2U; ++button)
   {
     if (input->button_pressed[button])
     {
       lightness[button] = FULL_LIGHTNESS;
+      exempt[button] = true;
     }
   }
   /* The fault pattern overrides Button 0, then its rule resumes. */
-  (void)FaultBlink(now_ms, &lightness[0]);
+  if (FaultBlink(now_ms, &lightness[0]))
+  {
+    exempt[0] = true;
+  }
+  for (button = 0U; button < 2U; ++button)
+  {
+    if ((boost > 0U) && !exempt[button] && (lightness[button] > 0U))
+    {
+      lightness[button] = LightFlash_Apply(lightness[button], boost);
+    }
+  }
 }
 
 static void Encoders(const DemoLightsInput *input, uint8_t rgb[4])
@@ -203,9 +249,10 @@ static void Encoders(const DemoLightsInput *input, uint8_t rgb[4])
 }
 
 /* Each channel an encoder's colour uses gets the duty of the encoder level,
- * scaled by that channel's balance. The prompt's Encoder 0 is the confirm
- * cue and uses the prompt level instead. */
-static void EncoderDuty(const DemoLightsInput *input, const uint8_t rgb[4],
+ * raised by the onset flash, then scaled by that channel's balance, so the hue
+ * holds through a flash. The prompt's Encoder 0 is the confirm cue and uses
+ * the prompt level instead. */
+static void EncoderDuty(const DemoLightsInput *input, const uint8_t rgb[4], uint16_t boost,
                         uint16_t duty[4][DEMO_LIGHT_CHANNELS])
 {
   const bool prompt = !input->shift &&
@@ -217,7 +264,8 @@ static void EncoderDuty(const DemoLightsInput *input, const uint8_t rgb[4],
   for (encoder = 0U; encoder < 4U; ++encoder)
   {
     const uint32_t lit_duty = DemoLights_LightnessToDuty(
-      (prompt && (encoder == 0U)) ? DEMO_LIGHTS_PROMPT_LIGHTNESS : encoder_lightness);
+      (prompt && (encoder == 0U)) ? DEMO_LIGHTS_PROMPT_LIGHTNESS
+                                  : LightFlash_Apply(encoder_lightness, boost));
 
     for (channel = 0U; channel < DEMO_LIGHT_CHANNELS; ++channel)
     {
@@ -231,21 +279,49 @@ static void EncoderDuty(const DemoLightsInput *input, const uint8_t rgb[4],
   }
 }
 
+/* The onset flash now: onsets are taken only in Field with no prompt and no
+ * Shift (decision 0031 items 1 and 3); otherwise they are dropped and a flash
+ * in progress ends, so it does not reappear afterwards. */
+static uint16_t FlashBoost(const DemoLightsInput *input, uint32_t now_ms)
+{
+  const bool allowed = input->field && !input->shift &&
+                       (input->screen != (uint8_t)DEMO_SCREEN_PROMPT_START) &&
+                       (input->screen != (uint8_t)DEMO_SCREEN_PROMPT_STOP);
+
+  if (!allowed)
+  {
+    if (input->onset != 0U)
+    {
+      ++flash_counters.suppressed;
+    }
+    flash.active = false;
+    return 0U;
+  }
+  if (input->onset != 0U)
+  {
+    ++flash_counters.onsets;
+    LightFlash_OnOnset(&flash, input->onset, now_ms);
+  }
+  return LightFlash_Boost(&flash, now_ms);
+}
+
 void DemoLights_Compute(const DemoLightsInput *input, uint32_t now_ms,
                         DemoLightsOutput *output)
 {
   uint16_t lightness[2];
+  uint16_t boost;
   uint32_t button;
 
   if ((input == NULL) || (output == NULL))
   {
     return;
   }
-  Buttons(input, now_ms, lightness);
+  boost = FlashBoost(input, now_ms);
+  Buttons(input, now_ms, boost, lightness);
   for (button = 0U; button < 2U; ++button)
   {
     output->button_duty[button] = DemoLights_LightnessToDuty(lightness[button]);
   }
   Encoders(input, output->encoder_rgb);
-  EncoderDuty(input, output->encoder_rgb, output->encoder_duty);
+  EncoderDuty(input, output->encoder_rgb, boost, output->encoder_duty);
 }

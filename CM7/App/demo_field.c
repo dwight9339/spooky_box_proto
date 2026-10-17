@@ -21,6 +21,7 @@
 #include "main.h"
 #include "tempo_matrix.h"
 #include "matrix_service.h"
+#include "radio_activity_feed.h"
 #include "radio_adapter.h"
 #include "radio_control_service.h"
 #include "radio_recorder.h"
@@ -588,10 +589,14 @@ static void ServiceLights(uint32_t now, const CtxStatus *ctx, const DemoViewMode
   DemoLightsInput input;
   DemoLightsOutput output;
 
+  /* Taken every pass, so onsets never pile up behind the lights (decision 0031
+   * item 10: the lights' own reader of the feed). */
+  input.onset = RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_LIGHTS);
   if (!lights_ready)
   {
     return;
   }
+  input.field = mode == CTX_MODE_FIELD;
   input.screen = model->screen;
   input.shift = model->shift;
   input.session_active = Session_IsActive();
@@ -1243,20 +1248,27 @@ static bool ParsePermille(const char **cursor, uint16_t *value)
   return true;
 }
 
-#define LIGHTS_USAGE "ERR usage: DEMO LIGHTS [IDLE 0..1000 | ENCODER 0..1000 | BALANCE r g b]\r\n"
+#define LIGHTS_USAGE \
+  "ERR usage: DEMO LIGHTS [IDLE 0..1000 | ENCODER 0..1000 | BALANCE r g b | " \
+  "FLASH small medium large decay-ms]\r\n"
 
 /* `DEMO LIGHTS` reports, `DEMO LIGHTS IDLE <0-1000>` sets the idle level of
  * the buttons and `DEMO LIGHTS ENCODER <0-1000>` the level of a lit encoder,
  * in permille of perceived lightness, and `DEMO LIGHTS BALANCE <r> <g> <b>`
  * scales each encoder channel's duty in permille (p04.12), for setting them by
- * eye on the bench. Not kept across a reset. */
+ * eye on the bench. `DEMO LIGHTS FLASH <small> <medium> <large> <decay-ms>`
+ * sets the radio onset flash (decision 0031 item 8, p04.29). Not kept across
+ * a reset. */
 static bool HandleLights(const char *command)
 {
   static const char idle_prefix[] = "DEMO LIGHTS IDLE ";
   static const char encoder_prefix[] = "DEMO LIGHTS ENCODER ";
   static const char balance_prefix[] = "DEMO LIGHTS BALANCE ";
-  char response[144];
+  static const char flash_prefix[] = "DEMO LIGHTS FLASH ";
+  char response[224];
   uint16_t balance[DEMO_LIGHT_CHANNELS];
+  LightFlashConfig flash;
+  DemoLightsFlashCounters flash_counters;
   const bool idle = strncmp(command, idle_prefix, sizeof(idle_prefix) - 1U) == 0;
   const bool encoder = strncmp(command, encoder_prefix, sizeof(encoder_prefix) - 1U) == 0;
 
@@ -1303,19 +1315,59 @@ static bool HandleLights(const char *command)
     }
     DemoLights_SetBalance(balance);
   }
+  else if (strncmp(command, flash_prefix, sizeof(flash_prefix) - 1U) == 0)
+  {
+    const char *cursor = &command[sizeof(flash_prefix) - 1U];
+    uint16_t values[LIGHT_FLASH_ONSET_SIZES + 1U];
+    uint32_t index;
+
+    for (index = 0U; index < (LIGHT_FLASH_ONSET_SIZES + 1U); ++index)
+    {
+      if ((index > 0U) && (*cursor++ != ' '))
+      {
+        break;
+      }
+      if (!ParsePermille(&cursor, &values[index]))
+      {
+        break;
+      }
+    }
+    if ((index < (LIGHT_FLASH_ONSET_SIZES + 1U)) || (*cursor != '\0'))
+    {
+      (void)UsbTest_SendText(LIGHTS_USAGE);
+      return true;
+    }
+    for (index = 0U; index < LIGHT_FLASH_ONSET_SIZES; ++index)
+    {
+      flash.boost_permille[index] = values[index];
+    }
+    flash.full_decay_ms = values[LIGHT_FLASH_ONSET_SIZES];
+    if (!DemoLights_SetFlash(&flash))
+    {
+      (void)UsbTest_SendText(
+        "ERR DEMO LIGHTS FLASH: boosts 1..1000, not decreasing; decay 1..1000 ms\r\n");
+      return true;
+    }
+  }
   else if (strcmp(command, "DEMO LIGHTS") != 0)
   {
     return false;
   }
   DemoLights_GetBalance(balance);
+  DemoLights_GetFlash(&flash);
+  DemoLights_GetFlashCounters(&flash_counters);
   (void)snprintf(response, sizeof(response),
                  "OK DEMO LIGHTS IDLE=%u DUTY=%u PRESSED_DUTY=1000 ENCODER=%u ENCODER_DUTY=%u "
-                 "BALANCE=%u,%u,%u\r\n",
+                 "BALANCE=%u,%u,%u FLASH=%u,%u,%u/%ums ONSETS=%lu SUPPRESSED=%lu\r\n",
                  (unsigned)DemoLights_IdleLightness(),
                  (unsigned)DemoLights_LightnessToDuty(DemoLights_IdleLightness()),
                  (unsigned)DemoLights_EncoderLightness(),
                  (unsigned)DemoLights_LightnessToDuty(DemoLights_EncoderLightness()),
-                 (unsigned)balance[0], (unsigned)balance[1], (unsigned)balance[2]);
+                 (unsigned)balance[0], (unsigned)balance[1], (unsigned)balance[2],
+                 (unsigned)flash.boost_permille[0], (unsigned)flash.boost_permille[1],
+                 (unsigned)flash.boost_permille[2], (unsigned)flash.full_decay_ms,
+                 (unsigned long)flash_counters.onsets,
+                 (unsigned long)flash_counters.suppressed);
   (void)UsbTest_SendText(response);
   return true;
 }
