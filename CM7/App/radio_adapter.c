@@ -578,7 +578,8 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
 
   (void)RadioControl_GetStatus(&status);
   ClassicAdapter_OnRadioAnswer(event, command);
-  if (to_cli && (event != RAD_PUB_TUNE_STARTED) && (cli_commands_pending != 0U))
+  if (to_cli && (event != RAD_PUB_TUNE_STARTED) && (event != RAD_PUB_BAND_STARTED) &&
+      (cli_commands_pending != 0U))
   {
     --cli_commands_pending; /* every other event with a command answers it */
   }
@@ -598,6 +599,16 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
       if (to_cli)
       {
         (void)UsbTest_SendText("ERR RADIO tune failed\r\n");
+      }
+      break;
+    case RAD_PUB_BAND_STARTED:
+      /* PRES-RAD-06: no CLI reply, which waits for the outcome (one reply per
+       * command); the monitor is already muted for the switch. */
+      if ((command != NULL) && (command->arg < (uint32_t)RADIO_BAND_COUNT))
+      {
+        printf("[radio] band switch started %s->%s\r\n",
+               RadioControl_GetBandInfo((RadioBand)gap_band_before)->name,
+               RadioControl_GetBandInfo((RadioBand)command->arg)->name);
       }
       break;
     case RAD_PUB_BAND_CHANGED:

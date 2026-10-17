@@ -74,8 +74,10 @@ NextCommand --> Settled
 ' the receiver into the band on its antenna path, tune the band's last frequency
 ' and restart digital output. When the receiver reports the switch complete, the
 ' adapter opens the gate and unmutes. The sequence is documented in
-' radio_control_service.c. Starting it can fail before any bus step.
-BandIssue --> Switching : [rad_band_switch_begun()]
+' radio_control_service.c. Starting it can fail before any bus step. Started,
+' completed and failed are published (BAND_STARTED, BAND_CHANGED, FAULT_BAND;
+' full_spooky_proto-54w.12.4); only the last two answer the command.
+BandIssue --> Switching : [rad_band_switch_begun()] / rad_publish(RAD_PUB_BAND_STARTED);
 BandIssue --> Faulted : / rad_publish(RAD_PUB_FAULT_BAND);
 
 ' --- Switching: the receiver is changing band; no radio audio flows ------------

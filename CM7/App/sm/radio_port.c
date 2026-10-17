@@ -253,6 +253,8 @@ void rad_publish(RadPublished event)
 {
     switch (event) {
     case RAD_PUB_TUNE_STARTED:
+    case RAD_PUB_BAND_STARTED:
+        /* The command in flight, announced but not yet answered. */
         publish(event, &in_flight);
         break;
     case RAD_PUB_TUNED:

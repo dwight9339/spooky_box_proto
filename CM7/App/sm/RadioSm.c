@@ -291,12 +291,13 @@ static void ROOT_ChoicePoint_TuneIssue__transition(RadioSm* sm)
 static void ROOT_ChoicePoint_BandIssue__transition(RadioSm* sm)
 {
     // ROOT.<ChoicePoint>(BandIssue) behavior
-    // uml: [rad_band_switch_begun()] TransitionTo(Switching)
+    // uml: [rad_band_switch_begun()] / { rad_publish(RAD_PUB_BAND_STARTED); } TransitionTo(Switching)
     if (rad_band_switch_begun())
     {
         // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
         
-        // Step 2: Transition action: ``.
+        // Step 2: Transition action: `rad_publish(RAD_PUB_BAND_STARTED);`.
+        rad_publish(RAD_PUB_BAND_STARTED);
         
         // Step 3: Enter/move towards transition target `Switching`.
         OPERATIONAL_enter(sm);
