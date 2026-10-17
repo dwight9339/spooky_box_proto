@@ -1,6 +1,6 @@
 # 0031. Encoder and button lights flash on radio onsets
 
-- **Status:** Proposed
+- **Status:** Accepted 2026-10-17
 - **Date:** 2026-10-17
 - **Supersedes:** none
 - **Beads:** `full_spooky_proto-54w.8` (the product mapping); demo consumer

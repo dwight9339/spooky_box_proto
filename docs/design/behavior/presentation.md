@@ -89,6 +89,7 @@ period stays configurable until bench trials set it.
 | PRES-LED-04 | Button 1 LED | Button not pressed, `in(Session.Active)` | Steady at 10% perceived brightness, as when idle |
 | PRES-LED-05 | Button 0 LED | `SES_PUB_RECORDING_REJECTED` or `SES_PUB_RECORDING_ABORTED` | A distinct fault pattern, starting as three fast blinks, then the rule for the current state resumes. Blink timing stays configurable. |
 | PRES-LED-06 | Encoder 0 LED | From `INP_PUB_PROMPT_OPENED_START` or `_STOP` until the prompt closes | Lit, to show where to confirm. Its color follows the semantic color vocabulary, control map D-016. |
+| PRES-LED-07 | Every lit encoder and standalone button LED, in Field | A radio onset (decision 0013 items 6, 7 and 10) | A flash: the light's perceived lightness rises by one, two or three thirds of the way to full for a small, medium or large onset, keeping its colour, and falls back by one third every 80 ms. A smaller onset than the flash in progress is ignored. Dark controls stay dark. No flash on a held button, on Button 0 while it breathes or shows its fault pattern, while the prompt is open, while Shift is held, or in Instrument ([decision 0031](../../decisions/0031-direct-led-radio-onset-flashes.md)). |
 | PRES-PRM-01 | Display | `INP_PUB_PROMPT_OPENED_START` or `INP_PUB_PROMPT_OPENED_STOP` | A prompt naming the action and the Encoder 0 confirm |
 | PRES-PRM-02 | Display | `INP_PUB_PROMPT_CONFIRMED_START`, `INP_PUB_PROMPT_CONFIRMED_STOP`, `INP_PUB_PROMPT_CANCELLED` or `INP_PUB_PROMPT_WITHDRAWN` | The prompt closes. The session's own events carry the outcome. |
 
@@ -149,7 +150,7 @@ state after the change. Routine jumps change only the frequency and are not even
 | Item | Question | Settled by |
 |---|---|---|
 | Session events on OLED, LEDs, matrix and audio | What does each surface show for each session event, and how are failures made visible? | `full_spooky_proto-54w.1` |
-| EMF, activity and warning expression | How do the matrix and LEDs express semantic EMF, radio activity and warnings? | `full_spooky_proto-54w.8` |
+| EMF and warning expression on the direct LEDs | How do the encoder and button LEDs express EMF and warnings? The matrix is settled by decisions [0013](../../decisions/0013-matrix-emf-radio-and-status-mapping.md) and [0019](../../decisions/0019-matrix-emf-four-buckets-and-quiet-baseline.md), and radio onsets on the direct LEDs by [decision 0031](../../decisions/0031-direct-led-radio-onset-flashes.md). | `full_spooky_proto-54w.8` |
 | Utility entry and exit | What does the display show when a utility opens or closes? | `full_spooky_proto-54w.5` |
 | Classic view | How does the display show Classic's run state, rate, distance, edge behavior and hold time, and is scan position expressed on the matrix? | `full_spooky_proto-54w.5` |
 | Band change during a session | How are band changes and radio faults acknowledged on display, lights and audio while recording? | `full_spooky_proto-54w.1`, [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
@@ -186,6 +187,7 @@ state after the change. Routine jumps change only the frequency and are not even
 | PRES-RAD-11 | Target | CLI reply implemented; no bench evidence |
 | PRES-LED-01 to PRES-LED-03 | Target | User direction 2026-09-27, recorded in `full_spooky_proto-54w.18`. Not implemented; the LED pins were chosen for PWM-capable timers. |
 | PRES-LED-04 to PRES-LED-06 | Target | [Decision 0005](../../decisions/0005-button-0-session-prompt.md), items 14 to 16. Not implemented. |
+| PRES-LED-07 | Target | [Decision 0031](../../decisions/0031-direct-led-radio-onset-flashes.md). The flash envelope (`Common/Src/light_flash.c`) and the feed's lights reader are host tested; no lights renderer uses them on `main` (`full_spooky_proto-54w.8.1`). |
 | PRES-PRM-01, PRES-PRM-02 | Target | User direction 2026-09-27, `full_spooky_proto-54w.18`. Not implemented. |
 | PRES-DEV-01 | Proven for the CLI reply | [Radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | PRES-DEV-02 | Target | CLI reply implemented; no bench evidence |

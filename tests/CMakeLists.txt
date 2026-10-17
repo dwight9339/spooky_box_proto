@@ -46,6 +46,8 @@ spooky_test(event_queue_test event_queue_test.c ../CM7/App/event_queue.c)
 spooky_test(audio_timeline_test audio_timeline_test.c ../Common/Src/audio_timeline.c)
 # Monitor-only PTT ramp (54w.9, decision 0028).
 spooky_test(monitor_ptt_test monitor_ptt_test.c ../Common/Src/monitor_ptt.c)
+# Radio onset flash of the encoder and button lights (54w.8.1, decision 0031).
+spooky_test(light_flash_test light_flash_test.c ../Common/Src/light_flash.c)
 spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.c)
 # The same policy test for the opt-in band-change qualification build (54w.12).
 spooky_test(command_policy_band_qualification_test command_policy_test.c ../CM7/App/command_policy.c)
