@@ -21,7 +21,7 @@
  * - A retune interval starts at the block in progress when a tune or band
  *   switch is about to be written to the receiver, and ends at the block in
  *   progress when the foreground observes the radio no longer tuning, plus the
- *   settle margin. The caller reads the block in progress from the radio
+ *   interval's settle margin in blocks. The caller reads the block in progress from the radio
  *   stream's sample timeline (decision 0012); when it cannot, the interval
  *   starts at block 0 or stays open. Blocks inside it, and every block while
  *   the radio is not running, reach the detector as not measuring, so the
@@ -31,7 +31,8 @@
  */
 
 #define RADIO_ACTIVITY_FEED_CAPACITY 32U
-/* Decision 0015 item 5 starting value: one half-buffer. */
+/* Decision 0015 item 5 starting value, one half-buffer: the settle margin of
+ * any band or transition the item 10 qualification has not set. */
 #define RADIO_ACTIVITY_FEED_SETTLE_BLOCKS 1U
 /* The measurement is current while a measured block arrived this recently;
  * the foreground loop's recording maximum is 43 ms
@@ -55,9 +56,11 @@ bool RadioActivityFeed_Init(void);
 /* Radio capture callback: one delivered half-buffer of interleaved samples. */
 void RadioActivityFeed_OnBlock(uint32_t block, const int16_t *samples, uint32_t count);
 /* Foreground, immediately before an in-band tune or a band switch is written to
- * the receiver. Starts a retune interval; while one is open it continues.
- * block_known is false when the stream position cannot be read. */
-void RadioActivityFeed_OnRetuneStart(bool block_known, uint32_t block_in_progress);
+ * the receiver. Starts a retune interval with the given settle margin; while
+ * one is open it continues with the larger of the two margins. block_known is
+ * false when the stream position cannot be read. */
+void RadioActivityFeed_OnRetuneStart(bool block_known, uint32_t block_in_progress,
+                                     uint32_t settle_blocks);
 /* Foreground, after a band switch: the detector's averages reseed from the new
  * band's first measured block. */
 void RadioActivityFeed_ResetAverages(void);

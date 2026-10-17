@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "classic_service.h"
 #include "event_queue.h"
 #if defined(SPOOKY_DEMO)
 #include "classic_service.h"
@@ -37,8 +38,6 @@ void ClassicAdapter_OnRadioAnswer(RadPublished event, const RadCommand *command)
 /* Demo-only (p04.3): a Classic command from the physical controls, through the
  * Context machine. No CLI reply follows. False if the queue refused it. */
 bool ClassicAdapter_RequestInternalCommand(CtxCommand command, int32_t arg);
-/* Classic's published state, for the demo view. */
-bool ClassicAdapter_GetState(ClassicState *state);
 #endif
 
 /* The CLASSIC commands of the USB CLI (usb-cli.md), already upper-case and past
@@ -46,5 +45,7 @@ bool ClassicAdapter_GetState(ClassicState *state);
 bool ClassicAdapter_HandleCommand(const char *command);
 /* Reply `OK CLASSIC STATE=...` with Classic's published state. */
 void ClassicAdapter_SendStatus(void);
+/* The published Classic state now (decision 0030 snapshots). */
+bool ClassicAdapter_GetState(ClassicState *state);
 
 #endif /* SPOOKY_CLASSIC_ADAPTER_H */

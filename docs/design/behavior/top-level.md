@@ -118,8 +118,8 @@ restarts the model at its initial state.
 | DEV-I1 | Target | Constitution Principle I |
 | DEV-I2 | Target | Constitution Principle III |
 | DEV-I3 | Target | Implemented; no bench evidence |
-| DEV-I4 | Target | Product intent: [roadmap](../../../spec/product/roadmap.md) M3 scope, in-band tuning while recording, and M4 scope, band transitions qualified during recording; [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions; [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
-| DEV-I5 | Target | [Decision 0004](../../decisions/0004-radio-track-continuity-across-transitions.md); [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions |
+| DEV-I4 | Target | Product intent: [roadmap](../../../spec/product/roadmap.md) M3 scope, in-band tuning and band transitions while recording; [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions; [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
+| DEV-I5 | Target | [Decision 0004](../../decisions/0004-radio-track-continuity-across-transitions.md); [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions. Silence fill and gap events implemented and host tested (`full_spooky_proto-54w.12.1`); no bench evidence yet |
 | DEV-01 | Proven | Sleep entry while idle: [radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | DEV-02 | Target | Implemented in the IPC experiment builds; no bench evidence |
 | DEV-03 | Target | Implemented and host tested under [decision 0008](../../decisions/0008-recording-safe-command-policy.md); no bench evidence |
@@ -128,6 +128,6 @@ restarts the model at its initial state.
 
 | Row | Firmware today | Tracked by |
 |---|---|---|
-| DEV-I4 | Tune, band, `UP` and `DOWN` are rejected while a session is active with `ERR RADIO tuning disabled while recording`, shown in the [radio regression](../../evidence/2026-09-24-radio-regression.md). Principle VI keeps this guard until bench qualification passes. | `full_spooky_proto-54w.6`, `full_spooky_proto-54w.12` |
-| DEV-I5 | The band-switch stream gate drops radio half-buffers instead of passing silence. Unreachable during a session today, because the DEV-I4 guard rejects band changes while recording. | `full_spooky_proto-54w.12` |
+| DEV-I4 | Band changes are rejected while a session is active with `ERR RADIO band changes disabled while recording`. Principle VI keeps this guard until bench qualification passes. In-band tuning (tune, `UP`, `DOWN`, Classic) is allowed in every session state since the [tune guard lift](../../evidence/2026-10-16-tune-guard-lift.md) (`full_spooky_proto-54w.6`). | `full_spooky_proto-54w.12` |
+| DEV-I5 | A band switch that fails leaves the audio path stopped, so silence stops and the microphone queue would overflow; a failed switch during a session is not yet isolated. Unreachable during a session in normal builds, because the DEV-I4 guard rejects band changes while recording. | `full_spooky_proto-54w.12.3` |
 | Session domain events | The authoritative machine publishes semantic events to the recorder/CLI adapter; outbound presentation IPC is not wired yet. | `full_spooky_proto-54w.4` |

@@ -202,46 +202,34 @@ static void continues_from_wherever_the_cli_tuned(void)
     CHECK(requests == 3u && requested_khz == 90100u);
 }
 
-/* FR-027 and SC-007: while the policy rejects tuning in the session, Classic
- * shows why, issues nothing and does not retry; it resumes one period after. */
-static void the_session_guard_makes_classic_unable_to_scan(void)
+/* Decision 0003 and spec 001 SC-006: in-band tuning is legal in every session
+ * state (54w.6), so a session changes nothing about Classic's scanning. */
+static void classic_scans_through_every_session_state(void)
 {
-    static const SesState guarded[] = {
+    static const SesState states[] = {
         SES_STATE_PREPARING, SES_STATE_RECORDING, SES_STATE_FINALIZING
     };
     size_t index;
 
-    for (index = 0u; index < (sizeof(guarded) / sizeof(guarded[0])); ++index) {
+    for (index = 0u; index < (sizeof(states) / sizeof(states[0])); ++index) {
         ClassicState state;
-        uint32_t back;
+        uint32_t entered;
 
         start();
         run(505u);
         radio_completes();
         clear_events();
-        world.session_state = guarded[index];
-        run(10000u);
-        CHECK(requests == 1u);
-        CHECK(events[CLASSIC_PUB_RUN_STATE] == 1u && event_total == 1u);
-        CHECK(event_state.run_state == CLASSIC_STATE_UNABLE);
-        CHECK(event_state.unable_reason == CLASSIC_UNABLE_SESSION);
-        state = state_now();
-        CHECK(state.run_state == CLASSIC_STATE_UNABLE);
-
-        /* Parameters stay adjustable (FR-010) and nothing tunes. */
-        command(CTX_CMD_JUMP_RATE, 1);
-        command(CTX_CMD_TOGGLE_DIRECTION, 0);
-        run(1000u);
-        CHECK(requests == 1u);
-
-        world.session_state = SES_STATE_IDLE;
-        back = now_ms;
-        while ((requests == 1u) && ((now_ms - back) < 2000u)) {
+        world.session_state = states[index];
+        entered = now_ms;
+        while ((requests == 1u) && ((now_ms - entered) < 2000u)) {
             run(5u);
         }
-        CHECK(requests == 2u && requested_khz == 99100u); /* down from 99.2 */
-        CHECK((now_ms - 5u) - back == 400u);              /* 150 per minute */
-        CHECK(state_now().run_state == CLASSIC_STATE_RUNNING);
+        CHECK(requests == 2u);
+        CHECK(event_total == 0u);
+        state = state_now();
+        CHECK(state.run_state == CLASSIC_STATE_RUNNING);
+        CHECK(state.unable_reason == CLASSIC_UNABLE_NONE);
+        world.session_state = SES_STATE_IDLE;
     }
 }
 
@@ -250,9 +238,9 @@ static void the_session_guard_makes_classic_unable_to_scan(void)
 static void a_new_reason_is_published(void)
 {
     start();
-    world.session_state = SES_STATE_RECORDING;
+    world.radio_state = RAD_STATE_STOPPED;
     run(5u);
-    CHECK(state_now().unable_reason == CLASSIC_UNABLE_SESSION);
+    CHECK(state_now().unable_reason == CLASSIC_UNABLE_RADIO_STOPPED);
     clear_events();
     world.radio_state = RAD_STATE_FAULTED;
     run(5u);
@@ -454,16 +442,20 @@ static void a_hold_is_published_and_counted(void)
     CHECK(state_now().run_state == CLASSIC_STATE_RUNNING);
     command(CTX_CMD_TOGGLE_DIRECTION, 0);
     world.onset = 0u;
-    /* A hold on the new landing; the session guard then makes Classic unable
-     * to scan, which ends it. */
+    /* A hold on the new landing; a radio fault then makes Classic unable to
+     * scan, which ends it. */
     pass_with_onset(3u);
     CHECK(state_now().run_state == CLASSIC_STATE_HOLDING);
-    world.session_state = SES_STATE_RECORDING;
-    CHECK(ClassicService_GetState(&world, &state));
-    CHECK(state.run_state == CLASSIC_STATE_UNABLE);
-    CHECK(state.unable_reason == CLASSIC_UNABLE_SESSION);
-    run(5u);
-    world.session_state = SES_STATE_IDLE;
+    {
+        const uint8_t radio_state = world.radio_state;
+
+        world.radio_state = RAD_STATE_FAULTED;
+        CHECK(ClassicService_GetState(&world, &state));
+        CHECK(state.run_state == CLASSIC_STATE_UNABLE);
+        CHECK(state.unable_reason == CLASSIC_UNABLE_RADIO_FAULTED);
+        run(5u);
+        world.radio_state = radio_state;
+    }
     CHECK(state_now().run_state == CLASSIC_STATE_RUNNING);
     ClassicService_GetStats(&stats);
     CHECK(stats.holds == 2u);
@@ -506,7 +498,7 @@ int main(void)
     boots_scanning_fm_once_the_radio_starts();
     one_tune_in_flight_at_a_time();
     continues_from_wherever_the_cli_tuned();
-    the_session_guard_makes_classic_unable_to_scan();
+    classic_scans_through_every_session_state();
     a_new_reason_is_published();
     a_radio_fault_is_shown_and_never_retried();
     commands_publish_one_event_each();

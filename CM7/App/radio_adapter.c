@@ -12,6 +12,7 @@
 #include "main.h"
 #include "radio_activity_feed.h"
 #include "radio_control_service.h"
+#include "session_events.h"
 #include "sm/radio_port.h"
 #include "usb_test.h"
 
@@ -93,6 +94,76 @@ bool RadioAdapter_RequestBand(uint32_t band)
   return PostCommand(RAD_CMD_BAND, false, false, band);
 }
 
+static void FormatFrame(uint64_t frame, char text[21])
+{
+  char digits[21];
+  uint32_t count = 0U;
+
+  do
+  {
+    digits[count++] = (char)('0' + (uint32_t)(frame % 10U));
+    frame /= 10U;
+  } while ((frame != 0U) && (count < 20U));
+  for (uint32_t index = 0U; index < count; ++index)
+  {
+    text[index] = digits[count - 1U - index];
+  }
+  text[count] = '\0';
+}
+
+/* Decision 0004 gaps: the band before the switch, and each edge reported once
+ * to the session event log and the UART log. */
+static RadioGapReporter gap_reporter;
+static bool gap_reporter_ready;
+static uint8_t gap_band_before;
+
+static void ReportGapEdges(void)
+{
+  RadioGapSnapshot snapshot;
+  RadioGapEdges edges;
+  AudioTimelinePosition now;
+  AudioTimelinePosition edge;
+  RadioControlStatus status;
+  char first_text[21];
+  char last_text[21];
+
+  if (!AudioPath_GetGap(&snapshot))
+  {
+    return;
+  }
+  if (!gap_reporter_ready)
+  {
+    RadioGap_ResetReporter(&gap_reporter, &snapshot);
+    gap_reporter_ready = true;
+    return;
+  }
+  edges = RadioGap_NewEdges(&gap_reporter, &snapshot);
+  if ((!edges.start && !edges.end) || !AudioPath_GetPosition(&now))
+  {
+    return;
+  }
+  edge.epoch = now.epoch;
+  if (edges.start)
+  {
+    edge.frame = edges.first_frame;
+    SessionEvents_GapStart(gap_band_before, &edge);
+  }
+  if (edges.end)
+  {
+    (void)RadioControl_GetStatus(&status);
+    edge.frame = edges.last_frame;
+    SessionEvents_GapEnd((uint8_t)status.band, status.tune.frequency_khz, &edge);
+    FormatFrame(edges.first_frame, first_text);
+    FormatFrame(edges.last_frame, last_text);
+    printf("[gap] start=%lu:%s end=%lu:%s band=%s->%s freq=%lu missed=%lu\r\n",
+           (unsigned long)now.epoch, first_text, (unsigned long)now.epoch, last_text,
+           RadioControl_GetBandInfo((RadioBand)gap_band_before)->name,
+           RadioControl_GetBandInfo(status.band)->name,
+           (unsigned long)status.tune.frequency_khz,
+           (unsigned long)gap_reporter.missed);
+  }
+}
+
 void RadioAdapter_ServiceActivity(void)
 {
   const RadState state = Radio_GetState();
@@ -102,15 +173,106 @@ void RadioAdapter_ServiceActivity(void)
   RadioActivityFeed_Service(HAL_GetTick(),
                             (state == RAD_STATE_SETTLED) || (state == RAD_STATE_TUNING),
                             state == RAD_STATE_TUNING, known, block);
+  ReportGapEdges();
+}
+
+/* Decision 0015 items 2 and 3: the tune in flight, stamped on the radio sample
+ * timeline when it is issued and again when its outcome is published. The Radio
+ * machine has at most one tune in flight (item 8). Storing the pair with the
+ * session belongs to the session format (full_spooky_proto-hpq.3); until then
+ * each pair is one [retune] log line. */
+#define RETUNE_END_UNCERTAINTY_FRAMES 3600U /* decision 0012 item 6 */
+
+static bool retune_issued;
+static bool retune_start_known;
+static AudioTimelinePosition retune_start;
+static RadioBand retune_band;
+static uint32_t retune_target_khz;
+
+
+/* The end stamp is when the foreground observed the outcome; the receiver
+ * settled up to RETUNE_END_UNCERTAINTY_FRAMES earlier. The start stamp precedes
+ * the receiver's ready wait and the command write, at most
+ * RADIO_FAST_CTS_TIMEOUT_MS. */
+static void LogRetune(const char *outcome, uint8_t outcome_code,
+                      const RadioTuneStatus *tuned)
+{
+  AudioTimelinePosition end;
+  const bool end_known = AudioPath_GetPosition(&end);
+  const uint32_t frequency_khz = (tuned != NULL) ? tuned->frequency_khz : 0U;
+  char start_text[21] = "-";
+  char end_text[21] = "-";
+  unsigned long start_epoch = 0UL;
+  unsigned long end_epoch = 0UL;
+
+  if (!retune_issued)
+  {
+    return;
+  }
+  retune_issued = false;
+  if (retune_start_known)
+  {
+    start_epoch = (unsigned long)retune_start.epoch;
+    FormatFrame(retune_start.frame, start_text);
+  }
+  if (end_known)
+  {
+    end_epoch = (unsigned long)end.epoch;
+    FormatFrame(end.frame, end_text);
+  }
+  /* Decision 0030 item 9: the same pair, stored with the session. */
+  SessionEvents_TuneEnd((uint8_t)retune_band, outcome_code,
+                        (tuned != NULL) ? tuned->rssi_dbuv : 0U,
+                        (tuned != NULL) ? tuned->snr_db : 0U,
+                        retune_target_khz, frequency_khz, end_known ? &end : NULL);
+  printf("[retune] start=%lu:%s end=%lu:%s unc=%lu band=%s target=%lu "
+         "outcome=%s freq=%lu\r\n",
+         start_epoch, start_text, end_epoch, end_text,
+         (unsigned long)RETUNE_END_UNCERTAINTY_FRAMES,
+         RadioControl_GetBandInfo(retune_band)->name,
+         (unsigned long)retune_target_khz, outcome,
+         (unsigned long)frequency_khz);
+}
+
+/* Decision 0015 item 5: the settle margin after an in-band tune's end, in
+ * radio half-buffers. FM and AM are set by the item 10 qualification
+ * (docs/evidence/2026-10-09-retune-qualification.md: no zero run outlasted its
+ * end stamp). SW and LW keep the starting value until qualified with usable
+ * reception. */
+static const uint32_t retune_settle_blocks[RADIO_BAND_COUNT] =
+{
+  [RADIO_BAND_FM] = 0U,
+  [RADIO_BAND_AM] = 0U,
+  [RADIO_BAND_SW] = RADIO_ACTIVITY_FEED_SETTLE_BLOCKS,
+  [RADIO_BAND_LW] = RADIO_ACTIVITY_FEED_SETTLE_BLOCKS
+};
+
+bool RadioAdapter_TuneInFlight(uint8_t *band, uint32_t *target_khz)
+{
+  if (!retune_issued)
+  {
+    return false;
+  }
+  if (band != NULL) *band = (uint8_t)retune_band;
+  if (target_khz != NULL) *target_khz = retune_target_khz;
+  return true;
+}
+
+uint32_t RadioAdapter_RetuneSettleFrames(uint32_t band)
+{
+  const uint32_t blocks = (band < (uint32_t)RADIO_BAND_COUNT) ?
+    retune_settle_blocks[band] : RADIO_ACTIVITY_FEED_SETTLE_BLOCKS;
+
+  return blocks * 512U; /* one radio half-buffer per block */
 }
 
 /* Start stamp of a retune interval on the radio sample timeline. */
-static void StartRetune(void)
+static void StartRetune(uint32_t settle_blocks)
 {
   uint32_t block = 0U;
   const bool known = AudioPath_GetBlockInProgress(&block);
 
-  RadioActivityFeed_OnRetuneStart(known, block);
+  RadioActivityFeed_OnRetuneStart(known, block, settle_blocks);
 }
 
 void RadioAdapter_ReportStarted(bool ok)
@@ -252,8 +414,24 @@ bool rad_integration_begin_tune(uint32_t frequency_khz)
   /* The start stamp of the retune interval, before the receiver can change
    * (decision 0015 item 3). It ends once the machine leaves Tuning, including
    * when the tune cannot be issued. */
-  StartRetune();
-  return RadioControl_BeginTune(frequency_khz);
+  {
+    RadioControlStatus status;
+
+    (void)RadioControl_GetStatus(&status);
+    retune_band = status.band;
+  }
+  StartRetune((retune_band < RADIO_BAND_COUNT) ? retune_settle_blocks[retune_band]
+                                               : RADIO_ACTIVITY_FEED_SETTLE_BLOCKS);
+  retune_target_khz = frequency_khz;
+  retune_start_known = AudioPath_GetPosition(&retune_start);
+  /* A tune that cannot be issued produces neither event (decision 0015 item 2). */
+  retune_issued = RadioControl_BeginTune(frequency_khz);
+  if (retune_issued)
+  {
+    SessionEvents_TuneStart((uint8_t)retune_band, retune_target_khz,
+                            retune_start_known ? &retune_start : NULL);
+  }
+  return retune_issued;
 }
 
 /* Sequences the monitored output around a receiver function change. The radio
@@ -269,7 +447,14 @@ bool rad_integration_switch_band(uint32_t band_value)
   }
   /* A band switch is also not a measurement, and the new band's level is not
    * comparable with the old one's. */
-  StartRetune();
+  /* A band switch is a decision 0004 gap, not yet qualified (54w.12). */
+  StartRetune(RADIO_ACTIVITY_FEED_SETTLE_BLOCKS);
+  {
+    RadioControlStatus status;
+
+    (void)RadioControl_GetStatus(&status);
+    gap_band_before = (uint8_t)status.band;
+  }
   if (!CodecVolume_SetTransitionMuted(true))
   {
     goto failed;
@@ -337,6 +522,7 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
   switch (event)
   {
     case RAD_PUB_TUNED:
+      LogRetune("TUNED", SESSION_EVENT_TUNE_TUNED, &status.tune);
       RadioControl_LogTune("tuned", &status.tune);
       if (to_cli)
       {
@@ -344,6 +530,7 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
       }
       break;
     case RAD_PUB_TUNE_FAILED:
+      LogRetune("FAILED", SESSION_EVENT_TUNE_FAILED, NULL);
       printf("[radio] tune failed at %lu kHz\r\n", (unsigned long)status.target_khz);
       if (to_cli)
       {
@@ -382,6 +569,7 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
       }
       break;
     case RAD_PUB_ABANDONED:
+      LogRetune("ABANDONED", SESSION_EVENT_TUNE_ABANDONED, NULL);
       if (to_cli)
       {
         (void)UsbTest_SendText("ERR RADIO abandoned; radio fault\r\n");

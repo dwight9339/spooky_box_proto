@@ -17,7 +17,7 @@ from spookybench.config import load_profile
 from spookybench.firmware import elf_ranges, embedded_build_id, stage_pair, validate_pair
 from spookybench.openocd import configuration, interpret, operation_script, LiveCapture
 from spookybench.artifacts import Run
-from spookybench import ipc_load, serial_io
+from spookybench import ipc_load, serial_io, wav_inspect
 from spookybench.process_io import run_process
 from spookybench.result import BenchError
 from spookybench.runner import execute
@@ -375,6 +375,58 @@ class ControlTests(unittest.TestCase):
                 self.assertNotEqual(result["result"], "pass")
                 self.assertFalse(result["metrics"]["evidence_complete"])
 
+    def test_wav_inspect_accepts_session_paths(self):
+        self.assertEqual(wav_inspect.filename("field/f0007/audio000.wav"),
+                         "FIELD/F0007/AUDIO000.WAV")
+        self.assertEqual(wav_inspect.filename("REC004.WAV"), "REC004.WAV")
+        for bad in ("FIELD/F007/AUDIO000.WAV", "FIELD/F0007/MANIFEST.TXT",
+                    "FIELD/F0007/../REC004.WAV"):
+            with self.subTest(name=bad):
+                with self.assertRaises(ValueError):
+                    wav_inspect.filename(bad)
+        options = dict(self.options("wav inspect"), filename="FIELD/F0007/AUDIO000.WAV",
+                       deadline=time.monotonic() + 30)
+        result = execute(options)
+        self.assertEqual(result["result"], "pass", result)
+        self.assertTrue(Path(result["artifacts"]["wav"]).name == "FIELD_F0007_AUDIO000.WAV")
+
+    def test_session_manifest_happy_path(self):
+        options = dict(self.options("session manifest"), session="F0007",
+                       deadline=time.monotonic() + 30)
+        result = execute(options)
+        self.assertEqual(result["result"], "pass", result)
+        manifest = result["metrics"]["manifest"]
+        self.assertEqual((manifest["format"], manifest["type"], manifest["state"]),
+                         ("spooky-session", "field", "recording"))
+        self.assertEqual(manifest["retune_settle_frames"], "FM:0,AM:0,SW:512,LW:512")
+        self.assertTrue(Path(result["artifacts"]["manifest"]).is_file())
+
+    def test_session_events_happy_path(self):
+        options = dict(self.options("session events"), session="F0007",
+                       deadline=time.monotonic() + 30)
+        result = execute(options)
+        self.assertEqual(result["result"], "pass", result)
+        events = result["metrics"]["events"]
+        self.assertEqual(events["kinds"], {"session_start": 1, "classic": 1, "tune_start": 1,
+                                           "tune_end": 1, "session_end": 1})
+        self.assertEqual((events["sequence_gaps"], events["problems"]), (0, []))
+        self.assertTrue(Path(result["artifacts"]["events_dump"]).is_file())
+
+    def test_session_events_unreported_loss_fails(self):
+        options = dict(self.options("session events", "events-lost"), session="F0007",
+                       deadline=time.monotonic() + 30)
+        result = execute(options)
+        self.assertEqual((result["result"], result["reason"]), ("fail", "events_invalid"))
+
+    def test_session_manifest_parse_rules(self):
+        self.assertEqual(wav_inspect.parse_manifest("a=1\r\nb=x=y\r\n\r\n"),
+                         {"a": "1", "b": "x=y"})
+        with self.assertRaises(BenchError):
+            wav_inspect.parse_manifest("no separator\r\n")
+        self.assertEqual(wav_inspect.session("f0012"), "F0012")
+        with self.assertRaises(ValueError):
+            wav_inspect.session("F12")
+
     def test_spawned_simulated_wav_inspect(self):
         options = dict(self.options("wav inspect"), filename="REC004.WAV")
         result = supervise(options, 30)
@@ -450,7 +502,7 @@ class ControlTests(unittest.TestCase):
         metrics = result["metrics"]
         self.assertEqual([stage["name"] for stage in metrics["stages"]],
                          ["boot_smoke", "prerequisites", "recording", "wav_inspect",
-                          "accounting", "post_transfer_health"])
+                          "accounting", "manifest", "events", "post_transfer_health"])
         self.assertTrue(all(stage["result"] == "pass" for stage in metrics["stages"]))
         self.assertEqual(metrics["transfer"]["file"], metrics["recording"]["result"]["file"])
         self.assertEqual(metrics["wav"]["frames"], metrics["recording"]["result"]["frames"])
@@ -466,7 +518,7 @@ class ControlTests(unittest.TestCase):
                           metrics["human_required"]), ("healthy", "running", False))
         run_dir = Path(result["artifacts"]["run_dir"])
         for name in ("boot_smoke", "prerequisites", "recording", "wav_inspect",
-                     "accounting", "post_transfer_health"):
+                     "accounting", "manifest", "events", "post_transfer_health"):
             self.assertTrue((run_dir / f"stage-{name}.json").is_file(), name)
         for name in ("boot-diagnostics.jsonl", "recording-diagnostics.jsonl",
                      "regression-diagnostics.jsonl", "wav-transfer.jsonl"):
@@ -497,12 +549,12 @@ class ControlTests(unittest.TestCase):
                  ("audio-stopped", "ambient", "audio_path_stopped", "prerequisites", None),
                  ("sd-full", "ambient", "sd_capacity", "prerequisites", None),
                  ("record-busy", "ambient", "recording_busy", "prerequisites", None),
-                 ("record-overrun", "ambient", "recorder_overrun", "recording", "REC900.WAV"),
-                 ("record-abort", "ambient", "recording_aborted", "recording", "REC900.WAV"),
-                 ("wav-corrupt-frame", "ambient", "transfer_crc", "wav_inspect", "REC900.WAV"),
-                 ("wav-silent", "ambient", "wav_silent_channel", "wav_inspect", "REC900.WAV"),
+                 ("record-overrun", "ambient", "recorder_overrun", "recording", "FIELD/F0900/AUDIO000.WAV"),
+                 ("record-abort", "ambient", "recording_aborted", "recording", "FIELD/F0900/AUDIO000.WAV"),
+                 ("wav-corrupt-frame", "ambient", "transfer_crc", "wav_inspect", "FIELD/F0900/AUDIO000.WAV"),
+                 ("wav-silent", "ambient", "wav_silent_channel", "wav_inspect", "FIELD/F0900/AUDIO000.WAV"),
                  ("loopback-missing", "loopback", "alignment_not_detected", "alignment",
-                  "REC900.WAV"))
+                  "FIELD/F0900/AUDIO000.WAV"))
         for scenario, stimulus, reason, stage, retained in cases:
             with self.subTest(scenario=scenario):
                 result = self.regression(scenario, stimulus)
@@ -537,7 +589,7 @@ class ControlTests(unittest.TestCase):
             result = self.regression()
         self.assertEqual((result["result"], result["reason"]), ("fail", "diag_unhealthy"))
         self.assertEqual(result["metrics"]["stages"][-1]["name"], "post_transfer_health")
-        self.assertEqual(result["metrics"]["retained_recording"], "REC900.WAV")
+        self.assertEqual(result["metrics"]["retained_recording"], "FIELD/F0900/AUDIO000.WAV")
 
     def test_recording_regression_cli_limits(self):
         import contextlib
