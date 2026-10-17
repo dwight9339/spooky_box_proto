@@ -185,7 +185,22 @@ qualify this path.
 
 The fourteen LED channels are the two standalone button LEDs and twelve encoder RGB
 channels, driven through low-side drivers. They require the correct series-resistor
-values at R18 and R22.
+values at R18 and R22. A high output turns a channel on. Every channel is on a timer
+channel, so each can be dimmed by PWM (decision 0005):
+
+| LED | Red | Green | Blue |
+|---|---|---|---|
+| Button 0 | PF6 `TIM16_CH1` (AF1) | | |
+| Button 1 | PF7 `TIM17_CH1` (AF1) | | |
+| Encoder 0 | PA2 `TIM2_CH3` (AF1) | PF8 `TIM13_CH1` (AF9) | PF9 `TIM14_CH1` (AF9) |
+| Encoder 1 | PA0 `TIM2_CH1` (AF1) | PA1 `TIM2_CH2` (AF1) | PB15 `TIM12_CH2` (AF2) |
+| Encoder 2 | PD14 `TIM4_CH3` (AF2) | PD15 `TIM4_CH4` (AF2) | PE14 `TIM1_CH4` (AF1) |
+| Encoder 3 | PE9 `TIM1_CH1` (AF1) | PE11 `TIM1_CH2` (AF1) | PE13 `TIM1_CH3` (AF1) |
+
+The button LEDs are single-colour; they are listed in the first column. `TIM1`,
+`TIM16` and `TIM17` are advanced or break-capable timers and need their main output
+enabled (`MOE`). The `Debug` and `Release` images drive all fourteen channels as plain
+GPIO.
 
 The 2.42-inch OLED is a 128x64 SSD1309 module in 4-wire SPI mode with a zero-column
 offset. Firmware overrides the provisional CubeMX SPI6 settings with an 8-bit,
