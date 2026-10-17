@@ -81,6 +81,10 @@ void RollingCatalog_Discard(RollingCatalog *catalog);
 /* The slot for the next segment: an empty slot, else the oldest complete one.
  * Returns -1 if every slot is pinned or being written (allocation failure). */
 int RollingCatalog_BeginSegment(RollingCatalog *catalog);
+/* As BeginSegment, but among empty slots one whose bit is set in ready_mask
+ * (bit n for slot n) comes first: demo_rolling.c marks the slots whose file is
+ * already allocated, so opening one needs no FAT search (p04.28). */
+int RollingCatalog_BeginSegmentPreferring(RollingCatalog *catalog, uint32_t ready_mask);
 /* One block written to the current segment. True when the segment is full. */
 bool RollingCatalog_BlockWritten(RollingCatalog *catalog);
 /* The current segment is closed: complete if it holds a block, else empty. */

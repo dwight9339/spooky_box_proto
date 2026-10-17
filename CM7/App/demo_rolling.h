@@ -15,6 +15,12 @@
  * commits a small CAPS/Cnnn.TXT descriptor. Only the committed descriptor makes
  * it saved. Both folders are made when rolling starts, before capture.
  *
+ * Slot files keep their full contiguous allocation across rotations and
+ * restarts; only a save's renames and its cut partial segment take it away.
+ * While a segment is open, idle steps give such empty slots a new allocation
+ * through the storage service's bounded run search, so a rotation is a plain
+ * open (p04.28: a one-call f_expand blocked the foreground up to 493 ms).
+ *
  * Every FatFs call runs in the recorder's foreground service, one bounded
  * operation per call to DemoRolling_Step, below block writes. No FatFs call is
  * made from an interrupt. Not part of the hpq.3 format: no recovery, no shared
@@ -61,6 +67,8 @@ typedef struct
   uint32_t faults;
   uint32_t reclaimed;
   uint32_t allocation_failures;
+  uint32_t prepared;          /* empty slots given their allocation in the background */
+  uint32_t open_allocations;  /* segment opens that had to allocate on the stream's path */
   uint32_t last_capture;    /* number of the newest committed CAPnnn, 0 for none */
   uint32_t last_capture_frames;
 } DemoRollStatus;

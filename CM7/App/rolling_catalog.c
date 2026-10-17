@@ -34,12 +34,25 @@ void RollingCatalog_Discard(RollingCatalog *catalog)
 
 int RollingCatalog_BeginSegment(RollingCatalog *catalog)
 {
+  return RollingCatalog_BeginSegmentPreferring(catalog, 0U);
+}
+
+int RollingCatalog_BeginSegmentPreferring(RollingCatalog *catalog, uint32_t ready_mask)
+{
   int chosen = -1;
   uint32_t slot;
 
   if ((catalog == NULL) || (catalog->writing >= 0))
   {
     return -1;
+  }
+  for (slot = 0U; (slot < ROLLING_SLOTS) && (chosen < 0); ++slot)
+  {
+    if ((catalog->slots[slot].state == (uint8_t)ROLLING_SLOT_EMPTY) &&
+        ((ready_mask & (1UL << slot)) != 0U))
+    {
+      chosen = (int)slot;
+    }
   }
   for (slot = 0U; (slot < ROLLING_SLOTS) && (chosen < 0); ++slot)
   {
