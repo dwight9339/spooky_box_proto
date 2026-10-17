@@ -93,6 +93,52 @@ static void TestOlderUnseenGapsAreCountedMissed(void)
   CHECK(edges.end && edges.last_frame == (10U * 512U) - 1U && reporter.missed == 2U);
 }
 
+/* A failed band switch never closes its gap (54w.12.3): the start is reported
+ * once, silenced blocks keep extending it, and no end is ever reported. */
+static void TestGapLeftOpenAfterAFailedSwitch(void)
+{
+  RadioGapEdges edges;
+  RadioGapSnapshot now;
+
+  Start();
+  RadioGap_OnSilencedBlock(&gap, 40U);
+  edges = Poll();
+  CHECK(edges.start && !edges.end && edges.first_frame == 40U * 512U);
+  for (uint32_t block = 41U; block < 4000U; ++block)
+  {
+    RadioGap_OnSilencedBlock(&gap, block);
+    edges = Poll();
+    CHECK(!edges.start && !edges.end);
+  }
+  RadioGap_Snapshot(&gap, &now);
+  CHECK(now.open);
+  CHECK(reporter.missed == 0U);
+}
+
+/* Decision 0030 item 11: a session that starts inside a gap. */
+static void TestGapSpanningTheOrigin(void)
+{
+  RadioGapSnapshot now;
+
+  Start();
+  RadioGap_Snapshot(&gap, &now);
+  CHECK(!RadioGap_SpansOrigin(&now, 0U));      /* no gap yet */
+  CHECK(!RadioGap_SpansOrigin(NULL, 100U));
+
+  RadioGap_OnSilencedBlock(&gap, 10U);          /* frames 5,120 to 5,631 */
+  RadioGap_OnSilencedBlock(&gap, 11U);          /* to 6,143; still open */
+  RadioGap_Snapshot(&gap, &now);
+  CHECK(RadioGap_SpansOrigin(&now, 6000U));     /* open, began before */
+  CHECK(RadioGap_SpansOrigin(&now, 9000U));     /* open past its last block */
+  CHECK(!RadioGap_SpansOrigin(&now, 5120U));    /* began at the origin: its own edge */
+  CHECK(!RadioGap_SpansOrigin(&now, 4000U));    /* began after the origin */
+
+  RadioGap_Close(&gap);
+  RadioGap_Snapshot(&gap, &now);
+  CHECK(RadioGap_SpansOrigin(&now, 6143U));     /* closed on the origin's frame */
+  CHECK(!RadioGap_SpansOrigin(&now, 6144U));    /* closed before the origin */
+}
+
 static void TestNullArguments(void)
 {
   RadioGapEdges edges = RadioGap_NewEdges(NULL, NULL);
@@ -110,6 +156,8 @@ int main(void)
   TestEdgesAreExactAndReportedOnce();
   TestWholeGapBetweenPolls();
   TestOlderUnseenGapsAreCountedMissed();
+  TestGapLeftOpenAfterAFailedSwitch();
+  TestGapSpanningTheOrigin();
   TestNullArguments();
   if (failures != 0)
   {

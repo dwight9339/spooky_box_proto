@@ -155,6 +155,9 @@ static SwitchPhase switch_phase;
 static uint32_t switch_wait_tick;
 static uint32_t switch_last_poll_tick;
 static RadioTuneStatus switch_result;
+#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
+static bool switch_fault_armed; /* the next switch fails at POWER_UP */
+#endif
 
 static HAL_StatusTypeDef WaitCtsWithin(uint8_t *status, uint32_t timeout_ms)
 {
@@ -823,6 +826,15 @@ static RadioBandPoll SwitchBusStep(uint32_t now, RadioTuneStatus *result)
     return RADIO_BAND_POLL_PENDING;
   }
 
+#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
+  if (switch_fault_armed && (switch_step == SWITCH_STEP_POWER_UP))
+  {
+    /* Induced fault: as if POWER_UP had answered ERR. */
+    switch_fault_armed = false;
+    return FailSwitch();
+  }
+#endif
+
   /* The command's reply: CTS after it. */
   if (switch_step == SWITCH_STEP_TUNE)
   {
@@ -913,8 +925,20 @@ void RadioControl_PowerDown(void)
   const uint8_t power_down = SI4735_CMD_POWER_DOWN;
   uint8_t status;
 
+  /* A receiver held in reset would only time out, for 2 s. */
+  if (!radio_powered)
+  {
+    return;
+  }
   (void)Command(&power_down, sizeof(power_down), &status, sizeof(status));
 }
+
+#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
+void RadioControl_ArmSwitchFault(void)
+{
+  switch_fault_armed = true;
+}
+#endif
 
 void RadioControl_HoldReset(void)
 {

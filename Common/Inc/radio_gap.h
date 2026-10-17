@@ -57,5 +57,8 @@ void RadioGap_ResetReporter(RadioGapReporter *reporter, const RadioGapSnapshot *
 /* The edges of the latest gap not yet reported. A gap that both began and
  * ended unseen behind a newer one is counted in missed. */
 RadioGapEdges RadioGap_NewEdges(RadioGapReporter *reporter, const RadioGapSnapshot *now);
+/* Decision 0030 item 11: the latest gap began before origin_frame and was still
+ * open at it, so a session starting there begins inside the gap. */
+bool RadioGap_SpansOrigin(const RadioGapSnapshot *now, uint64_t origin_frame);
 
 #endif /* SPOOKY_RADIO_GAP_H */

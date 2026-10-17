@@ -92,6 +92,12 @@ RadioTunePoll RadioControl_PollTune(RadioTuneStatus *result);
  * audio around the switch. */
 bool RadioControl_BeginSwitchBand(RadioBand band);
 RadioBandPoll RadioControl_PollSwitchBand(RadioTuneStatus *result);
+#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
+/* Qualification only (full_spooky_proto-54w.12.3): the next band switch fails
+ * after its POWER_UP is written, as if the receiver had answered ERR. */
+void RadioControl_ArmSwitchFault(void);
+#endif
+/* Does nothing while the receiver is held in reset. */
 void RadioControl_PowerDown(void);
 void RadioControl_HoldReset(void);
 void RadioControl_LogTune(const char *prefix,

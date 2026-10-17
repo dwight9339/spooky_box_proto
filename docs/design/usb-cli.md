@@ -191,6 +191,15 @@ waiting when the radio faults, and `ERR RADIO audio path is not running` once th
 radio is out of service. A `TUNE` that waits behind a band switch is checked
 against the new band when the switch completes.
 
+A band switch that fails holds the receiver in reset and keeps the output muted. Radio
+capture keeps running with silence in the radio channels, so a recording in progress
+continues with its microphone track and an open gap
+([decision 0004](../decisions/0004-radio-track-continuity-across-transitions.md)).
+Until a reset, `STATUS` and every radio command answer
+`ERR RADIO band switch failed; reset required`, a `RADIO_FAULT` diagnostic sets
+`HAS_FAULT`, and `RECORD START` is refused with `ERR RECORD radio audio path is not
+running`.
+
 In-band tuning (`TUNE`, `UP`, `DOWN` and Classic's jumps) is allowed while
 recording ([decision 0003](../decisions/0003-radio-control-during-recording.md);
 [evidence](../evidence/2026-10-16-tune-guard-lift.md)). Each tune is stored in the
@@ -199,7 +208,9 @@ that is not a measurement ([decision 0015](../decisions/0015-raw-radio-track-dur
 Band changes are still rejected while recording, with
 `ERR RADIO band changes disabled while recording`, until `full_spooky_proto-54w.12`
 qualifies them. The opt-in `BandSwitchQual` preset allows them while recording, for
-that qualification only.
+that qualification only. It also accepts `BAND FAIL`, which makes the next band switch
+fail after its receiver power-up command, as if the receiver had answered an error;
+the reply is `OK RADIO next band switch fails at POWER_UP`.
 
 During a band switch the audio path's stream gate is closed. Each radio half-buffer
 then reaches the recorder as digital silence of the same length, so the radio and
