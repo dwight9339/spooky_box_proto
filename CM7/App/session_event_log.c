@@ -129,22 +129,27 @@ bool SessionEventLog_TakeResync(SessionEventLog *log)
 }
 
 uint32_t SessionEventLog_Prepare(const SessionEventLog *log, uint32_t now_ms,
-                                 uint32_t flush_ms, bool flush_all,
+                                 uint32_t flush_ms, bool flush_all, uint64_t horizon,
                                  uint8_t out[SESSION_EVENT_SECTOR_BYTES])
 {
-  uint32_t records;
+  uint32_t records = 0U;
 
   if ((log == NULL) || (out == NULL) || (log->count == 0U))
   {
     return 0U;
   }
-  if ((log->count < SESSION_EVENT_SECTOR_RECORDS) && !flush_all &&
-      ((uint32_t)(now_ms - log->posted_ms[log->head]) < flush_ms))
+  while ((records < log->count) && (records < SESSION_EVENT_SECTOR_RECORDS) &&
+         (log->records[(log->head + records) % SESSION_EVENT_QUEUE_RECORDS].frame <
+          horizon))
+  {
+    ++records;
+  }
+  if ((records == 0U) ||
+      ((records < SESSION_EVENT_SECTOR_RECORDS) && !flush_all &&
+       ((uint32_t)(now_ms - log->posted_ms[log->head]) < flush_ms)))
   {
     return 0U;
   }
-  records = (log->count < SESSION_EVENT_SECTOR_RECORDS) ?
-            log->count : SESSION_EVENT_SECTOR_RECORDS;
   for (uint32_t index = 0U; index < records; ++index)
   {
     const uint32_t slot = (log->head + index) % SESSION_EVENT_QUEUE_RECORDS;
@@ -152,6 +157,35 @@ uint32_t SessionEventLog_Prepare(const SessionEventLog *log, uint32_t now_ms,
                         &out[index * SESSION_EVENT_RECORD_BYTES]);
   }
   return records;
+}
+
+uint32_t SessionEventLog_DropAfter(SessionEventLog *log, uint64_t last_frame)
+{
+  uint32_t kept = 0U;
+  uint32_t dropped = 0U;
+
+  if (log == NULL)
+  {
+    return 0U;
+  }
+  for (uint32_t index = 0U; index < log->count; ++index)
+  {
+    const uint32_t from = (log->head + index) % SESSION_EVENT_QUEUE_RECORDS;
+    const uint32_t to = (log->head + kept) % SESSION_EVENT_QUEUE_RECORDS;
+
+    if (log->records[from].frame > last_frame)
+    {
+      ++dropped;
+      continue;
+    }
+    log->records[to] = log->records[from];
+    log->sequences[to] = log->sequences[from] - dropped;
+    log->posted_ms[to] = log->posted_ms[from];
+    ++kept;
+  }
+  log->count = kept;
+  log->next_sequence -= dropped;
+  return dropped;
 }
 
 void SessionEventLog_Commit(SessionEventLog *log, uint32_t records)
@@ -214,4 +248,12 @@ void SessionEvent_SetClassic(SessionEvent *event, uint8_t published, uint8_t run
 void SessionEvent_SetCount(SessionEvent *event, uint32_t count)
 {
   PutLe32(&event->payload[0], count);
+}
+
+void SessionEvent_SetGap(SessionEvent *event, uint8_t cause, uint8_t band,
+                         uint32_t frequency_khz)
+{
+  event->payload[0] = cause;
+  event->payload[1] = band;
+  PutLe32(&event->payload[4], frequency_khz);
 }

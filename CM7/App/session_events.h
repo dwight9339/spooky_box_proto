@@ -32,10 +32,15 @@ void SessionEvents_TuneEnd(uint8_t band, uint8_t outcome, uint8_t rssi_dbuv,
 void SessionEvents_Ptt(bool on, const AudioTimelinePosition *stamp, uint32_t uncertainty);
 void SessionEvents_Classic(uint8_t published, const ClassicState *state,
                            const AudioTimelinePosition *stamp);
+/* Decision 0004 gap edges: exact frames (decision 0012 item 6). */
+void SessionEvents_GapStart(uint8_t band_before, const AudioTimelinePosition *first);
+void SessionEvents_GapEnd(uint8_t band_after, uint32_t frequency_khz,
+                          const AudioTimelinePosition *last);
 
-/* Writer: the records due now (see SessionEventLog_Prepare), at most one
- * sector, then the outcome of writing them. */
-uint32_t SessionEvents_Prepare(uint32_t now_ms, bool flush_all,
+/* Writer: the records due now (see SessionEventLog_Prepare) below horizon,
+ * the frames already in the audio file, at most one sector; then the outcome
+ * of writing them. */
+uint32_t SessionEvents_Prepare(uint32_t now_ms, bool flush_all, uint64_t horizon,
                                uint8_t out[SESSION_EVENT_SECTOR_BYTES]);
 void SessionEvents_Commit(uint32_t records);
 void SessionEvents_WriteFailed(void);

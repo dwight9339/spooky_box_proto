@@ -32,6 +32,13 @@
             }
         },
         {
+            "name": "BandSwitchQual",
+            "inherits": "Debug",
+            "cacheVariables": {
+                "SPOOKY_RADIO_BAND_QUALIFICATION": "ON"
+            }
+        },
+        {
             "name": "SpeakerMonitor",
             "inherits": "Debug",
             "cacheVariables": {
@@ -54,6 +61,10 @@
         {
             "name": "IpcMismatch",
             "configurePreset": "IpcMismatch"
+        },
+        {
+            "name": "BandSwitchQual",
+            "configurePreset": "BandSwitchQual"
         },
         {
             "name": "SpeakerMonitor",

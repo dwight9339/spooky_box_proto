@@ -70,30 +70,6 @@ bool RadioAdapter_RequestBand(uint32_t band)
   return PostCommand(RAD_CMD_BAND, false, false, band);
 }
 
-void RadioAdapter_ServiceActivity(void)
-{
-  const RadState state = Radio_GetState();
-  uint32_t block = 0U;
-  const bool known = AudioPath_GetBlockInProgress(&block);
-
-  RadioActivityFeed_Service(HAL_GetTick(),
-                            (state == RAD_STATE_SETTLED) || (state == RAD_STATE_TUNING),
-                            state == RAD_STATE_TUNING, known, block);
-}
-
-/* Decision 0015 items 2 and 3: the tune in flight, stamped on the radio sample
- * timeline when it is issued and again when its outcome is published. The Radio
- * machine has at most one tune in flight (item 8). Storing the pair with the
- * session belongs to the session format (full_spooky_proto-hpq.3); until then
- * each pair is one [retune] log line. */
-#define RETUNE_END_UNCERTAINTY_FRAMES 3600U /* decision 0012 item 6 */
-
-static bool retune_issued;
-static bool retune_start_known;
-static AudioTimelinePosition retune_start;
-static RadioBand retune_band;
-static uint32_t retune_target_khz;
-
 static void FormatFrame(uint64_t frame, char text[21])
 {
   char digits[21];
@@ -110,6 +86,85 @@ static void FormatFrame(uint64_t frame, char text[21])
   }
   text[count] = '\0';
 }
+
+/* Decision 0004 gaps: the band before the switch, and each edge reported once
+ * to the session event log and the UART log. */
+static RadioGapReporter gap_reporter;
+static bool gap_reporter_ready;
+static uint8_t gap_band_before;
+
+static void ReportGapEdges(void)
+{
+  RadioGapSnapshot snapshot;
+  RadioGapEdges edges;
+  AudioTimelinePosition now;
+  AudioTimelinePosition edge;
+  RadioControlStatus status;
+  char first_text[21];
+  char last_text[21];
+
+  if (!AudioPath_GetGap(&snapshot))
+  {
+    return;
+  }
+  if (!gap_reporter_ready)
+  {
+    RadioGap_ResetReporter(&gap_reporter, &snapshot);
+    gap_reporter_ready = true;
+    return;
+  }
+  edges = RadioGap_NewEdges(&gap_reporter, &snapshot);
+  if ((!edges.start && !edges.end) || !AudioPath_GetPosition(&now))
+  {
+    return;
+  }
+  edge.epoch = now.epoch;
+  if (edges.start)
+  {
+    edge.frame = edges.first_frame;
+    SessionEvents_GapStart(gap_band_before, &edge);
+  }
+  if (edges.end)
+  {
+    (void)RadioControl_GetStatus(&status);
+    edge.frame = edges.last_frame;
+    SessionEvents_GapEnd((uint8_t)status.band, status.tune.frequency_khz, &edge);
+    FormatFrame(edges.first_frame, first_text);
+    FormatFrame(edges.last_frame, last_text);
+    printf("[gap] start=%lu:%s end=%lu:%s band=%s->%s freq=%lu missed=%lu\r\n",
+           (unsigned long)now.epoch, first_text, (unsigned long)now.epoch, last_text,
+           RadioControl_GetBandInfo((RadioBand)gap_band_before)->name,
+           RadioControl_GetBandInfo(status.band)->name,
+           (unsigned long)status.tune.frequency_khz,
+           (unsigned long)gap_reporter.missed);
+  }
+}
+
+void RadioAdapter_ServiceActivity(void)
+{
+  const RadState state = Radio_GetState();
+  uint32_t block = 0U;
+  const bool known = AudioPath_GetBlockInProgress(&block);
+
+  RadioActivityFeed_Service(HAL_GetTick(),
+                            (state == RAD_STATE_SETTLED) || (state == RAD_STATE_TUNING),
+                            state == RAD_STATE_TUNING, known, block);
+  ReportGapEdges();
+}
+
+/* Decision 0015 items 2 and 3: the tune in flight, stamped on the radio sample
+ * timeline when it is issued and again when its outcome is published. The Radio
+ * machine has at most one tune in flight (item 8). Storing the pair with the
+ * session belongs to the session format (full_spooky_proto-hpq.3); until then
+ * each pair is one [retune] log line. */
+#define RETUNE_END_UNCERTAINTY_FRAMES 3600U /* decision 0012 item 6 */
+
+static bool retune_issued;
+static bool retune_start_known;
+static AudioTimelinePosition retune_start;
+static RadioBand retune_band;
+static uint32_t retune_target_khz;
+
 
 /* The end stamp is when the foreground observed the outcome; the receiver
  * settled up to RETUNE_END_UNCERTAINTY_FRAMES earlier. The start stamp precedes
@@ -370,6 +425,12 @@ bool rad_integration_switch_band(uint32_t band_value)
    * comparable with the old one's. */
   /* A band switch is a decision 0004 gap, not yet qualified (54w.12). */
   StartRetune(RADIO_ACTIVITY_FEED_SETTLE_BLOCKS);
+  {
+    RadioControlStatus status;
+
+    (void)RadioControl_GetStatus(&status);
+    gap_band_before = (uint8_t)status.band;
+  }
   if (!CodecVolume_SetTransitionMuted(true))
   {
     goto failed;

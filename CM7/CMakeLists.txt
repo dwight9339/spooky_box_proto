@@ -48,6 +48,12 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
 )
 
+option(SPOOKY_RADIO_BAND_QUALIFICATION
+    "Allow band changes while recording for bench qualification (54w.12)" OFF)
+if(SPOOKY_RADIO_BAND_QUALIFICATION)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_RADIO_BAND_QUALIFICATION=1)
+endif()
+
 option(SPOOKY_SPEAKER_MONITOR
     "Monitor on the line-out speaker amplifier unless headphones are in (jr0)" OFF)
 if(SPOOKY_SPEAKER_MONITOR)
@@ -141,6 +147,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/diag_history.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/audio_timeline.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/monitor_ptt.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/radio_gap.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/target_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/diagnostics.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/foreground_budget.c

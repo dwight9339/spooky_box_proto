@@ -67,7 +67,7 @@ def elf_ranges(raw, core):
 # Root CMake presets whose image pairs may be flashed; experiment presets are opt-in.
 # RadioTuneQual (54w.6) no longer exists; its archived pairs stay flashable.
 PRESETS = ("Debug", "Release", "IpcSmoke", "IpcMismatch", "RadioTuneQual",
-           "SpeakerMonitor")
+           "SpeakerMonitor", "BandSwitchQual")
 
 
 def _validate_pair(path):

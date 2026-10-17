@@ -196,7 +196,25 @@ session's event log, and the radio track inside a retune interval holds receiver
 that is not a measurement ([decision 0015](../decisions/0015-raw-radio-track-during-in-band-tunes.md)).
 Band changes are still rejected while recording, with
 `ERR RADIO band changes disabled while recording`, until `full_spooky_proto-54w.12`
-qualifies them.
+qualifies them. The opt-in `BandSwitchQual` preset allows them while recording, for
+that qualification only.
+
+During a band switch the audio path's stream gate is closed. Each radio half-buffer
+then reaches the recorder as digital silence of the same length, so the radio and
+microphone tracks keep the same block count. The monitor plays silence, and the
+activity detector gets no measurement
+([decision 0004](../decisions/0004-radio-track-continuity-across-transitions.md)).
+When the gate reopens, the gap's first and last silenced frames are exact.
+
+- **Session event log:** gap start (band before) and gap end (band after and
+  frequency).
+- **UART log:**
+
+```text
+[gap] start=1:5120000 end=1:5135359 band=FM->AM freq=1000 missed=0
+```
+
+`missed` counts gaps whose edges were overwritten before the foreground saw them.
 
 The radio is also tuned by the Classic scan engine, which runs from power-on (next
 section). Band and frequency are shared: a CLI `TUNE`, `UP`, `DOWN` or `BAND` moves
