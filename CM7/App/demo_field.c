@@ -1464,6 +1464,7 @@ static bool HandleRoll(const char *command)
                  "OK ROLL STATE=%s ENABLED=%u RETAINED_MS=%lu SEGMENTS=%lu ROTATIONS=%lu "
                  "ROTATE_MS_MAX=%lu STEP_MS_MAX=%lu WRITE_MS_MAX=%lu QUEUES=%u,%u/8 "
                  "BLOCKS=%lu STARTS=%lu FAULTS=%lu RECLAIMED=%lu ALLOC_FAIL=%lu "
+                 "PREPARED=%lu OPEN_ALLOCS=%lu "
                  "SAVE=%s SAVES=%lu FAILED=%lu BUSY=%lu UNAVAILABLE=%lu SAVE_MS_MAX=%lu "
                  "LAST=C%03lu LAST_FRAMES=%lu\r\n",
                  DemoRolling_StateName(rolling.state), stream.enabled ? 1U : 0U,
@@ -1474,6 +1475,7 @@ static bool HandleRoll(const char *command)
                  (unsigned long)stream.blocks, (unsigned long)stream.starts,
                  (unsigned long)rolling.faults, (unsigned long)rolling.reclaimed,
                  (unsigned long)rolling.allocation_failures,
+                 (unsigned long)rolling.prepared, (unsigned long)rolling.open_allocations,
                  DemoRolling_SaveName(rolling.save), (unsigned long)rolling.saves,
                  (unsigned long)rolling.saves_failed, (unsigned long)rolling.saves_busy,
                  (unsigned long)rolling.saves_unavailable,

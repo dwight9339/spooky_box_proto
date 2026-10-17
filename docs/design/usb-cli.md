@@ -606,7 +606,7 @@ frees the card for `SD` and `WAV` commands, and `ROLL ON` lets it start again. `
 OFF` is refused while a save or a clip load is in progress.
 
 ```text
-OK ROLL STATE=RUNNING ENABLED=1 RETAINED_MS=65536 SEGMENTS=14 ROTATIONS=13 ROTATE_MS_MAX=40 STEP_MS_MAX=31 WRITE_MS_MAX=27 QUEUES=1,1/8 BLOCKS=880 STARTS=1 FAULTS=0 RECLAIMED=1 ALLOC_FAIL=0 SAVE=SAVED SAVES=1 FAILED=0 BUSY=0 UNAVAILABLE=0 SAVE_MS_MAX=420 LAST=C001 LAST_FRAMES=2883584
+OK ROLL STATE=RUNNING ENABLED=1 RETAINED_MS=65536 SEGMENTS=14 ROTATIONS=13 ROTATE_MS_MAX=40 STEP_MS_MAX=31 WRITE_MS_MAX=27 QUEUES=1,1/8 BLOCKS=880 STARTS=1 FAULTS=0 RECLAIMED=1 ALLOC_FAIL=0 PREPARED=11 OPEN_ALLOCS=0 SAVE=SAVED SAVES=1 FAILED=0 BUSY=0 UNAVAILABLE=0 SAVE_MS_MAX=420 LAST=C001 LAST_FRAMES=2883584
 ```
 
 | Field | Meaning |
@@ -617,6 +617,7 @@ OK ROLL STATE=RUNNING ENABLED=1 RETAINED_MS=65536 SEGMENTS=14 ROTATIONS=13 ROTAT
 | `STEP_MS_MAX`, `WRITE_MS_MAX`, `QUEUES` | Longest single storage step, longest block write, and recorder queue high-water since the stream started |
 | `BLOCKS`, `STARTS`, `FAULTS` | Blocks in this stream; streams started since boot; faults (each discards the window and retries after 5 s) |
 | `RECLAIMED`, `ALLOC_FAIL` | Old segments overwritten; times no segment was free |
+| `PREPARED`, `OPEN_ALLOCS` | Empty slots given their file's allocation in the background since boot (after a save renames slots away); segment opens that had to allocate while the stream waited. Both allocate through the bounded FAT run search (`p04.28`) |
 | `SAVE`, `SAVES`, `FAILED`, `BUSY`, `UNAVAILABLE`, `SAVE_MS_MAX` | Latest outcome and the count of each; longest save from request to commit |
 | `LAST`, `LAST_FRAMES` | The newest capture committed since boot (`C000` for none) and its frames |
 

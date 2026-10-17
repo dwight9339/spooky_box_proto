@@ -18,6 +18,16 @@
 #define ROLL_SEGMENT_FILE_BYTES (ROLL_HEADER_BYTES + ROLL_SEGMENT_DATA_BYTES)
 #define ROLL_CAPTURE_LIMIT 999U
 
+/* FAT search time per pass when a slot file needs its allocation (p04.28): in
+ * the background while a segment is open, and on the stream's path when a
+ * segment must open in a slot that has no allocation yet. */
+#ifndef SPOOKY_ROLL_PREPARE_STEP_MS
+#define SPOOKY_ROLL_PREPARE_STEP_MS 8U
+#endif
+#ifndef SPOOKY_ROLL_OPEN_STEP_MS
+#define SPOOKY_ROLL_OPEN_STEP_MS 16U
+#endif
+
 _Static_assert(ROLL_BLOCK_BYTES == 24576U, "recorder blocks are 4,096 three-channel frames");
 
 typedef enum
@@ -27,6 +37,24 @@ typedef enum
   SEGMENT_CLOSE_PENDING,  /* full, or a save boundary: close before the next block */
   SEGMENT_OPEN_PENDING
 } SegmentState;
+
+/* Giving a slot file its full contiguous length (p04.28). FatFs f_expand reads
+ * the FAT in one call until it finds a free run, about 420 ms on the bench card;
+ * the storage service's run search reads it in bounded steps instead and points
+ * f_expand at the run, which then returns at once. */
+typedef enum
+{
+  ALLOC_IDLE = 0,
+  ALLOC_SEARCH,
+  ALLOC_EXPAND
+} AllocPhase;
+
+typedef enum
+{
+  ALLOC_DONE = 0,
+  ALLOC_CONTINUE,
+  ALLOC_FAILED
+} AllocStep;
 
 typedef enum
 {
@@ -51,6 +79,17 @@ static char capture_name[8]; /* Cnnn */
 static uint32_t saved_frames[ROLLING_SLOTS];
 static uint32_t saved_sequence[ROLLING_SLOTS];
 static DemoRollStatus status;
+/* Slots whose file has its full length, so opening one needs no FAT search.
+ * Bit n is slot n. Read from the ROLL folder when rolling starts. */
+static uint32_t ready_mask;
+static AllocPhase open_phase;       /* the segment file, on the stream's path */
+static FIL spare;                   /* an empty slot prepared in the background */
+static bool spare_open;
+static int prepare_slot = -1;
+static AllocPhase prepare_phase;
+static bool prepare_disabled;       /* a preparation failed: none until restart */
+
+_Static_assert(ROLLING_SLOTS <= 32U, "ready_mask has a bit per slot");
 
 static uint32_t Now(void)
 {
@@ -157,55 +196,257 @@ static void EndSave(DemoSaveOutcome outcome)
   }
 }
 
-/* Opens the next segment: a free slot, preallocated contiguously when its file is
- * new or was truncated, with a header for a full segment. */
-static bool OpenSegment(void)
+static uint32_t SlotBit(uint32_t slot)
 {
-  char path[20];
-  const int slot = RollingCatalog_BeginSegment(&catalog);
+  return 1UL << slot;
+}
+
+/* Starts allocating an empty (truncated) file: the stepped run search on FAT32,
+ * else f_expand alone, whose search a FAT12/16 table keeps short. */
+static AllocStep AllocBegin(AllocPhase *phase)
+{
+  switch (StorageService_BeginRunSearch(STORAGE_OWNER_RECORDER, ROLL_SEGMENT_FILE_BYTES))
+  {
+    case STORAGE_RUN_SEARCHING:
+      *phase = ALLOC_SEARCH;
+      return ALLOC_CONTINUE;
+    case STORAGE_RUN_UNSUPPORTED:
+      *phase = ALLOC_EXPAND;
+      return ALLOC_CONTINUE;
+    case STORAGE_RUN_NOT_FOUND:
+      printf("[roll] FAIL: no free run for a segment\r\n");
+      return ALLOC_FAILED;
+    default:
+      return ALLOC_FAILED;
+  }
+}
+
+/* One allocation step: a bounded slice of the search, or the f_expand that
+ * takes the run once found. */
+static AllocStep AllocContinue(FIL *file, AllocPhase *phase, uint32_t budget_ms)
+{
+  StorageRunReport report;
   FRESULT result;
 
-  if (slot < 0)
+  if (*phase == ALLOC_SEARCH)
   {
-    printf("[roll] FAIL: no slot free for the next segment\r\n");
-    return false;
+    switch (StorageService_StepRunSearch(STORAGE_OWNER_RECORDER, budget_ms, &report))
+    {
+      case STORAGE_RUN_SEARCHING:
+        return ALLOC_CONTINUE;
+      case STORAGE_RUN_FOUND:
+        *phase = ALLOC_EXPAND;
+        return ALLOC_CONTINUE;
+      case STORAGE_RUN_NOT_FOUND:
+        printf("[roll] FAIL: free space too fragmented for a segment "
+               "largest-run-clusters=%lu\r\n", (unsigned long)report.longest_clusters);
+        *phase = ALLOC_IDLE;
+        return ALLOC_FAILED;
+      default:
+        *phase = ALLOC_IDLE;
+        return ALLOC_FAILED;
+    }
   }
-  SlotPath((uint32_t)slot, path, sizeof(path));
-  result = f_open(&segment, path, FA_WRITE | FA_OPEN_ALWAYS);
+  *phase = ALLOC_IDLE;
+  result = f_expand(file, ROLL_SEGMENT_FILE_BYTES, 1U);
+  if (result != FR_OK)
+  {
+    printf("[roll] FAIL: allocate result=%s\r\n", StorageService_ResultName(result));
+    return ALLOC_FAILED;
+  }
+  return ALLOC_DONE;
+}
+
+/* Opens a slot file and, unless it already has its full length, empties it for
+ * allocation. *full tells which. */
+static bool OpenSlotFile(FIL *file, uint32_t slot, bool *full)
+{
+  char path[20];
+  FRESULT result;
+
+  SlotPath(slot, path, sizeof(path));
+  result = f_open(file, path, FA_WRITE | FA_OPEN_ALWAYS);
   if (result != FR_OK)
   {
     printf("[roll] FAIL: open %s result=%s\r\n", path, StorageService_ResultName(result));
     return false;
   }
-  segment_open = true;
-  if (f_size(&segment) != ROLL_SEGMENT_FILE_BYTES)
+  *full = f_size(file) == ROLL_SEGMENT_FILE_BYTES;
+  if (!*full && ((f_lseek(file, 0U) != FR_OK) || (f_truncate(file) != FR_OK)))
   {
-    if ((f_lseek(&segment, 0U) != FR_OK) || (f_truncate(&segment) != FR_OK))
-    {
-      printf("[roll] FAIL: truncate %s\r\n", path);
-      return false;
-    }
-    result = f_expand(&segment, ROLL_SEGMENT_FILE_BYTES, 1U);
-    if (result != FR_OK)
-    {
-      printf("[roll] FAIL: allocate %s result=%s\r\n", path,
-             StorageService_ResultName(result));
-      return false;
-    }
-  }
-  if (!WriteHeader(ROLL_SEGMENT_DATA_BYTES))
-  {
-    printf("[roll] FAIL: header %s\r\n", path);
+    printf("[roll] FAIL: truncate %s\r\n", path);
+    (void)f_close(file);
     return false;
   }
-  ++status.segments;
-  segment_state = SEGMENT_OPEN;
   return true;
 }
 
-/* Closes the current segment. A partial one gets its true length and loses the
- * stale tail of an earlier use. */
-static bool CloseSegment(void)
+/* The ROLL folder's slot files that already have their full length. Read once
+ * when rolling starts; afterwards ready_mask follows every allocation, rename
+ * and truncation. */
+static void ScanReadySlots(void)
+{
+  DIR dir;
+  FILINFO info;
+
+  ready_mask = 0U;
+  if (f_opendir(&dir, "ROLL") != FR_OK)
+  {
+    return;
+  }
+  while ((f_readdir(&dir, &info) == FR_OK) && (info.fname[0] != '\0'))
+  {
+    const char *name = info.fname;
+
+    if ((strncmp(name, "SLOT", 4U) == 0) && (name[4] >= '0') && (name[4] <= '9') &&
+        (name[5] >= '0') && (name[5] <= '9') && (strcmp(&name[6], ".WAV") == 0) &&
+        (info.fsize == ROLL_SEGMENT_FILE_BYTES))
+    {
+      const uint32_t slot = ((uint32_t)(name[4] - '0') * 10U) + (uint32_t)(name[5] - '0');
+
+      if (slot < ROLLING_SLOTS)
+      {
+        ready_mask |= SlotBit(slot);
+      }
+    }
+  }
+  (void)f_closedir(&dir);
+}
+
+/* Stops a background preparation. Called before anything else touches a slot
+ * file or the FAT search: FatFs has no file locking here (_FS_LOCK 0), so the
+ * spare must never hold the slot a segment opens. */
+static void PrepareAbort(void)
+{
+  if (spare_open)
+  {
+    (void)f_close(&spare);
+    spare_open = false;
+  }
+  prepare_slot = -1;
+  prepare_phase = ALLOC_IDLE;
+}
+
+/* One background step while a segment is open and nothing else runs: give an
+ * empty slot without an allocation its full length, so the next rotation into
+ * it is a plain open. False when there is nothing to prepare (not a step). A
+ * failure ends preparation until rolling restarts; the stream carries on, and
+ * a rotation into an unprepared slot allocates on its own path. */
+static bool PrepareStep(void)
+{
+  AllocStep step;
+
+  if (prepare_disabled)
+  {
+    return false;
+  }
+  if (prepare_slot < 0)
+  {
+    uint32_t slot;
+    bool full = false;
+
+    for (slot = 0U; slot < ROLLING_SLOTS; ++slot)
+    {
+      if ((catalog.slots[slot].state == (uint8_t)ROLLING_SLOT_EMPTY) &&
+          ((ready_mask & SlotBit(slot)) == 0U))
+      {
+        break;
+      }
+    }
+    if (slot >= ROLLING_SLOTS)
+    {
+      return false;
+    }
+    if (!OpenSlotFile(&spare, slot, &full))
+    {
+      prepare_disabled = true;
+      return true;
+    }
+    spare_open = true;
+    prepare_slot = (int)slot;
+    step = full ? ALLOC_DONE : AllocBegin(&prepare_phase);
+  }
+  else
+  {
+    step = AllocContinue(&spare, &prepare_phase, SPOOKY_ROLL_PREPARE_STEP_MS);
+  }
+  if (step == ALLOC_CONTINUE)
+  {
+    return true;
+  }
+  if ((step == ALLOC_DONE) && (f_close(&spare) == FR_OK))
+  {
+    spare_open = false;
+    ready_mask |= SlotBit((uint32_t)prepare_slot);
+    ++status.prepared;
+    prepare_slot = -1;
+    return true;
+  }
+  printf("[roll] prepare SLOT%02d failed; preparation off until restart\r\n", prepare_slot);
+  PrepareAbort();
+  prepare_disabled = true;
+  return true;
+}
+
+/* Opens the next segment, preferring a slot whose file already has its full
+ * length. A slot without one is allocated here in bounded steps across passes
+ * while the stream waits (ALLOC_CONTINUE). The segment gets a header for a full
+ * segment. */
+static AllocStep OpenSegment(void)
+{
+  AllocStep step;
+
+  if (open_phase == ALLOC_IDLE)
+  {
+    const int slot = RollingCatalog_BeginSegmentPreferring(&catalog, ready_mask);
+    bool full = false;
+
+    PrepareAbort();
+    if (slot < 0)
+    {
+      printf("[roll] FAIL: no slot free for the next segment\r\n");
+      return ALLOC_FAILED;
+    }
+    if (!OpenSlotFile(&segment, (uint32_t)slot, &full))
+    {
+      return ALLOC_FAILED;
+    }
+    segment_open = true;
+    if (full)
+    {
+      step = ALLOC_DONE;
+    }
+    else
+    {
+      ready_mask &= ~SlotBit((uint32_t)slot);
+      ++status.open_allocations;
+      step = AllocBegin(&open_phase);
+    }
+  }
+  else
+  {
+    step = AllocContinue(&segment, &open_phase, SPOOKY_ROLL_OPEN_STEP_MS);
+  }
+  if (step != ALLOC_DONE)
+  {
+    return step;
+  }
+  ready_mask |= SlotBit((uint32_t)catalog.writing);
+  if (!WriteHeader(ROLL_SEGMENT_DATA_BYTES))
+  {
+    printf("[roll] FAIL: segment header\r\n");
+    return ALLOC_FAILED;
+  }
+  ++status.segments;
+  segment_state = SEGMENT_OPEN;
+  return ALLOC_DONE;
+}
+
+/* Closes the current segment. A partial one gets its true length in the header.
+ * Only a segment about to be pinned by a save is also cut to that length, since
+ * it becomes the capture's file; any other keeps its allocation, so the slot
+ * reopens without a FAT search (p04.28). */
+static bool CloseSegment(bool cut_partial)
 {
   const int slot = catalog.writing;
   uint32_t blocks = 0U;
@@ -219,9 +460,14 @@ static bool CloseSegment(void)
   {
     if ((slot >= 0) && (blocks < ROLLING_SEGMENT_BLOCKS))
     {
-      ok = WriteHeader(blocks * ROLL_BLOCK_BYTES) &&
-           (f_lseek(&segment, ROLL_HEADER_BYTES + (blocks * ROLL_BLOCK_BYTES)) == FR_OK) &&
-           (f_truncate(&segment) == FR_OK);
+      ok = WriteHeader(blocks * ROLL_BLOCK_BYTES);
+      if (cut_partial)
+      {
+        ready_mask &= ~SlotBit((uint32_t)slot);
+        ok = ok &&
+             (f_lseek(&segment, ROLL_HEADER_BYTES + (blocks * ROLL_BLOCK_BYTES)) == FR_OK) &&
+             (f_truncate(&segment) == FR_OK);
+      }
     }
     ok = (f_close(&segment) == FR_OK) && ok;
     segment_open = false;
@@ -233,7 +479,8 @@ static bool CloseSegment(void)
 
 static bool CloseStep(void)
 {
-  if (!CloseSegment())
+  PrepareAbort();
+  if (!CloseSegment(save_state == SAVE_REQUESTED))
   {
     printf("[roll] FAIL: segment close\r\n");
     return false;
@@ -274,9 +521,11 @@ static bool CloseStep(void)
 
 static bool OpenStep(void)
 {
-  if (!OpenSegment())
+  const AllocStep step = OpenSegment();
+
+  if (step != ALLOC_DONE)
   {
-    return false;
+    return step == ALLOC_CONTINUE;
   }
   if (rotating)
   {
@@ -396,6 +645,7 @@ static void SaveStep(void)
         EndSave(DEMO_SAVE_FAILED);
         break;
       }
+      ready_mask &= ~SlotBit(catalog.pinned[save_index]);
       RollingCatalog_SlotReleased(&catalog, catalog.pinned[save_index]);
       if (++save_index >= catalog.pinned_count)
       {
@@ -442,7 +692,14 @@ bool DemoRolling_Begin(void)
   }
   segment_open = false;
   rotating = false;
-  if (!OpenSegment())
+  open_phase = ALLOC_IDLE;
+  PrepareAbort();
+  prepare_disabled = false;
+  ScanReadySlots();
+  /* With a ready slot the first segment opens here at once; otherwise its
+   * allocation continues in DemoRolling_Step while the first blocks queue. */
+  segment_state = SEGMENT_OPEN_PENDING;
+  if (OpenSegment() == ALLOC_FAILED)
   {
     DemoRolling_Fault("first segment");
     return false;
@@ -507,6 +764,10 @@ bool DemoRolling_Step(void)
         DemoClip_Step(); /* timed by demo_clip.c; a failure ends only the load */
         return true;
       }
+      else if ((save_state == SAVE_IDLE) && PrepareStep())
+      {
+        break; /* a background preparation step */
+      }
       else
       {
         return true; /* nothing to do: not a step */
@@ -526,7 +787,8 @@ bool DemoRolling_Stop(void)
   {
     return false;
   }
-  (void)CloseSegment();
+  PrepareAbort();
+  (void)CloseSegment(false);
   RollingCatalog_Discard(&catalog);
   rotating = false;
   (void)StorageService_Release(STORAGE_OWNER_RECORDER);
@@ -536,6 +798,8 @@ bool DemoRolling_Stop(void)
 
 void DemoRolling_Fault(const char *reason)
 {
+  PrepareAbort();
+  open_phase = ALLOC_IDLE;
   if (segment_open)
   {
     (void)f_close(&segment);
@@ -587,6 +851,7 @@ DemoSaveOutcome DemoRolling_RequestSave(void)
     status.save = (uint8_t)DEMO_SAVE_UNAVAILABLE;
     return DEMO_SAVE_UNAVAILABLE;
   }
+  PrepareAbort();
   save_state = SAVE_REQUESTED;
   save_started_ms = Now();
   status.save_active = true;

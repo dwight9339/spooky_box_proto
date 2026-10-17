@@ -81,6 +81,29 @@ static void test_reclaim_takes_the_oldest(void)
     CHECK(RollingCatalog_BeginSegment(&catalog) == -1);
 }
 
+/* p04.28: among empty slots a ready one (file already allocated) comes first;
+ * without one the lowest empty slot, then the oldest complete one, as before. */
+static void test_prefers_ready_empty_slots(void)
+{
+    int chosen;
+
+    RollingCatalog_Init(&catalog);
+    CHECK(RollingCatalog_BeginSegmentPreferring(&catalog, (1UL << 5) | (1UL << 9)) == 5);
+    RollingCatalog_EndSegment(&catalog);                 /* no block: empty again */
+    CHECK(RollingCatalog_BeginSegmentPreferring(&catalog, 0u) == 0);
+    RollingCatalog_EndSegment(&catalog);
+    CHECK(RollingCatalog_BeginSegmentPreferring(&catalog, 1UL << 12) == 12);
+    RollingCatalog_EndSegment(&catalog);
+
+    /* A ready bit on a complete slot does not beat an empty one. */
+    RollingCatalog_Init(&catalog);
+    write_blocks(ROLLING_SEGMENT_BLOCKS);                /* slot 0 complete */
+    CHECK(catalog.slots[0].state == ROLLING_SLOT_COMPLETE);
+    chosen = RollingCatalog_BeginSegmentPreferring(&catalog, 1UL << 0);
+    CHECK(chosen > 0);
+    CHECK(catalog.segments_reclaimed == 0u);
+}
+
 static void check_pinned_in_order(void)
 {
     for (unsigned index = 1u; index < catalog.pinned_count; ++index) {
@@ -241,6 +264,7 @@ int main(void)
 {
     test_wrap_keeps_the_window();
     test_reclaim_takes_the_oldest();
+    test_prefers_ready_empty_slots();
     test_save_pins_the_newest_window();
     test_save_at_a_boundary_and_before_warm_up();
     test_second_save_is_busy();
