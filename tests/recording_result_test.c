@@ -68,7 +68,7 @@ static void TestTruncationAndBounds(void)
   (void)memset(reason, 'r', sizeof(reason) - 1U);
   reason[sizeof(reason) - 1U] = '\0';
   RecordingResult_Init(&result);
-  RecordingResult_Record(&result, false, true, "REC000.WAV-TOO-LONG", 4294967295U,
+  RecordingResult_Record(&result, false, true, "FIELD/F0001/AUDIO000.WAV-AND-TOO-LONG", 4294967295U,
                          4294967295U, 4294967295U, reason);
   CHECK(strlen(result.file) == RECORDING_RESULT_FILE_BYTES - 1U);
   CHECK(strlen(result.reason) == RECORDING_RESULT_REASON_BYTES - 1U);

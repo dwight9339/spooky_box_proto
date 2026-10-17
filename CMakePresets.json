@@ -32,10 +32,10 @@
             }
         },
         {
-            "name": "RadioTuneQual",
+            "name": "BandSwitchQual",
             "inherits": "Debug",
             "cacheVariables": {
-                "SPOOKY_RADIO_TUNE_QUALIFICATION": "ON"
+                "SPOOKY_RADIO_BAND_QUALIFICATION": "ON"
             }
         },
         {
@@ -71,8 +71,8 @@
             "configurePreset": "IpcMismatch"
         },
         {
-            "name": "RadioTuneQual",
-            "configurePreset": "RadioTuneQual"
+            "name": "BandSwitchQual",
+            "configurePreset": "BandSwitchQual"
         },
         {
             "name": "SpeakerMonitor",

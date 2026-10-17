@@ -108,23 +108,27 @@ The first coherent instrument experience.
 
 - **Scope:** host-tested navigation, gestures and independent capture state; versioned
   product state and input-event IPC; M4 inputs and semantic rendering under recording
-  load; in-band tuning while recording; Classic territory scanning with reversible
-  Manual; semantic EMF, activity and visual feedback; common audio sample timeline;
-  monitor-only PTT (microphone monitoring deferred, decision 0028).
+  load; in-band tuning and band transitions while recording; Classic territory
+  scanning with reversible Manual; semantic EMF, activity and visual feedback; common
+  audio sample timeline; a versioned session format with its event log (tune, retune,
+  gap and PTT events on the sample timeline); monitor-only PTT (microphone monitoring
+  deferred, decision 0028).
 - **Exit:** the integrated Classic/Manual recording acceptance: image-linked audio,
   event, queue and latency evidence; no navigation-induced stop or reset; no stuck
   Shift or PTT; no misleading save or record status; controls stay responsive under
-  display and SD load.
-- **Epic:** `full_spooky_proto-54w`, plus `full_spooky_proto-hpq.1` (timeline).
+  display and SD load; tunes and band transitions during a recording keep exact
+  accounting, and their events are stored with the session.
+- **Epic:** `full_spooky_proto-54w`, plus `full_spooky_proto-hpq.1` (timeline) and
+  `full_spooky_proto-hpq.3` (session format and event log).
 
 ### M4 — Sessions, rolling capture and playback
 
 Make capture recoverable and reusable.
 
-- **Scope:** rolling-window strategy chosen from measured capacity; versioned session,
-  asset and recovery formats; session transactions and interrupted-recording recovery;
-  immutable rolling save while capture continues; nondestructive Field session browser
-  and playback; band transitions qualified during recording; storage stall headroom: a
+- **Scope:** rolling-window strategy chosen from measured capacity; asset and recovery
+  formats extending the M3 session format; session transactions and interrupted-
+  recording recovery; immutable rolling save while capture continues; nondestructive
+  Field session browser and playback; storage stall headroom: a
   supported-media write-stall contract from a media survey, recorder queues and DMA
   buffers sized to that contract with per-block copies out of the DMA interrupts, and
   session directories small enough that preparing a recording stays within the
@@ -134,8 +138,8 @@ Make capture recoverable and reusable.
   active capture where possible; latencies within measured budgets; recorder queue
   headroom covers the media contract's maximum stall plus its margin, and preparing a
   recording in the largest supported session directory causes no foreground stall.
-- **Epic:** `full_spooky_proto-hpq`, plus `full_spooky_proto-54w.12` and the
-  storage-headroom tasks `full_spooky_proto-jjy.13`, `.16` and `.18`.
+- **Epic:** `full_spooky_proto-hpq` (except `hpq.3`, in M3), plus the storage-headroom
+  tasks `full_spooky_proto-jjy.13`, `.16` and `.18`.
 
 ### M5 — Field-to-Granular
 
@@ -166,5 +170,5 @@ followed by a test. They are listed in the order that unblocks the most work.
 | 2 | First-slice gestures, reconciled with the control map (utility entry, hold priority, selector commit/cancel, chord arbitration) | `54w.2` | M3 interaction model, IPC and everything after it |
 | 3 | Rolling-window duration and memory/storage strategy | `hpq.2` | M4 formats and rolling save. Needs measurement first, so start early. |
 | 4 | Semantic EMF, activity and warning mappings (control map D-016) | `54w.8` | M3 visual feedback |
-| 5 | Session, asset and recovery formats | `hpq.3` | M4 transactions and playback |
-| 6 | Qualification for lifting the recording guards on tuning and band transitions (decisions 0003 and 0004) | `54w.6`, `54w.12` | Tuning and band transitions while recording in M3 and M4 |
+| 5 | Session format and event log, then asset and recovery formats | `hpq.3`, then the asset and recovery task split from it | M3 event storage and the recording-guard lifts; M4 transactions and playback |
+| 6 | Qualification for lifting the recording guards on tuning and band transitions (decisions 0003 and 0004) | `54w.6`, `54w.12` | Tuning and band transitions while recording in M3 |

@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RECORDING_RESULT_FILE_BYTES 13U
+#define RECORDING_RESULT_FILE_BYTES 32U /* "FIELD/Fnnnn/AUDIOnnn.WAV" */
 #define RECORDING_RESULT_REASON_BYTES 48U
 
 typedef struct RecordingResult

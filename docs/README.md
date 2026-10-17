@@ -43,6 +43,8 @@ Updated in the same change as the code they describe.
   wiring, clocks and bus devices.
 - [USB CLI contract](design/usb-cli.md): target commands, responses and the EMF
   metric definition.
+- [Session format](design/session-format.md): Field session folder, manifest and
+  event-log byte layouts (decision 0030; target, not yet written by firmware).
 - [Foreground latency](design/foreground-latency.md): recording-time service
   budgets, queue-headroom rationale and violation diagnostics.
 - [Repository layout](design/repository-layout.md): canonical build and generated-file
@@ -68,6 +70,8 @@ Kept in step with the current tooling. Hardware bring-up checks are in
 - [Spooky Bench setup](procedures/spooky-bench-setup.md) and
   [controls](procedures/spooky-bench-controls.md)
 - [Windows Ninja firmware builds](procedures/windows-ninja-build.md)
+- [Cloud sessions](procedures/cloud-sessions.md): the cloud environment and how
+  cloud-session Beads writes reach the canonical database
 - [Boot smoke](procedures/spooky-bench-boot-smoke.md),
   [IPC recording load](procedures/spooky-bench-ipc-load.md),
   [SD basic](procedures/spooky-bench-sd-basic.md),

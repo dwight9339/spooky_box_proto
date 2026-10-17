@@ -30,6 +30,13 @@ bool RadioAdapter_RequestInternalBand(uint32_t band);
  * the demo image this includes band changes from the band menu, so Classic does
  * not compute a jump in a band that is about to change. */
 bool RadioAdapter_CliCommandPending(void);
+/* Decision 0015 item 5: the settle margin after an in-band tune in this band
+ * (radio_control_service RadioBand), in frames; the session manifest records
+ * it (decision 0030 item 4). */
+uint32_t RadioAdapter_RetuneSettleFrames(uint32_t band);
+/* An issued in-band tune whose outcome is not yet published: its band and
+ * target (decision 0030 item 11, the state at frame 0). */
+bool RadioAdapter_TuneInFlight(uint8_t *band, uint32_t *target_khz);
 
 /* The boot sequence finished; called once after the dispatcher is initialized. */
 void RadioAdapter_ReportStarted(bool ok);

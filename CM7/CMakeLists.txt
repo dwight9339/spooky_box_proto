@@ -48,10 +48,10 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
 )
 
-option(SPOOKY_RADIO_TUNE_QUALIFICATION
-    "Allow in-band tuning while recording for bench qualification (54w.6)" OFF)
-if(SPOOKY_RADIO_TUNE_QUALIFICATION)
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_RADIO_TUNE_QUALIFICATION=1)
+option(SPOOKY_RADIO_BAND_QUALIFICATION
+    "Allow band changes while recording for bench qualification (54w.12)" OFF)
+if(SPOOKY_RADIO_BAND_QUALIFICATION)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_RADIO_BAND_QUALIFICATION=1)
 endif()
 
 option(SPOOKY_SPEAKER_MONITOR
@@ -147,6 +147,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/diag_history.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/audio_timeline.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/monitor_ptt.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common/Src/radio_gap.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/target_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/diagnostics.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/foreground_budget.c
@@ -157,6 +158,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/App/session_control.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/recording_limits.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/recording_result.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/session_files.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/session_event_log.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/session_events.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/reply_queue.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/sd_media.c
     ${CMAKE_CURRENT_SOURCE_DIR}/App/storage_margin.c

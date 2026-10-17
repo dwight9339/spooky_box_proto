@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "audio_timeline.h"
+#include "radio_gap.h"
 #include "stm32h7xx_hal.h"
 
 /* Fault bits keep the legacy runtime flag values reported on UART. */
@@ -60,6 +61,9 @@ bool AudioPath_GetPosition(AudioTimelinePosition *position);
  * delivered half-buffer. Readable while the stream is gated. False when
  * AudioPath_GetPosition is. */
 bool AudioPath_GetBlockInProgress(uint32_t *block);
+/* Foreground: the decision 0004 gap bookkeeping, copied with the capture
+ * interrupt masked. */
+bool AudioPath_GetGap(RadioGapSnapshot *snapshot);
 /* Foreground only, with interrupts already masked by the caller, immediately
  * before the microphone DMA starts (decision 0012 item 4). False if the stream
  * is not running or gated, since gated halves are not delivered yet. */
