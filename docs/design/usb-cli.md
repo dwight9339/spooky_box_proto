@@ -148,7 +148,7 @@ foreground service. The budget table and queue-headroom rationale are in
 
 While Preparing, Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
 transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE`, `UI MATRIX ORIENT`,
-`UI MATRIX FEEDBACK ON` and `UI DISPLAY TEST` patterns, and radio tuning/band changes are rejected before their service handlers
+`UI MATRIX FEEDBACK ON` and `UI DISPLAY TEST` patterns, and radio band changes (except in the `BandSwitchQual` preset) are rejected before their service handlers
 run. Status and diagnostic reads, `CLASSIC` parameter commands and `MONITOR PTT` remain available. Every policy rejection is a
 numeric `COMMAND_REJECTED` diagnostic and returns one stable `ERR` line. No command
 is deferred until the recording ends.
@@ -168,8 +168,9 @@ is power-cycled. The defaults, ranges, and `UP`/`DOWN` increments are:
 | LW | 198 kHz | 153..279 | 9 kHz |
 
 The antenna path follows the band automatically. `TUNE` always accepts an integer
-frequency in kHz and validates it against the current band; FM values are rounded to
-the Si4735's nearest 10 kHz command unit. A successful tune returns the band, actual
+frequency in kHz. The Radio machine validates it against the band the tune will run
+in, so a `TUNE` sent right after a `BAND` command is checked against the new band;
+FM values are rounded to the Si4735's nearest 10 kHz command unit. A successful tune returns the band, actual
 frequency, RSSI, SNR, and valid-channel flag, for example:
 
 ```text
