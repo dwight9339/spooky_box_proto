@@ -1240,29 +1240,42 @@ static bool ParsePermille(const char **cursor, uint16_t *value)
   return true;
 }
 
+#define LIGHTS_USAGE "ERR usage: DEMO LIGHTS [IDLE 0..1000 | ENCODER 0..1000 | BALANCE r g b]\r\n"
+
 /* `DEMO LIGHTS` reports, `DEMO LIGHTS IDLE <0-1000>` sets the idle level of
- * the buttons and lit encoders in permille of perceived lightness, and
- * `DEMO LIGHTS BALANCE <r> <g> <b>` scales each encoder channel's duty in
- * permille (p04.12), for setting both by eye on the bench. Not kept across a
- * reset. */
+ * the buttons and `DEMO LIGHTS ENCODER <0-1000>` the level of a lit encoder,
+ * in permille of perceived lightness, and `DEMO LIGHTS BALANCE <r> <g> <b>`
+ * scales each encoder channel's duty in permille (p04.12), for setting them by
+ * eye on the bench. Not kept across a reset. */
 static bool HandleLights(const char *command)
 {
   static const char idle_prefix[] = "DEMO LIGHTS IDLE ";
+  static const char encoder_prefix[] = "DEMO LIGHTS ENCODER ";
   static const char balance_prefix[] = "DEMO LIGHTS BALANCE ";
-  char response[128];
+  char response[144];
   uint16_t balance[DEMO_LIGHT_CHANNELS];
+  const bool idle = strncmp(command, idle_prefix, sizeof(idle_prefix) - 1U) == 0;
+  const bool encoder = strncmp(command, encoder_prefix, sizeof(encoder_prefix) - 1U) == 0;
 
-  if (strncmp(command, idle_prefix, sizeof(idle_prefix) - 1U) == 0)
+  if (idle || encoder)
   {
-    const char *cursor = &command[sizeof(idle_prefix) - 1U];
+    const char *cursor = idle ? &command[sizeof(idle_prefix) - 1U]
+                              : &command[sizeof(encoder_prefix) - 1U];
     uint16_t value;
 
     if (!ParsePermille(&cursor, &value) || (*cursor != '\0'))
     {
-      (void)UsbTest_SendText("ERR usage: DEMO LIGHTS [IDLE 0..1000 | BALANCE r g b]\r\n");
+      (void)UsbTest_SendText(LIGHTS_USAGE);
       return true;
     }
-    DemoLights_SetIdleLightness(value);
+    if (idle)
+    {
+      DemoLights_SetIdleLightness(value);
+    }
+    else
+    {
+      DemoLights_SetEncoderLightness(value);
+    }
   }
   else if (strncmp(command, balance_prefix, sizeof(balance_prefix) - 1U) == 0)
   {
@@ -1282,7 +1295,7 @@ static bool HandleLights(const char *command)
     }
     if ((channel < DEMO_LIGHT_CHANNELS) || (*cursor != '\0'))
     {
-      (void)UsbTest_SendText("ERR usage: DEMO LIGHTS [IDLE 0..1000 | BALANCE r g b]\r\n");
+      (void)UsbTest_SendText(LIGHTS_USAGE);
       return true;
     }
     DemoLights_SetBalance(balance);
@@ -1293,9 +1306,12 @@ static bool HandleLights(const char *command)
   }
   DemoLights_GetBalance(balance);
   (void)snprintf(response, sizeof(response),
-                 "OK DEMO LIGHTS IDLE=%u DUTY=%u PRESSED_DUTY=1000 BALANCE=%u,%u,%u\r\n",
+                 "OK DEMO LIGHTS IDLE=%u DUTY=%u PRESSED_DUTY=1000 ENCODER=%u ENCODER_DUTY=%u "
+                 "BALANCE=%u,%u,%u\r\n",
                  (unsigned)DemoLights_IdleLightness(),
                  (unsigned)DemoLights_LightnessToDuty(DemoLights_IdleLightness()),
+                 (unsigned)DemoLights_EncoderLightness(),
+                 (unsigned)DemoLights_LightnessToDuty(DemoLights_EncoderLightness()),
                  (unsigned)balance[0], (unsigned)balance[1], (unsigned)balance[2]);
   (void)UsbTest_SendText(response);
   return true;

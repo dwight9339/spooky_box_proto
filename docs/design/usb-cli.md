@@ -497,16 +497,21 @@ OK DEMO SCREEN=CLASSIC INP=0 SHIFT=0 INPUTS=42 REFUSED=0 GESTURES=30/0 UNBOUND=0
 | `LIGHTS` | Button and encoder LED PWM started (TIM16, TIM17, TIM1, TIM2, TIM4, TIM12, TIM13, TIM14) |
 | `MATRIX_REC_MS`, `MATRIX_REC_FRAMES`, `MATRIX_REC_SUPERSEDED` | Time the matrix ran while capturing, frames composed in it, and frames replaced before fully written: the matrix frame rate under capture |
 
-`DEMO LIGHTS` reports the idle level shared by the button LEDs and the lit encoder
-LEDs, and `DEMO LIGHTS IDLE <0-1000>` sets it, in permille of perceived lightness
-(CIE L*). The reply gives the level and its PWM duty in permille; a pressed button is
-always at full duty, and Button 0 breathes from off up to a fixed peak during a
-session. `DEMO LIGHTS BALANCE <r> <g> <b>` scales the duty of each encoder's red,
-green and blue channel, 0 to 1000 permille, so a white encoder looks neutral. The
-level resets to 400 and the balance to `1000,1000,1000` at boot.
+`DEMO LIGHTS` reports the light levels. `DEMO LIGHTS IDLE <0-1000>` sets the button
+LEDs' idle level and `DEMO LIGHTS ENCODER <0-1000>` the level of a lit encoder, both
+in permille of perceived lightness (CIE L*). The encoders need a higher level than the
+buttons to look as bright. The prompt's green or yellow Encoder 0, the confirm cue,
+is always at full lightness. The reply gives each level and its PWM duty in permille; a
+pressed button is always at full duty, and Button 0 breathes from off up to a fixed
+peak during a session. `DEMO LIGHTS BALANCE <r> <g> <b>` scales the duty of each
+encoder's red, green and blue channel, 0 to 1000 permille, so a white encoder looks
+neutral at every level. At boot the idle level resets to 400, the encoder level to
+800 and the balance to `1000,450,350`, the values set by eye on the bench. `UI OFF`,
+like entry to the low-power charging monitor, turns the PWM off and leaves the button
+and encoder LEDs dark until the next reset.
 
 ```text
-OK DEMO LIGHTS IDLE=400 DUTY=113 PRESSED_DUTY=1000 BALANCE=1000,1000,1000
+OK DEMO LIGHTS IDLE=400 DUTY=113 PRESSED_DUTY=1000 ENCODER=800 ENCODER_DUTY=567 BALANCE=1000,450,350
 ```
 
 The demo image lifts the in-band tune guard, so Classic keeps scanning during a session;

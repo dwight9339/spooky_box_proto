@@ -11,6 +11,7 @@
 #define FULL_LIGHTNESS 1000U
 
 static uint16_t idle_lightness;
+static uint16_t encoder_lightness;
 static uint16_t balance[DEMO_LIGHT_CHANNELS];
 static bool fault_active;
 static uint32_t fault_start_ms;
@@ -33,13 +34,11 @@ uint16_t DemoLights_LightnessToDuty(uint16_t lightness_permille)
 
 void DemoLights_Init(void)
 {
-  uint32_t channel;
-
   idle_lightness = DEMO_LIGHTS_IDLE_LIGHTNESS;
-  for (channel = 0U; channel < DEMO_LIGHT_CHANNELS; ++channel)
-  {
-    balance[channel] = DEMO_LIGHTS_BALANCE_FULL;
-  }
+  encoder_lightness = DEMO_LIGHTS_ENCODER_LIGHTNESS;
+  balance[0] = DEMO_LIGHTS_BALANCE_RED;
+  balance[1] = DEMO_LIGHTS_BALANCE_GREEN;
+  balance[2] = DEMO_LIGHTS_BALANCE_BLUE;
   fault_active = false;
   fault_start_ms = 0U;
 }
@@ -53,6 +52,17 @@ void DemoLights_SetIdleLightness(uint16_t lightness_permille)
 uint16_t DemoLights_IdleLightness(void)
 {
   return idle_lightness;
+}
+
+void DemoLights_SetEncoderLightness(uint16_t lightness_permille)
+{
+  encoder_lightness = (lightness_permille > FULL_LIGHTNESS) ? FULL_LIGHTNESS
+                                                            : lightness_permille;
+}
+
+uint16_t DemoLights_EncoderLightness(void)
+{
+  return encoder_lightness;
 }
 
 void DemoLights_SetBalance(const uint16_t balance_permille[DEMO_LIGHT_CHANNELS])
@@ -192,16 +202,23 @@ static void Encoders(const DemoLightsInput *input, uint8_t rgb[4])
   }
 }
 
-/* Each channel an encoder's colour uses gets the duty of the idle level,
- * scaled by that channel's balance. */
-static void EncoderDuty(const uint8_t rgb[4], uint16_t duty[4][DEMO_LIGHT_CHANNELS])
+/* Each channel an encoder's colour uses gets the duty of the encoder level,
+ * scaled by that channel's balance. The prompt's Encoder 0 is the confirm
+ * cue and uses the prompt level instead. */
+static void EncoderDuty(const DemoLightsInput *input, const uint8_t rgb[4],
+                        uint16_t duty[4][DEMO_LIGHT_CHANNELS])
 {
-  const uint32_t lit_duty = DemoLights_LightnessToDuty(idle_lightness);
+  const bool prompt = !input->shift &&
+                      ((input->screen == DEMO_SCREEN_PROMPT_START) ||
+                       (input->screen == DEMO_SCREEN_PROMPT_STOP));
   uint32_t encoder;
   uint32_t channel;
 
   for (encoder = 0U; encoder < 4U; ++encoder)
   {
+    const uint32_t lit_duty = DemoLights_LightnessToDuty(
+      (prompt && (encoder == 0U)) ? DEMO_LIGHTS_PROMPT_LIGHTNESS : encoder_lightness);
+
     for (channel = 0U; channel < DEMO_LIGHT_CHANNELS; ++channel)
     {
       const bool on = (rgb[encoder] & (DEMO_LIGHT_RED >> channel)) != 0U;
@@ -230,5 +247,5 @@ void DemoLights_Compute(const DemoLightsInput *input, uint32_t now_ms,
     output->button_duty[button] = DemoLights_LightnessToDuty(lightness[button]);
   }
   Encoders(input, output->encoder_rgb);
-  EncoderDuty(output->encoder_rgb, output->encoder_duty);
+  EncoderDuty(input, output->encoder_rgb, output->encoder_duty);
 }
