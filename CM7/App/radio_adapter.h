@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "audio_timeline.h"
 #include "event_queue.h"
 
 /* Post a CLI radio command. False if the queue rejected it (answer ERR BUSY). */
@@ -38,6 +39,10 @@ uint32_t RadioAdapter_RetuneSettleFrames(uint32_t band);
  * target (decision 0030 item 11, the state at frame 0). */
 bool RadioAdapter_TuneInFlight(uint8_t *band, uint32_t *target_khz);
 
+/* Decision 0030 item 11: a band-switch gap that began before origin is still
+ * open at it, with the band before the switch. */
+bool RadioAdapter_GapAtOrigin(const AudioTimelinePosition *origin, uint8_t *band_before);
+
 /* The boot sequence finished; called once after the dispatcher is initialized. */
 void RadioAdapter_ReportStarted(bool ok);
 /* Radio SAI or DMA error, or a codec output or volume failure. */
@@ -51,7 +56,11 @@ void RadioAdapter_Service(void);
  * before the Classic service takes its onsets. */
 void RadioAdapter_ServiceActivity(void);
 
-/* Reply `OK RADIO BAND=... FREQ=...` with the last completed tune result. */
+/* Reply `OK RADIO BAND=... FREQ=...` with the last completed tune result, or
+ * the radio fault after a failed band switch. */
 void RadioAdapter_SendStatus(void);
+/* Radio audio is captured from a running receiver: a new session may start.
+ * False after a failed band switch, whose silenced radio track continues. */
+bool RadioAdapter_AudioReady(void);
 
 #endif /* SPOOKY_RADIO_ADAPTER_H */

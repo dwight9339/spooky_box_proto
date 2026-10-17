@@ -9,15 +9,17 @@ typedef enum RadioSm_EventId
 {
     RadioSm_EventId_AUDIO_FAULT = 0,
     RadioSm_EventId_BAND = 1,
-    RadioSm_EventId_START_FAILED = 2,
-    RadioSm_EventId_START_OK = 3,
-    RadioSm_EventId_STEP = 4,
-    RadioSm_EventId_TUNE = 5,
-    RadioSm_EventId_TUNE_DONE = 6,
-    RadioSm_EventId_TUNE_FAILED = 7
+    RadioSm_EventId_BAND_DONE = 2,
+    RadioSm_EventId_BAND_FAILED = 3,
+    RadioSm_EventId_START_FAILED = 4,
+    RadioSm_EventId_START_OK = 5,
+    RadioSm_EventId_STEP = 6,
+    RadioSm_EventId_TUNE = 7,
+    RadioSm_EventId_TUNE_DONE = 8,
+    RadioSm_EventId_TUNE_FAILED = 9
 } RadioSm_EventId;
 
-#define RadioSm_EventIdCount (8)
+#define RadioSm_EventIdCount (10)
 
 typedef enum RadioSm_StateId
 {
@@ -25,20 +27,22 @@ typedef enum RadioSm_StateId
     RadioSm_StateId_FAULTED = 1,
     RadioSm_StateId_OPERATIONAL = 2,
     RadioSm_StateId_SETTLED = 3,
-    RadioSm_StateId_TUNING = 4,
-    RadioSm_StateId_STOPPED = 5
+    RadioSm_StateId_SWITCHING = 4,
+    RadioSm_StateId_TUNING = 5,
+    RadioSm_StateId_STOPPED = 6
 } RadioSm_StateId;
 
-#define RadioSm_StateIdCount (6)
+#define RadioSm_StateIdCount (7)
 
 // Subtree meta data generation can be disabled in settings.
 // Details: https://github.com/StateSmith/StateSmith/issues/538
-#define RadioSm_ROOT_SubtreeEndId (5)  // State 'RadioSm' subtree extends from itself (id: 0) to state 'Stopped' (id: 5)
+#define RadioSm_ROOT_SubtreeEndId (6)  // State 'RadioSm' subtree extends from itself (id: 0) to state 'Stopped' (id: 6)
 #define RadioSm_FAULTED_SubtreeEndId (1)  // State 'Faulted' subtree extends from itself (id: 1) to state 'Faulted' (id: 1)
-#define RadioSm_OPERATIONAL_SubtreeEndId (4)  // State 'Operational' subtree extends from itself (id: 2) to state 'Tuning' (id: 4)
+#define RadioSm_OPERATIONAL_SubtreeEndId (5)  // State 'Operational' subtree extends from itself (id: 2) to state 'Tuning' (id: 5)
 #define RadioSm_SETTLED_SubtreeEndId (3)  // State 'Settled' subtree extends from itself (id: 3) to state 'Settled' (id: 3)
-#define RadioSm_TUNING_SubtreeEndId (4)  // State 'Tuning' subtree extends from itself (id: 4) to state 'Tuning' (id: 4)
-#define RadioSm_STOPPED_SubtreeEndId (5)  // State 'Stopped' subtree extends from itself (id: 5) to state 'Stopped' (id: 5)
+#define RadioSm_SWITCHING_SubtreeEndId (4)  // State 'Switching' subtree extends from itself (id: 4) to state 'Switching' (id: 4)
+#define RadioSm_TUNING_SubtreeEndId (5)  // State 'Tuning' subtree extends from itself (id: 5) to state 'Tuning' (id: 5)
+#define RadioSm_STOPPED_SubtreeEndId (6)  // State 'Stopped' subtree extends from itself (id: 6) to state 'Stopped' (id: 6)
 
 
 // Generated state machine

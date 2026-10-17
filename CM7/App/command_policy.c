@@ -40,15 +40,12 @@ static const CommandPolicyRule rules[COMMAND_ACTION_COUNT] = {
    * and the session event log (hpq.11); see
    * docs/evidence/2026-10-16-tune-guard-lift.md. */
   [COMMAND_ACTION_RADIO_TUNE] = {ALLOW, ALLOW, ALLOW, NULL},
-  /* Band changes stay rejected while recording until 54w.12 qualifies them.
-   * The opt-in qualification build allows them so the bench can measure it
-   * (constitution, opt-in experiments). */
-#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
+  /* Decision 0003: band changes are legal in every session state too. Their
+   * questions were answered by 54w.12 (user decisions Q1-Q8): the silence
+   * fill and gap events of decision 0004 (54w.12.1), the non-blocking switch
+   * (54w.12.2), failure isolation (54w.12.3) and the band switch events
+   * (54w.12.4); see docs/evidence/2026-10-16-band-guard-lift.md. */
   [COMMAND_ACTION_RADIO_BAND] = {ALLOW, ALLOW, ALLOW, NULL},
-#else
-  [COMMAND_ACTION_RADIO_BAND] = {
-    ALLOW, REJECT, REJECT, "ERR RADIO band changes disabled while recording\r\n"},
-#endif
   [COMMAND_ACTION_SCAN_PARAMETER] = {ALLOW, ALLOW, ALLOW, NULL}
 };
 

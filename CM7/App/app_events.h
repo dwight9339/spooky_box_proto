@@ -23,6 +23,8 @@ typedef enum AppEventType {
   APP_EVENT_RADIO_TUNE_FAILED,
   APP_EVENT_RADIO_AUDIO_FAULT,
   APP_EVENT_CLASSIC_COMMAND,   /* arg0 CtxCommand | RadSource << 8; arg1 signed argument */
+  APP_EVENT_RADIO_BAND_DONE,
+  APP_EVENT_RADIO_BAND_FAILED,
 #if defined(SPOOKY_DEMO)
   /* Demo-only Field on the M7 (decision 0011 item 12; demo_field.c). */
   APP_EVENT_DEMO_INPUT,        /* arg0 InpInputKind | index << 8 | detents << 16; arg1 ms */

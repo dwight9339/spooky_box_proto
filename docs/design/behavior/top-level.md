@@ -92,7 +92,7 @@ Manual; the full list is in the product
 | DEV-I2 | Device | A restart, overflow or staleness in input reporting releases every held control before later input events are interpreted, so no control such as Shift or PTT stays latched. |
 | DEV-I3 | `in(Session.Active)` | SD maintenance and WAV transfer commands do not execute; they are rejected with a reason. |
 | DEV-I4 | Device | Session state never makes a radio command illegal. Tune, tune-step and band commands are handled the same in every Session state. |
-| DEV-I5 | `in(Session.Active)` | The radio track keeps its timeline through receiver transitions. Each radio half-buffer held back during a transition is written as digital silence of the same length, and the gap's start and end are published with their sample positions. |
+| DEV-I5 | `in(Session.Active)` | The radio track keeps its timeline through receiver transitions. Each radio half-buffer held back during a transition is written as digital silence of the same length, and the gap's start and end are published with their sample positions. A transition that fails faults the radio but not the session: silence continues and the gap stays open, with no end published. |
 
 ## Guards
 
@@ -118,8 +118,8 @@ restarts the model at its initial state.
 | DEV-I1 | Target | Constitution Principle I |
 | DEV-I2 | Target | Constitution Principle III |
 | DEV-I3 | Target | Implemented; no bench evidence |
-| DEV-I4 | Target | Product intent: [roadmap](../../../spec/product/roadmap.md) M3 scope, in-band tuning and band transitions while recording; [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions; [decision 0003](../../decisions/0003-radio-control-during-recording.md) |
-| DEV-I5 | Target | [Decision 0004](../../decisions/0004-radio-track-continuity-across-transitions.md); [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions. Silence fill and gap events implemented and host tested (`full_spooky_proto-54w.12.1`); no bench evidence yet |
+| DEV-I4 | Target | Product intent: [roadmap](../../../spec/product/roadmap.md) M3 scope, in-band tuning and band transitions while recording; [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions; [decision 0003](../../decisions/0003-radio-control-during-recording.md). Guards lifted after bench qualification: [tuning](../../evidence/2026-10-16-tune-guard-lift.md) (`full_spooky_proto-54w.6`) and [band changes](../../evidence/2026-10-16-band-guard-lift.md) (`full_spooky_proto-54w.12`) |
+| DEV-I5 | Target | [Decision 0004](../../decisions/0004-radio-track-continuity-across-transitions.md); [Modes and interaction](../../../spec/product/modes-and-interaction.md#field-sessions), Field Sessions. Silence fill and gap events: [bench](../../evidence/2026-10-16-band-switch-silence-fill.md) on the opt-in `BandSwitchQual` image (`full_spooky_proto-54w.12.1`). A failed switch keeping the session, and a session starting inside a gap: [bench](../../evidence/2026-10-16-failed-band-switch-session.md) on `BandSwitchQual` with an induced failure (user decision Q6 of `full_spooky_proto-54w.12`; `54w.12.3`) |
 | DEV-01 | Proven | Sleep entry while idle: [radio regression](../../evidence/2026-09-24-radio-regression.md) |
 | DEV-02 | Target | Implemented in the IPC experiment builds; no bench evidence |
 | DEV-03 | Target | Implemented and host tested under [decision 0008](../../decisions/0008-recording-safe-command-policy.md); no bench evidence |
@@ -128,6 +128,4 @@ restarts the model at its initial state.
 
 | Row | Firmware today | Tracked by |
 |---|---|---|
-| DEV-I4 | Band changes are rejected while a session is active with `ERR RADIO band changes disabled while recording`. Principle VI keeps this guard until bench qualification passes. In-band tuning (tune, `UP`, `DOWN`, Classic) is allowed in every session state since the [tune guard lift](../../evidence/2026-10-16-tune-guard-lift.md) (`full_spooky_proto-54w.6`). | `full_spooky_proto-54w.12` |
-| DEV-I5 | A band switch that fails leaves the audio path stopped, so silence stops and the microphone queue would overflow; a failed switch during a session is not yet isolated. Unreachable during a session in normal builds, because the DEV-I4 guard rejects band changes while recording. | `full_spooky_proto-54w.12.3` |
 | Session domain events | The authoritative machine publishes semantic events to the recorder/CLI adapter; outbound presentation IPC is not wired yet. | `full_spooky_proto-54w.4` |

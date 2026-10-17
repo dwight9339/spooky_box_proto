@@ -218,10 +218,12 @@ void ClassicService_Service(uint32_t now_ms, const ClassicWorld *world)
   input.band = world->band;
   input.frequency_khz = world->frequency_khz;
   input.tuning_valid = world->tune_valid;
-  /* Never a second tune in flight: neither behind the radio's own tune nor
-   * behind Classic's command still waiting in the queue. */
+  /* Never a second tune in flight: neither behind the radio's own tune or band
+   * switch nor behind Classic's command still waiting in the queue. A jump
+   * computed during a band switch would target the old band. */
   input.tune_in_flight = tune_outstanding || world->radio_command_pending ||
-                         (world->radio_state == (uint8_t)RAD_STATE_TUNING);
+                         (world->radio_state == (uint8_t)RAD_STATE_TUNING) ||
+                         (world->radio_state == (uint8_t)RAD_STATE_SWITCHING);
   input.active = world->active;
   input.can_tune = UnableReason(world) == CLASSIC_UNABLE_NONE;
   input.activity_valid = world->activity_valid;

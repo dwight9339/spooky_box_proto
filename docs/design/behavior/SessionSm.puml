@@ -76,10 +76,10 @@ note right of Idle
   Session folder and manifest: full_spooky_proto-hpq.3.
 end note
 note right of Active
-  Safety guard in force (Principle VI): tune and band
-  commands are rejected while Active by the shared command policy,
-  until full_spooky_proto-54w.6 and -54w.12 qualify them
-  (decision 0003). Sleep is also rejected while Active.
+  Tune and band commands are legal while Active
+  (decision 0003), since the qualifications of
+  full_spooky_proto-54w.6 and -54w.12. Sleep is
+  rejected while Active by the shared command policy.
 end note
 
 /'! $CONFIG : toml

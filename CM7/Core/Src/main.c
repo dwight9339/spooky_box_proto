@@ -283,8 +283,6 @@ static void VolumeUsbSendStatus(void)
 static void UsbCliCommand(const char *line)
 {
   char command[64];
-  const RadioBandInfo *config;
-  RadioControlStatus radio_status;
   RadioBand target_band;
   CommandAction action;
   CommandPolicyClass policy;
@@ -408,7 +406,7 @@ static void UsbCliCommand(const char *line)
     }
     return;
   }
-  if (RadioRecorder_HandleCommand(command, AudioPath_IsRunning()))
+  if (RadioRecorder_HandleCommand(command, RadioAdapter_AudioReady()))
   {
     return;
   }
@@ -471,6 +469,15 @@ static void UsbCliCommand(const char *line)
     RadioUsbSendBand();
     return;
   }
+#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
+  if (strcmp(command, "BAND FAIL") == 0)
+  {
+    /* Qualification only (54w.12.3): induce a failed band switch. */
+    RadioControl_ArmSwitchFault();
+    (void)UsbTest_SendText("OK RADIO next band switch fails at POWER_UP\r\n");
+    return;
+  }
+#endif
   if ((strncmp(command, "BAND", 4U) == 0) &&
       ((command[4] == ' ') || (command[4] == '\t')))
   {
@@ -485,9 +492,6 @@ static void UsbCliCommand(const char *line)
     }
     return;
   }
-
-  (void)RadioControl_GetStatus(&radio_status);
-  config = RadioControl_GetBandInfo(radio_status.band);
 
   if (strcmp(command, "UP") == 0)
   {
@@ -505,17 +509,9 @@ static void UsbCliCommand(const char *line)
       (void)UsbTest_SendText("ERR usage: TUNE <frequency-kHz>\r\n");
       return;
     }
-    if ((frequency_khz < config->minimum_khz) ||
-        (frequency_khz > config->maximum_khz))
-    {
-      char response[96];
-      (void)snprintf(response, sizeof(response),
-                     "ERR %s range: %lu..%lu kHz\r\n", config->name,
-                     (unsigned long)config->minimum_khz,
-                     (unsigned long)config->maximum_khz);
-      (void)UsbTest_SendText(response);
-      return;
-    }
+    /* The Radio machine checks the range against the band the tune will run
+     * in, which a band switch still queued or in flight may change
+     * (54w.12.2); an out-of-range tune is answered ERR <band> range. */
     posted = RadioAdapter_RequestTune(frequency_khz);
   }
   else

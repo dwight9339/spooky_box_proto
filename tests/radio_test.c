@@ -1,7 +1,8 @@
 /*
  * Host scenario tests for the Radio machine (docs/design/behavior/RadioSm.puml;
- * decisions 0003 and 0008 items 11-15). The generated machine and the real port
- * run against a fake radio service. Host results only; not hardware evidence.
+ * decisions 0003 and 0008 items 11-15; the non-blocking band switch of
+ * full_spooky_proto-54w.12.2). The generated machine and the real port run against
+ * a fake radio service. Host results only; not hardware evidence.
  */
 
 #include <stdio.h>
@@ -25,8 +26,10 @@ typedef struct Fake {
     uint32_t step_khz;
     uint32_t current_khz;
     bool issue_ok;
-    bool switch_ok;
+    bool switch_ok;           /* the switch can begin */
     bool tune_in_flight;
+    bool switch_in_flight;
+    uint32_t switch_band;
     unsigned tunes_issued;
     uint32_t last_target;
     unsigned band_switches;
@@ -66,10 +69,11 @@ bool rad_integration_begin_tune(uint32_t frequency_khz)
     return true;
 }
 
-bool rad_integration_switch_band(uint32_t band)
+bool rad_integration_begin_band_switch(uint32_t band)
 {
-    (void)band;
     ++fake.band_switches;
+    fake.switch_band = band;
+    fake.switch_in_flight = fake.switch_ok;
     return fake.switch_ok;
 }
 
@@ -136,6 +140,25 @@ static void complete(void)
     fake.tune_in_flight = false;
     fake.current_khz = fake.last_target;
     Radio_OnTuneDone();
+}
+
+/* The band switch in flight completes; the fake takes the new band's range. FM is
+ * band 0; every other band uses the AM range here. */
+static void switched(void)
+{
+    fake.switch_in_flight = false;
+    if (fake.switch_band == 0u) {
+        fake.minimum_khz = 87500u;
+        fake.maximum_khz = 108000u;
+        fake.step_khz = 100u;
+        fake.current_khz = 99100u;
+    } else {
+        fake.minimum_khz = 520u;
+        fake.maximum_khz = 1710u;
+        fake.step_khz = 10u;
+        fake.current_khz = 1000u;
+    }
+    Radio_OnBandDone();
 }
 
 static bool answered(unsigned index, RadPublished event)
@@ -240,11 +263,113 @@ static void a_band_command_waits_behind_a_tune(void)
     CHECK(fake.band_switches == 0);
     complete();
     CHECK(fake.band_switches == 1);
+    CHECK(Radio_GetState() == RAD_STATE_SWITCHING);
+    switched();
     CHECK(Radio_GetState() == RAD_STATE_SETTLED);
     CHECK(count_of(RAD_PUB_BAND_CHANGED) == 1);
 }
 
-static void a_failed_band_switch_faults_the_radio(void)
+static void a_band_switch_waits_for_completion_without_blocking(void)
+{
+    reset();
+    band(1u);
+    CHECK(Radio_GetState() == RAD_STATE_SWITCHING);
+    CHECK(fake.band_switches == 1 && fake.switch_band == 1u);
+    /* Started is announced with the command; nothing answers it until the
+     * switch ends (54w.12.4). */
+    CHECK(fake.count == 1 && answered(0, RAD_PUB_BAND_STARTED));
+    CHECK(fake.log[0].has_command && fake.log[0].command.kind == RAD_CMD_BAND &&
+          fake.log[0].command.arg == 1u);
+    switched();
+    CHECK(Radio_GetState() == RAD_STATE_SETTLED);
+    CHECK(fake.count == 2 && answered(1, RAD_PUB_BAND_CHANGED));
+    CHECK(fake.log[1].command.kind == RAD_CMD_BAND && fake.log[1].command.arg == 1u);
+    CHECK(fake.log[1].command.source == RAD_SOURCE_CLI);
+}
+
+static void band_switch_started_precedes_its_outcome_once(void)
+{
+    /* Started, then completed. */
+    reset();
+    band(3u);
+    switched();
+    CHECK(count_of(RAD_PUB_BAND_STARTED) == 1 && count_of(RAD_PUB_BAND_CHANGED) == 1);
+    CHECK(answered(0, RAD_PUB_BAND_STARTED) && answered(1, RAD_PUB_BAND_CHANGED));
+    /* Started, then failed. */
+    reset();
+    band(2u);
+    Radio_OnBandFailed();
+    CHECK(answered(0, RAD_PUB_BAND_STARTED) && answered(1, RAD_PUB_FAULT_BAND));
+    CHECK(fake.count == 2);
+    /* A switch that cannot begin is never announced as started. */
+    reset();
+    fake.switch_ok = false;
+    band(2u);
+    CHECK(count_of(RAD_PUB_BAND_STARTED) == 0 && count_of(RAD_PUB_FAULT_BAND) == 1);
+    /* A switch waiting behind a tune is announced when it begins. */
+    reset();
+    tune(99500u);
+    band(1u);
+    CHECK(count_of(RAD_PUB_BAND_STARTED) == 0);
+    complete();
+    CHECK(count_of(RAD_PUB_BAND_STARTED) == 1 && Radio_GetState() == RAD_STATE_SWITCHING);
+}
+
+static void commands_wait_latest_wins_behind_a_band_switch(void)
+{
+    reset();
+    band(1u);
+    tune(99500u);
+    band(3u);
+    step(true, false);
+    CHECK(Radio_GetState() == RAD_STATE_SWITCHING);
+    CHECK(fake.band_switches == 1 && fake.tunes_issued == 0);
+    CHECK(count_of(RAD_PUB_SUPERSEDED) == 2);
+    switched();
+    /* The step starts from the new band's first tune. */
+    CHECK(Radio_GetState() == RAD_STATE_TUNING);
+    CHECK(fake.tunes_issued == 1 && fake.last_target == 1010u);
+    complete();
+    CHECK(Radio_GetState() == RAD_STATE_SETTLED);
+    CHECK(count_of(RAD_PUB_BAND_CHANGED) == 1 && count_of(RAD_PUB_TUNED) == 1);
+}
+
+static void a_band_switch_waits_behind_a_band_switch(void)
+{
+    reset();
+    band(1u);
+    band(0u);
+    switched();
+    CHECK(Radio_GetState() == RAD_STATE_SWITCHING);
+    CHECK(fake.band_switches == 2 && fake.switch_band == 0u);
+    switched();
+    CHECK(Radio_GetState() == RAD_STATE_SETTLED);
+    CHECK(count_of(RAD_PUB_BAND_CHANGED) == 2);
+}
+
+static void a_tune_behind_a_band_switch_is_checked_against_the_new_band(void)
+{
+    /* 99500 kHz was in FM range when it arrived; the switch to AM makes it not. */
+    reset();
+    band(1u);
+    tune(99500u);
+    CHECK(count_of(RAD_PUB_REJECTED_RANGE) == 0);
+    switched();
+    CHECK(Radio_GetState() == RAD_STATE_SETTLED);
+    CHECK(fake.tunes_issued == 0);
+    CHECK(fake.count == 3 && answered(0, RAD_PUB_BAND_STARTED) &&
+          answered(1, RAD_PUB_BAND_CHANGED) && answered(2, RAD_PUB_REJECTED_RANGE));
+    CHECK(fake.log[2].command.kind == RAD_CMD_TUNE && fake.log[2].command.arg == 99500u);
+
+    /* One in the new band's range is issued. */
+    reset();
+    band(1u);
+    tune(1500u);
+    switched();
+    CHECK(Radio_GetState() == RAD_STATE_TUNING && fake.last_target == 1500u);
+}
+
+static void a_band_switch_that_cannot_begin_faults_the_radio(void)
 {
     reset();
     fake.switch_ok = false;
@@ -256,6 +381,48 @@ static void a_failed_band_switch_faults_the_radio(void)
     band(0u);
     CHECK(count_of(RAD_PUB_REJECTED_UNAVAILABLE) == 3);
     CHECK(fake.tunes_issued == 0);
+}
+
+static void a_failed_band_switch_faults_the_radio(void)
+{
+    reset();
+    band(2u);
+    tune(99500u);
+    Radio_OnBandFailed();
+    CHECK(Radio_GetState() == RAD_STATE_FAULTED);
+    /* The switch is answered as failed and the waiting tune as abandoned. */
+    CHECK(fake.count == 3 && answered(0, RAD_PUB_BAND_STARTED) &&
+          answered(1, RAD_PUB_FAULT_BAND) && answered(2, RAD_PUB_ABANDONED));
+    CHECK(fake.log[1].command.kind == RAD_CMD_BAND);
+    CHECK(fake.log[2].command.kind == RAD_CMD_TUNE);
+    CHECK(fake.tunes_issued == 0);
+    /* A late completion changes nothing. */
+    Radio_OnBandDone();
+    CHECK(Radio_GetState() == RAD_STATE_FAULTED && count_of(RAD_PUB_BAND_CHANGED) == 0);
+}
+
+static void an_audio_fault_abandons_a_band_switch(void)
+{
+    reset();
+    band(1u);
+    step(true, false);
+    Radio_OnAudioFault();
+    CHECK(Radio_GetState() == RAD_STATE_FAULTED);
+    CHECK(count_of(RAD_PUB_ABANDONED) == 2);
+    CHECK(count_of(RAD_PUB_FAULT_AUDIO) == 1);
+    Radio_OnBandDone();
+    CHECK(count_of(RAD_PUB_BAND_CHANGED) == 0);
+}
+
+static void tune_events_do_not_end_a_band_switch(void)
+{
+    reset();
+    band(1u);
+    Radio_OnTuneDone();
+    Radio_OnTuneFailed();
+    CHECK(Radio_GetState() == RAD_STATE_SWITCHING && fake.count == 1);
+    switched();
+    CHECK(Radio_GetState() == RAD_STATE_SETTLED);
 }
 
 static void an_audio_fault_abandons_work_in_progress(void)
@@ -291,11 +458,17 @@ static void stale_completions_are_ignored(void)
     reset();
     Radio_OnTuneDone();
     Radio_OnTuneFailed();
+    Radio_OnBandDone();
+    Radio_OnBandFailed();
     CHECK(Radio_GetState() == RAD_STATE_SETTLED && fake.count == 0);
+    tune(99500u);
+    Radio_OnBandDone();
+    Radio_OnBandFailed();
+    CHECK(Radio_GetState() == RAD_STATE_TUNING && fake.count == 1);
 }
 
 /* Random sequences: every command is answered exactly once, and at most one tune
- * is in flight. */
+ * or band switch is in flight. */
 static void every_command_is_answered_exactly_once(void)
 {
     uint32_t rng = 2024u;
@@ -314,20 +487,39 @@ static void every_command_is_answered_exactly_once(void)
             case 4: case 5: if (fake.tune_in_flight) { complete(); } break;
             case 6: if (fake.tune_in_flight) { fake.tune_in_flight = false; Radio_OnTuneFailed(); } break;
             case 7: if (r % 97u == 0u) { Radio_OnAudioFault(); } break;
+            case 8:
+                if (fake.switch_in_flight) {
+                    if (r % 13u == 0u) { fake.switch_in_flight = false; Radio_OnBandFailed(); }
+                    else { switched(); }
+                }
+                break;
             default: break;
+            }
+            if (fake.tune_in_flight && fake.switch_in_flight) {
+                printf("FAIL %s: run %d: a tune and a band switch in flight\n", current_test, run);
+                ++failures;
+                return;
             }
             if (Radio_GetState() != RAD_STATE_TUNING) {
                 fake.tune_in_flight = false;
             }
+            if (Radio_GetState() != RAD_STATE_SWITCHING) {
+                fake.switch_in_flight = false;
+            }
         }
         /* Drain: finish anything still in flight. */
-        for (int i = 0; i < 4 && Radio_GetState() == RAD_STATE_TUNING; ++i) {
-            complete();
+        for (int i = 0; i < 8; ++i) {
+            if (Radio_GetState() == RAD_STATE_TUNING) {
+                complete();
+            } else if (Radio_GetState() == RAD_STATE_SWITCHING) {
+                switched();
+            }
         }
         unsigned finals = 0;
         for (unsigned i = 0; i < fake.count && i < LOG_CAPACITY; ++i) {
             const Answer *a = &fake.log[i];
-            if (a->has_command && a->event != RAD_PUB_TUNE_STARTED) {
+            if (a->has_command && a->event != RAD_PUB_TUNE_STARTED &&
+                a->event != RAD_PUB_BAND_STARTED) {
                 ++finals;
             }
         }
@@ -355,7 +547,15 @@ int main(void)
     RUN(a_failed_tune_keeps_the_radio_operational);
     RUN(the_newest_command_replaces_the_pending_one);
     RUN(a_band_command_waits_behind_a_tune);
+    RUN(a_band_switch_waits_for_completion_without_blocking);
+    RUN(band_switch_started_precedes_its_outcome_once);
+    RUN(commands_wait_latest_wins_behind_a_band_switch);
+    RUN(a_band_switch_waits_behind_a_band_switch);
+    RUN(a_tune_behind_a_band_switch_is_checked_against_the_new_band);
+    RUN(a_band_switch_that_cannot_begin_faults_the_radio);
     RUN(a_failed_band_switch_faults_the_radio);
+    RUN(an_audio_fault_abandons_a_band_switch);
+    RUN(tune_events_do_not_end_a_band_switch);
     RUN(an_audio_fault_abandons_work_in_progress);
     RUN(steps_stop_or_wrap_at_the_band_edge);
     RUN(stale_completions_are_ignored);

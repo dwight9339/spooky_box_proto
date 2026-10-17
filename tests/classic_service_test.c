@@ -178,6 +178,14 @@ static void one_tune_in_flight_at_a_time(void)
     radio_completes();
     ClassicService_GetStats(&stats);
     CHECK(!stats.tune_outstanding && stats.tunes_requested == 2u);
+    /* A band switch in flight holds Classic too: its jump would target the old
+     * band (54w.12.2). */
+    world.radio_state = RAD_STATE_SWITCHING;
+    run(2000u);
+    CHECK(requests == 2u);
+    world.radio_state = RAD_STATE_SETTLED;
+    run(5u);
+    CHECK(requests == 3u);
 }
 
 /* A CLI tune moves the shared frequency; Classic continues from it (FR-022).

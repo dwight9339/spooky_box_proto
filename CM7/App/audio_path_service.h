@@ -66,7 +66,8 @@ bool AudioPath_GetBlockInProgress(uint32_t *block);
 bool AudioPath_GetGap(RadioGapSnapshot *snapshot);
 /* Foreground only, with interrupts already masked by the caller, immediately
  * before the microphone DMA starts (decision 0012 item 4). False if the stream
- * is not running or gated, since gated halves are not delivered yet. */
+ * is not running. A closed stream gate is allowed: its halves are delivered as
+ * silence. */
 bool AudioPath_AlignCaptureLocked(uint32_t mic_latency_frames,
                                   AudioPathCaptureStart *start);
 

@@ -47,12 +47,10 @@ spooky_test(audio_timeline_test audio_timeline_test.c ../Common/Src/audio_timeli
 # Monitor-only PTT ramp (54w.9, decision 0028).
 spooky_test(monitor_ptt_test monitor_ptt_test.c ../Common/Src/monitor_ptt.c)
 spooky_test(command_policy_test command_policy_test.c ../CM7/App/command_policy.c)
-# Demo branch only: the Demo image keeps main's policy (tuning allowed, band guard on).
+# Demo branch only: the Demo image keeps main's policy (tuning and band changes
+# allowed while recording since 54w.6 and 54w.12).
 spooky_test(command_policy_demo_test command_policy_test.c ../CM7/App/command_policy.c)
 target_compile_definitions(command_policy_demo_test PRIVATE SPOOKY_DEMO)
-# The same policy test for the opt-in band-change qualification build (54w.12).
-spooky_test(command_policy_band_qualification_test command_policy_test.c ../CM7/App/command_policy.c)
-target_compile_definitions(command_policy_band_qualification_test PRIVATE SPOOKY_RADIO_BAND_QUALIFICATION)
 spooky_test(storage_lease_test storage_lease_test.c ../CM7/App/storage_lease.c)
 # The recorder USB reply queue policy (jjy.10).
 spooky_test(reply_queue_test reply_queue_test.c ../CM7/App/reply_queue.c)
@@ -86,6 +84,8 @@ spooky_generated_sm(radio_test RadioSm.c)
 # The radio control service's non-blocking tune against a fake Si4735 (54w.28).
 spooky_test(radio_control_test radio_control_test.c ../CM7/App/radio_control_service.c)
 target_include_directories(radio_control_test BEFORE PRIVATE stubs/radio)
+# With the BandSwitchQual fault injection (54w.12.3), which is inert unless armed.
+target_compile_definitions(radio_control_test PRIVATE SPOOKY_RADIO_BAND_QUALIFICATION)
 spooky_test(context_test context_test.c ../CM7/App/sm/context_port.c)
 spooky_generated_sm(context_test ContextSm.c)
 spooky_test(input_context_test input_context_test.c ../CM7/App/event_queue.c
