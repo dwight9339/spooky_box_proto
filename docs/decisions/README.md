@@ -40,6 +40,7 @@ Each file records one design decision, following the Documentation Classes rules
 | [0028](0028-monitor-only-ptt-without-mic-monitoring.md) | Monitor-only PTT without microphone monitoring | Accepted |
 | [0029](0029-demo-speaker-monitor.md) | Speaker monitoring in the demo image | Accepted |
 | [0030](0030-field-session-folder-and-event-log.md) | Field session folder, manifest and event log | Accepted |
+| [0031](0031-direct-led-radio-onset-flashes.md) | Encoder and button lights flash on radio onsets | Proposed |
 
 ## Template
 
