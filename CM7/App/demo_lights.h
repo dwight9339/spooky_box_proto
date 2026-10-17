@@ -17,7 +17,13 @@
  *   while the session prompt is open only Encoder 0, the confirm, green to
  *   start and yellow to stop (PRES-LED-06). In Shift only the controls with an
  *   available Shift action are lit (decision 0008 item 8, PRES-INP-01), the
- *   buttons at the idle level. Encoder LEDs are on/off per channel.
+ *   buttons at the idle level. A lit encoder shows its colour at its own
+ *   adjustable level (full_spooky_proto-p04.12): the encoders need a higher
+ *   level than the buttons to look as bright (bench 2026-10-16). Each channel
+ *   the colour uses gets that level's PWM duty, scaled down by a per-channel
+ *   balance so white looks neutral at every level. The prompt's green or
+ *   yellow Encoder 0 is at full lightness: at the encoder level a single
+ *   channel was too dim to read as the confirm cue (bench 2026-10-16).
  *
  * Portable C with no HAL calls.
  */
@@ -30,12 +36,23 @@
 #define DEMO_LIGHT_GREEN 2U
 #define DEMO_LIGHT_BLUE 1U
 
+/* Encoder LED channels, in the order of encoder_duty. */
+#define DEMO_LIGHT_CHANNELS 3U /* red, green, blue */
+
 /* Starting values for bench trials (Principle IV). */
 #define DEMO_LIGHTS_IDLE_LIGHTNESS 400U       /* permille L*, adjustable */
 #define DEMO_LIGHTS_BREATH_HIGH_LIGHTNESS 850U /* breathing runs from off to here */
 #define DEMO_LIGHTS_BREATH_PERIOD_MS 4000U
 #define DEMO_LIGHTS_BLINK_MS 120U             /* on and off time of a fault blink */
 #define DEMO_LIGHTS_BLINKS 3U
+#define DEMO_LIGHTS_ENCODER_LIGHTNESS 800U    /* permille L*, set by eye on the bench */
+#define DEMO_LIGHTS_PROMPT_LIGHTNESS 1000U    /* the prompt's Encoder 0 (PRES-LED-06) */
+#define DEMO_LIGHTS_BALANCE_FULL 1000U         /* permille: channel duty unscaled */
+/* Encoder white balance, permille of each channel's duty, set by eye on the
+ * bench (2026-10-16). */
+#define DEMO_LIGHTS_BALANCE_RED 1000U
+#define DEMO_LIGHTS_BALANCE_GREEN 450U
+#define DEMO_LIGHTS_BALANCE_BLUE 350U
 
 typedef struct
 {
@@ -52,15 +69,25 @@ typedef struct
 typedef struct
 {
   uint16_t button_duty[2]; /* PWM duty in permille */
-  uint8_t encoder_rgb[4];  /* DEMO_LIGHT_* bits */
+  uint8_t encoder_rgb[4];  /* DEMO_LIGHT_* bits: the colour of each encoder */
+  /* PWM duty in permille of each encoder's red, green and blue channel. */
+  uint16_t encoder_duty[4][DEMO_LIGHT_CHANNELS];
 } DemoLightsOutput;
 
-/* Resets the idle level to DEMO_LIGHTS_IDLE_LIGHTNESS. */
+/* Resets the button idle level, the encoder level and the balance to their
+ * DEMO_LIGHTS_* defaults. */
 void DemoLights_Init(void);
 /* Perceived lightness of a button that is not pressed, permille, clamped to
  * 0..1000. */
 void DemoLights_SetIdleLightness(uint16_t lightness_permille);
 uint16_t DemoLights_IdleLightness(void);
+/* Perceived lightness of a lit encoder, permille, clamped to 0..1000. */
+void DemoLights_SetEncoderLightness(uint16_t lightness_permille);
+uint16_t DemoLights_EncoderLightness(void);
+/* Scale of each encoder channel's duty, permille, clamped to 0..1000, so the
+ * three channels of a white encoder look neutral (set by eye on the bench). */
+void DemoLights_SetBalance(const uint16_t balance_permille[DEMO_LIGHT_CHANNELS]);
+void DemoLights_GetBalance(uint16_t balance_permille[DEMO_LIGHT_CHANNELS]);
 /* SES_PUB_RECORDING_REJECTED or _ABORTED (PRES-LED-05). */
 void DemoLights_OnSessionFault(uint32_t now_ms);
 void DemoLights_Compute(const DemoLightsInput *input, uint32_t now_ms,
