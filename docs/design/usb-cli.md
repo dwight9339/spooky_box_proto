@@ -550,8 +550,18 @@ neutral at every level. At boot the idle level resets to 400, the encoder level 
 like entry to the low-power charging monitor, turns the PWM off and leaves the button
 and encoder LEDs dark until the next reset.
 
+In Field, every lit encoder and button flashes on each radio onset (decision 0031): a
+small, medium or large onset raises its lightness by one, two or three thirds of the way
+to full, and the flash falls back one third every 80 ms. No flash shows on a held
+button, on Button 0 while it breathes or blinks its fault, while Shift is held, while
+the prompt is open or in Instrument; onsets then are dropped. `DEMO LIGHTS FLASH
+<small> <medium> <large> <decay-ms>` sets the three boosts in permille of the headroom
+(1 to 1000, not decreasing) and the time a full boost takes to fall away (1 to
+1000 ms); it resets to `333,667,1000/240ms` at boot. In the reply, `ONSETS` counts the
+onsets the lights took and `SUPPRESSED` those dropped, since boot.
+
 ```text
-OK DEMO LIGHTS IDLE=400 DUTY=113 PRESSED_DUTY=1000 ENCODER=800 ENCODER_DUTY=567 BALANCE=1000,450,350
+OK DEMO LIGHTS IDLE=400 DUTY=113 PRESSED_DUTY=1000 ENCODER=800 ENCODER_DUTY=567 BALANCE=1000,450,350 FLASH=333,667,1000/240ms ONSETS=0 SUPPRESSED=0
 ```
 
 The demo image lifts the in-band tune guard, so Classic keeps scanning during a session;

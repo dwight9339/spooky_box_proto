@@ -24,12 +24,21 @@
  *   balance so white looks neutral at every level. The prompt's green or
  *   yellow Encoder 0 is at full lightness: at the encoder level a single
  *   channel was too dim to read as the confirm cue (bench 2026-10-16).
+ * - Radio onset flashes (decision 0031, full_spooky_proto-p04.29): in Field,
+ *   each onset from the feed's lights reader raises every lit encoder and
+ *   button toward full through the light_flash envelope, encoders keeping
+ *   their hue. Dark controls stay dark. No flash on a held button or on
+ *   Button 0 while it breathes or blinks its fault (item 2), and none while
+ *   Shift is held, while the prompt is open or in Instrument (item 3): onsets
+ *   then are dropped and a flash in progress stops showing.
  *
  * Portable C with no HAL calls.
  */
 
 #include <stdbool.h>
 #include <stdint.h>
+
+#include "light_flash.h"
 
 /* Encoder LED channel bits. */
 #define DEMO_LIGHT_RED 4U
@@ -64,7 +73,15 @@ typedef struct
   bool shift_mode_switch; /* Shift plus Button 0: not during a session */
   bool shift_save;        /* Shift plus Button 1: capture save */
   bool shift_quick_jump;  /* Shift plus Encoder 1: Classic or a quick-jumped Manual */
+  bool field;             /* Context mode is Field (not Instrument) */
+  uint8_t onset;          /* RadioOnset size taken since the last pass, 0 for none */
 } DemoLightsInput;
+
+typedef struct
+{
+  uint32_t onsets;     /* onsets taken while flashes are allowed */
+  uint32_t suppressed; /* onsets dropped: Shift, prompt or Instrument */
+} DemoLightsFlashCounters;
 
 typedef struct
 {
@@ -75,7 +92,8 @@ typedef struct
 } DemoLightsOutput;
 
 /* Resets the button idle level, the encoder level and the balance to their
- * DEMO_LIGHTS_* defaults. */
+ * DEMO_LIGHTS_* defaults, the flash to LightFlash_DefaultConfig, and the flash
+ * counters. */
 void DemoLights_Init(void);
 /* Perceived lightness of a button that is not pressed, permille, clamped to
  * 0..1000. */
@@ -88,6 +106,11 @@ uint16_t DemoLights_EncoderLightness(void);
  * three channels of a white encoder look neutral (set by eye on the bench). */
 void DemoLights_SetBalance(const uint16_t balance_permille[DEMO_LIGHT_CHANNELS]);
 void DemoLights_GetBalance(uint16_t balance_permille[DEMO_LIGHT_CHANNELS]);
+/* Flash steps and decay (decision 0031 item 8); false and unchanged if
+ * LightFlash_Init refuses them. The flash in progress ends. */
+bool DemoLights_SetFlash(const LightFlashConfig *config);
+void DemoLights_GetFlash(LightFlashConfig *config);
+void DemoLights_GetFlashCounters(DemoLightsFlashCounters *counters);
 /* SES_PUB_RECORDING_REJECTED or _ABORTED (PRES-LED-05). */
 void DemoLights_OnSessionFault(uint32_t now_ms);
 void DemoLights_Compute(const DemoLightsInput *input, uint32_t now_ms,

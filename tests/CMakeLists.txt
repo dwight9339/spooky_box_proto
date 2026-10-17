@@ -114,7 +114,7 @@ spooky_test(classic_service_test classic_service_test.c ../CM7/App/classic_servi
 spooky_test(demo_view_test demo_view_test.c ../CM7/App/demo_view.c
     ../CM7/App/demo_instrument.c ../Common/Src/granular.c ../CM7/App/demo_sequencer.c
     ../Common/Src/transport.c ../Common/Src/step_pattern.c)
-spooky_test(demo_lights_test demo_lights_test.c ../CM7/App/demo_lights.c)
+spooky_test(demo_lights_test demo_lights_test.c ../CM7/App/demo_lights.c ../Common/Src/light_flash.c)
 spooky_test(rolling_catalog_test rolling_catalog_test.c ../CM7/App/rolling_catalog.c)
 # The Instrument clip: range, decimation and the plain loop (p04.6).
 spooky_test(clip_decimator_test clip_decimator_test.c ../CM7/App/clip_decimator.c)
