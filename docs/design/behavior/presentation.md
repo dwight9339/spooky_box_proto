@@ -67,7 +67,7 @@ and [decision 0001](../../decisions/0001-initial-ui-and-bus-ownership.md).
 | PRES-RAD-03 | `RAD_PUB_TUNED` | Display | `OK RADIO BAND=... FREQ=... RSSI=... SNR=... VALID=...` |
 | PRES-RAD-04 | `RAD_PUB_REJECTED_RANGE` | Reply to the command's source | `ERR <band> range: <min>..<max> kHz` |
 | PRES-RAD-05 | `RAD_PUB_TUNE_FAILED` | Display, with the target and reason | `ERR RADIO tune failed` |
-| PRES-RAD-06 | Band switch started; not published while the switch is one synchronous action (`full_spooky_proto-54w.12`) | Display, lights and audio | None |
+| PRES-RAD-06 | Band switch started; the machine waits in Switching but does not publish it yet (`full_spooky_proto-54w.12.4`) | Display, lights and audio | None |
 | PRES-RAD-07 | `RAD_PUB_BAND_CHANGED` | Display, lights and audio | `OK RADIO BAND=... FREQ=... RSSI=... SNR=... VALID=...` |
 | PRES-RAD-08 | `RAD_PUB_FAULT_START`, `RAD_PUB_FAULT_BAND`, `RAD_PUB_FAULT_AUDIO` | Display, lights and audio, as a fault | `ERR RADIO band switch failed; reset required`, or a `[bridge] FAIL` or `[radio] audio fault` log line; the red board LED turns on |
 | PRES-RAD-09 | `RAD_PUB_REJECTED_UNAVAILABLE` | Reply to the command's source | `ERR RADIO audio path is not running` |

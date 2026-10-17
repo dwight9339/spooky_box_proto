@@ -49,6 +49,7 @@ typedef struct
   RadioTuneStatus tune;       /* Most recent successful tune result. */
   RadioControlFault last_fault;
   bool tune_in_flight;        /* A non-blocking tune has not completed yet. */
+  bool band_switch_in_flight; /* A band switch has not completed yet. */
 } RadioControlStatus;
 
 typedef enum
@@ -58,6 +59,14 @@ typedef enum
   RADIO_TUNE_POLL_DONE,
   RADIO_TUNE_POLL_FAILED      /* bus error or no completion within 2 s */
 } RadioTunePoll;
+
+typedef enum
+{
+  RADIO_BAND_POLL_IDLE = 0,   /* no band switch in flight */
+  RADIO_BAND_POLL_PENDING,
+  RADIO_BAND_POLL_DONE,
+  RADIO_BAND_POLL_FAILED      /* ERR, bus error, or a step's wait exceeded 2 s */
+} RadioBandPoll;
 
 /* Owns the Si4735 on I2C1, its reset line and the SW antenna switch. It does
  * not touch audio DMA or the codec; callers sequence muting around transitions. */
@@ -72,7 +81,17 @@ bool RadioControl_TuneInRange(uint32_t frequency_khz);
 uint32_t RadioControl_StepTarget(bool up, bool wrap);
 bool RadioControl_BeginTune(uint32_t frequency_khz);
 RadioTunePoll RadioControl_PollTune(RadioTuneStatus *result);
-bool RadioControl_SwitchBand(RadioBand band, RadioTuneStatus *result);
+/* Non-blocking band switch (full_spooky_proto-54w.12.2). BeginSwitchBand starts
+ * the proven power-cycle sequence into the band without touching the bus and
+ * abandons any tune in flight; it refuses an invalid band, an unpowered receiver
+ * or a switch already in flight. Each PollSwitchBand call performs at most one
+ * bus step and never waits: one command write with a status read before and
+ * after it, or one completion poll of the band's first tune. Fixed delays and device waits elapse between calls. DONE
+ * reports the first tune's result in the new band; after FAILED the receiver
+ * state is unknown and the caller holds it in reset. Callers mute and gate the
+ * audio around the switch. */
+bool RadioControl_BeginSwitchBand(RadioBand band);
+RadioBandPoll RadioControl_PollSwitchBand(RadioTuneStatus *result);
 void RadioControl_PowerDown(void);
 void RadioControl_HoldReset(void);
 void RadioControl_LogTune(const char *prefix,

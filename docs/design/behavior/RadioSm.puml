@@ -5,10 +5,10 @@
 ' Guards and actions call only functions in CM7/App/sm/radio_port.h.
 '
 ' Commands come from the CLI today and from scan engines and physical controls
-' later; every command is answered exactly once to its source. In-band tunes do
-' not block: the machine waits in Tuning while the radio service polls completion
-' once per loop pass. A band switch is still one synchronous action; making it
-' incremental and qualifying it during recording is full_spooky_proto-54w.12.
+' later; every command is answered exactly once to its source. Neither tunes nor
+' band switches block: the machine waits in Tuning or Switching while the radio
+' service advances the receiver one bounded bus step per loop pass
+' (full_spooky_proto-54w.28 and 54w.12.2).
 '
 ' Band, frequency, signal quality and each band's last frequency are model data
 ' kept by the radio service. The published frequency is always a completed result
@@ -24,10 +24,11 @@ state Stopped
 state Operational {
   state Settled
   state Tuning
+  state Switching
 }
 state Faulted
 state TuneIssue <<choice>>
-state BandSwitch <<choice>>
+state BandIssue <<choice>>
 state NextCommand <<choice>>
 
 ' --- Start ----------------------------------------------------------------------
@@ -43,7 +44,7 @@ Stopped : BAND / rad_reject(RAD_REJECT_UNAVAILABLE);
 Settled --> TuneIssue : TUNE [rad_request_in_range()] / rad_begin_request();
 Settled : TUNE [!rad_request_in_range()] / rad_reject(RAD_REJECT_RANGE);
 Settled --> TuneIssue : STEP / rad_begin_request();
-Settled --> BandSwitch : BAND / rad_switch_band_request();
+Settled --> BandIssue : BAND / rad_begin_band_request();
 
 ' Issuing the tune can fail on the bus; the last completed result stays published.
 TuneIssue --> Tuning : [rad_tune_issued()] / rad_publish(RAD_PUB_TUNE_STARTED);
@@ -62,16 +63,30 @@ Tuning : BAND / rad_hold_request();
 Tuning --> NextCommand : TUNE_DONE / rad_publish(RAD_PUB_TUNED);
 Tuning --> NextCommand : TUNE_FAILED / rad_publish(RAD_PUB_TUNE_FAILED);
 
+' A tune held behind a band switch is checked against the new band here.
+NextCommand --> Settled : [rad_pending_out_of_range()] / rad_reject_pending(RAD_REJECT_RANGE);
 NextCommand --> TuneIssue : [rad_pending_is_tune()] / rad_begin_pending();
-NextCommand --> BandSwitch : [rad_pending_is_band()] / rad_switch_band_pending();
+NextCommand --> BandIssue : [rad_pending_is_band()] / rad_begin_band_pending();
 NextCommand --> Settled
 
 ' --- Band switch -----------------------------------------------------------------
-' Mute the monitor and close the stream gate; power-cycle the receiver into the
-' band on its antenna path; tune the band's last frequency; restart digital output;
-' open the gate and unmute. The sequence is documented in radio_control_service.c.
-BandSwitch --> Settled : [rad_band_switched()] / rad_publish(RAD_PUB_BAND_CHANGED);
-BandSwitch --> Faulted : / rad_publish(RAD_PUB_FAULT_BAND);
+' Mute the monitor and close the stream gate, then begin the switch: power-cycle
+' the receiver into the band on its antenna path, tune the band's last frequency
+' and restart digital output. When the receiver reports the switch complete, the
+' adapter opens the gate and unmutes. The sequence is documented in
+' radio_control_service.c. Starting it can fail before any bus step.
+BandIssue --> Switching : [rad_band_switch_begun()]
+BandIssue --> Faulted : / rad_publish(RAD_PUB_FAULT_BAND);
+
+' --- Switching: the receiver is changing band; no radio audio flows ------------
+' Commands wait latest-wins as in Tuning. A tune's range is checked once the new
+' band is in place, since it is not known until then.
+Switching : TUNE / rad_hold_request();
+Switching : STEP / rad_hold_request();
+Switching : BAND / rad_hold_request();
+Switching --> NextCommand : BAND_DONE / rad_publish(RAD_PUB_BAND_CHANGED);
+' A failed switch leaves the receiver in reset; the waiting command is answered.
+Switching --> Faulted : BAND_FAILED / rad_publish(RAD_PUB_FAULT_BAND); rad_abandon();
 
 ' --- Faults ---------------------------------------------------------------------
 ' A radio SAI or DMA error, or a codec output or volume failure, stops radio audio.
