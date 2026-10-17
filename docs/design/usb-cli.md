@@ -203,7 +203,7 @@ running`.
 In-band tuning (`TUNE`, `UP`, `DOWN` and Classic's jumps) and band changes are allowed
 while recording ([decision 0003](../decisions/0003-radio-control-during-recording.md);
 evidence for [tuning](../evidence/2026-10-16-tune-guard-lift.md) and
-[band changes](../evidence/2026-10-17-band-guard-lift.md)). Each tune and band switch
+[band changes](../evidence/2026-10-16-band-guard-lift.md)). Each tune and band switch
 is stored in the session's event log. The radio track inside a retune interval holds
 receiver output that is not a measurement
 ([decision 0015](../decisions/0015-raw-radio-track-during-in-band-tunes.md)), and inside

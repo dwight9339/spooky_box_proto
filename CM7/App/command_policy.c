@@ -44,7 +44,7 @@ static const CommandPolicyRule rules[COMMAND_ACTION_COUNT] = {
    * questions were answered by 54w.12 (user decisions Q1-Q8): the silence
    * fill and gap events of decision 0004 (54w.12.1), the non-blocking switch
    * (54w.12.2), failure isolation (54w.12.3) and the band switch events
-   * (54w.12.4); see docs/evidence/2026-10-17-band-guard-lift.md. */
+   * (54w.12.4); see docs/evidence/2026-10-16-band-guard-lift.md. */
   [COMMAND_ACTION_RADIO_BAND] = {ALLOW, ALLOW, ALLOW, NULL},
   [COMMAND_ACTION_SCAN_PARAMETER] = {ALLOW, ALLOW, ALLOW, NULL}
 };
