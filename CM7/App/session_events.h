@@ -37,9 +37,10 @@ void SessionEvents_GapStart(uint8_t band_before, const AudioTimelinePosition *fi
 void SessionEvents_GapEnd(uint8_t band_after, uint32_t frequency_khz,
                           const AudioTimelinePosition *last);
 
-/* Writer: the records due now (see SessionEventLog_Prepare), at most one
- * sector, then the outcome of writing them. */
-uint32_t SessionEvents_Prepare(uint32_t now_ms, bool flush_all,
+/* Writer: the records due now (see SessionEventLog_Prepare) below horizon,
+ * the frames already in the audio file, at most one sector; then the outcome
+ * of writing them. */
+uint32_t SessionEvents_Prepare(uint32_t now_ms, bool flush_all, uint64_t horizon,
                                uint8_t out[SESSION_EVENT_SECTOR_BYTES]);
 void SessionEvents_Commit(uint32_t records);
 void SessionEvents_WriteFailed(void);

@@ -79,12 +79,18 @@ void SessionEventLog_Reset(SessionEventLog *log);
 bool SessionEventLog_Post(SessionEventLog *log, const SessionEvent *event, uint32_t now_ms);
 /* True once per loss: the caller posts the state snapshot (item 13). */
 bool SessionEventLog_TakeResync(SessionEventLog *log);
-/* Encodes the oldest waiting records into out when a whole sector is waiting,
- * when the oldest has waited flush_ms, or when flush_all is set. Returns the
- * number of records encoded, 0 when nothing is due. */
+/* Encodes the oldest waiting records whose frame is below horizon (the audio
+ * already in the file) into out: a whole sector of them, or fewer once the
+ * oldest has waited flush_ms or when flush_all is set. A record beyond the
+ * horizon, and every record behind it, waits. Returns the number of records
+ * encoded, 0 when nothing is due. */
 uint32_t SessionEventLog_Prepare(const SessionEventLog *log, uint32_t now_ms,
-                                 uint32_t flush_ms, bool flush_all,
+                                 uint32_t flush_ms, bool flush_all, uint64_t horizon,
                                  uint8_t out[SESSION_EVENT_SECTOR_BYTES]);
+/* Session end (decision 0030 item 10): drops waiting records after last_frame
+ * and lowers the sequence of every later record by the number dropped before
+ * it, so the drop is not read as a loss. Returns the number dropped. */
+uint32_t SessionEventLog_DropAfter(SessionEventLog *log, uint64_t last_frame);
 /* The prepared records reached the card. */
 void SessionEventLog_Commit(SessionEventLog *log, uint32_t records);
 /* The card refused them: every waiting record is counted lost. */

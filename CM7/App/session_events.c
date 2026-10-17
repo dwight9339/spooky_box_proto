@@ -121,6 +121,8 @@ void SessionEvents_End(uint64_t last_frame, uint8_t end_reason, uint32_t now_ms)
   {
     return;
   }
+  /* Item 10: a record observed after the last frame is not written. */
+  (void)SessionEventLog_DropAfter(&session_log, last_frame);
   event = Blank(SESSION_EVENT_SESSION_END);
   event.frame = last_frame;
   event.payload[0] = end_reason;
@@ -206,14 +208,14 @@ void SessionEvents_GapEnd(uint8_t band_after, uint32_t frequency_khz,
   }
 }
 
-uint32_t SessionEvents_Prepare(uint32_t now_ms, bool flush_all,
+uint32_t SessionEvents_Prepare(uint32_t now_ms, bool flush_all, uint64_t horizon,
                                uint8_t out[SESSION_EVENT_SECTOR_BYTES])
 {
 #ifndef SPOOKY_SESSION_EVENT_FLUSH_MS
 #define SPOOKY_SESSION_EVENT_FLUSH_MS 2000U /* decision 0030 item 14 */
 #endif
   return SessionEventLog_Prepare(&session_log, now_ms, SPOOKY_SESSION_EVENT_FLUSH_MS,
-                                 flush_all, out);
+                                 flush_all, horizon, out);
 }
 
 void SessionEvents_Commit(uint32_t records)

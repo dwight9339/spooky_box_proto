@@ -712,7 +712,7 @@ static PrepareStep RecorderPrepareEvents(void)
  * whose oldest record has waited the flush bound, synced so sparse events
  * reach the card (item 14). A failure is counted as loss and reported once;
  * the recording continues (item 15). Returns whether records were written. */
-static bool RecorderEventStep(bool flush_all)
+static bool RecorderEventStep(bool flush_all, uint64_t horizon)
 {
   static uint8_t sector[SESSION_EVENT_SECTOR_BYTES];
   uint32_t records;
@@ -725,7 +725,7 @@ static bool RecorderEventStep(bool flush_all)
   {
     return false;
   }
-  records = SessionEvents_Prepare(HAL_GetTick(), flush_all, sector);
+  records = SessionEvents_Prepare(HAL_GetTick(), flush_all, horizon, sector);
   if (records == 0U)
   {
     return false;
@@ -1256,7 +1256,8 @@ static bool RecorderFinish(bool aborted, const char *reason)
 
     SessionEvents_End((frames_written != 0U) ? (uint64_t)(frames_written - 1U) : 0U,
                       SessionEvents_EndReasonCode(reason), HAL_GetTick());
-    while (RecorderEventStep(true))
+    /* The session end record is at the last frame, inside the horizon. */
+    while (RecorderEventStep(true, (uint64_t)frames_written + 1U))
     {
     }
     if (f_close(&events_file) != FR_OK)
@@ -1814,7 +1815,7 @@ void RadioRecorder_Service(void)
     session_event_pending = true;
     SessionControl_ReportBlockWritten();
   }
-  else if (!RecorderEventStep(false))
+  else if (!RecorderEventStep(false, frames_written)) /* only frames in the file */
   {
     RecorderRunwayStep();
   }
