@@ -146,9 +146,11 @@ void RadioAdapter_ServiceActivity(void)
   uint32_t block = 0U;
   const bool known = AudioPath_GetBlockInProgress(&block);
 
+  /* A band switch keeps the retune interval it opened until it completes. */
   RadioActivityFeed_Service(HAL_GetTick(),
                             (state == RAD_STATE_SETTLED) || (state == RAD_STATE_TUNING),
-                            state == RAD_STATE_TUNING, known, block);
+                            (state == RAD_STATE_TUNING) || (state == RAD_STATE_SWITCHING),
+                            known, block);
   ReportGapEdges();
 }
 
@@ -290,6 +292,12 @@ void RadioAdapter_Dispatch(const EvqEvent *event)
     case APP_EVENT_RADIO_TUNE_FAILED:
       Radio_OnTuneFailed();
       break;
+    case APP_EVENT_RADIO_BAND_DONE:
+      Radio_OnBandDone();
+      break;
+    case APP_EVENT_RADIO_BAND_FAILED:
+      Radio_OnBandFailed();
+      break;
     case APP_EVENT_RADIO_AUDIO_FAULT:
       Radio_OnAudioFault();
       break;
@@ -298,40 +306,83 @@ void RadioAdapter_Dispatch(const EvqEvent *event)
   }
 }
 
-/* The completion of the tune in flight, once the service reports it, and whether
- * it has been posted. A completion the queue refuses is posted again on the next
- * pass rather than polled again, so the machine gets exactly one completion per
- * tune and a tune that finished is never reported as failed. */
+/* The completion of the tune or band switch in flight, once the service reports
+ * it, and whether it has been posted. A completion the queue refuses is posted
+ * again on the next pass rather than polled again, so the machine gets exactly
+ * one completion per tune or switch and one that finished is never reported as
+ * failed. */
 static bool completion_known;
 static uint16_t completion_type;
 static bool completion_posted;
 
+static void BandSwitchFailed(void);
+
+static bool PollTuneCompletion(void)
+{
+  switch (RadioControl_PollTune(NULL))
+  {
+    case RADIO_TUNE_POLL_DONE:
+      completion_type = APP_EVENT_RADIO_TUNE_DONE;
+      return true;
+    case RADIO_TUNE_POLL_FAILED:
+      completion_type = APP_EVENT_RADIO_TUNE_FAILED;
+      return true;
+    case RADIO_TUNE_POLL_IDLE:
+      /* The machine waits for a tune the service no longer has: fail it
+       * rather than wait forever. */
+      completion_type = APP_EVENT_RADIO_TUNE_FAILED;
+      return true;
+    case RADIO_TUNE_POLL_PENDING:
+    default:
+      return false;
+  }
+}
+
+/* Once the receiver is in the new band with its digital output running again:
+ * reseed the activity averages, open the stream gate (which ends the decision
+ * 0004 gap) and unmute. A failure here, or anywhere in the switch, faults the
+ * radio. */
+static bool PollBandCompletion(void)
+{
+  switch (RadioControl_PollSwitchBand(NULL))
+  {
+    case RADIO_BAND_POLL_PENDING:
+      return false;
+    case RADIO_BAND_POLL_DONE:
+      RadioActivityFeed_ResetAverages();
+      AudioPath_SetStreamEnabled(true);
+      if (CodecVolume_SetTransitionMuted(false))
+      {
+        completion_type = APP_EVENT_RADIO_BAND_DONE;
+        return true;
+      }
+      break;
+    case RADIO_BAND_POLL_FAILED:
+    case RADIO_BAND_POLL_IDLE: /* as for a tune the service no longer has */
+    default:
+      break;
+  }
+  BandSwitchFailed();
+  completion_type = APP_EVENT_RADIO_BAND_FAILED;
+  return true;
+}
+
 void RadioAdapter_Service(void)
 {
-  if (Radio_GetState() != RAD_STATE_TUNING)
+  const RadState state = Radio_GetState();
+
+  if ((state != RAD_STATE_TUNING) && (state != RAD_STATE_SWITCHING))
   {
     return;
   }
   if (!completion_known)
   {
-    switch (RadioControl_PollTune(NULL))
+    completion_known = (state == RAD_STATE_TUNING) ? PollTuneCompletion()
+                                                   : PollBandCompletion();
+    if (!completion_known)
     {
-      case RADIO_TUNE_POLL_DONE:
-        completion_type = APP_EVENT_RADIO_TUNE_DONE;
-        break;
-      case RADIO_TUNE_POLL_FAILED:
-        completion_type = APP_EVENT_RADIO_TUNE_FAILED;
-        break;
-      case RADIO_TUNE_POLL_IDLE:
-        /* The machine waits for a tune the service no longer has: fail it
-         * rather than wait forever. */
-        completion_type = APP_EVENT_RADIO_TUNE_FAILED;
-        break;
-      case RADIO_TUNE_POLL_PENDING:
-      default:
-        return;
+      return;
     }
-    completion_known = true;
   }
   if (!completion_posted)
   {
@@ -410,15 +461,33 @@ bool rad_integration_begin_tune(uint32_t frequency_khz)
   return retune_issued;
 }
 
+/* A band switch that cannot start or finish: radio audio stops, the receiver
+ * is held in reset and the output stays muted. */
+static void BandSwitchFailed(void)
+{
+  AudioPath_SetStreamEnabled(false);
+  AudioPath_MarkStopped();
+  (void)CodecVolume_SetTransitionMuted(true);
+  RadioControl_HoldReset();
+  BSP_LED_Off(LED_GREEN);
+  BSP_LED_On(LED_RED);
+  printf("[radio] FAIL: band switch; receiver reset and output muted\r\n");
+}
+
 /* Sequences the monitored output around a receiver function change. The radio
- * service only changes the Si4735; this adapter owns muting and the DMA copy. */
-bool rad_integration_switch_band(uint32_t band_value)
+ * service only changes the Si4735; this adapter owns muting and the DMA copy.
+ * The switch itself advances in RadioAdapter_Service, one bounded bus step a
+ * pass (full_spooky_proto-54w.12.2), while the closed stream gate substitutes
+ * silence. */
+bool rad_integration_begin_band_switch(uint32_t band_value)
 {
   const RadioBand band = (RadioBand)band_value;
-  RadioTuneStatus tune_status;
 
+  completion_known = false;
+  completion_posted = false;
   if (band >= RADIO_BAND_COUNT)
   {
+    BandSwitchFailed();
     return false;
   }
   /* A band switch is also not a measurement, and the new band's level is not
@@ -433,32 +502,16 @@ bool rad_integration_switch_band(uint32_t band_value)
   }
   if (!CodecVolume_SetTransitionMuted(true))
   {
-    goto failed;
+    BandSwitchFailed();
+    return false;
   }
   AudioPath_SetStreamEnabled(false);
-
-  if (!RadioControl_SwitchBand(band, &tune_status))
+  if (!RadioControl_BeginSwitchBand(band))
   {
-    goto failed;
-  }
-
-  RadioActivityFeed_ResetAverages();
-  AudioPath_SetStreamEnabled(true);
-  if (!CodecVolume_SetTransitionMuted(false))
-  {
-    goto failed;
+    BandSwitchFailed();
+    return false;
   }
   return true;
-
-failed:
-  AudioPath_SetStreamEnabled(false);
-  AudioPath_MarkStopped();
-  (void)CodecVolume_SetTransitionMuted(true);
-  RadioControl_HoldReset();
-  BSP_LED_Off(LED_GREEN);
-  BSP_LED_On(LED_RED);
-  printf("[radio] FAIL: band switch; receiver reset and output muted\r\n");
-  return false;
 }
 
 static void SendRange(void)

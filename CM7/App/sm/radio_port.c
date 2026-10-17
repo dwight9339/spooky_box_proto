@@ -11,7 +11,7 @@ static const RadCommand *current; /* the command being dispatched, if any */
 static RadCommand in_flight;      /* the tune or band switch being performed */
 static RadCommand pending;        /* the newest command waiting behind it */
 static bool issued;
-static bool switched;
+static bool switch_begun;
 static RadStatus status;
 
 static const RadCommand no_command = {RAD_CMD_NONE, RAD_SOURCE_INTERNAL, 0u, 0u, 0u, 0u};
@@ -47,10 +47,10 @@ static void begin(RadCommand command)
     issued = rad_integration_begin_tune(in_flight.target_khz);
 }
 
-static void switch_band(RadCommand command)
+static void begin_band(RadCommand command)
 {
     in_flight = command;
-    switched = rad_integration_switch_band(command.arg);
+    switch_begun = rad_integration_begin_band_switch(command.arg);
 }
 
 static void dispatch_command(RadioSm_EventId event, const RadCommand *command)
@@ -66,7 +66,7 @@ void Radio_Init(void)
     in_flight = no_command;
     pending = no_command;
     issued = false;
-    switched = false;
+    switch_begun = false;
     status = (RadStatus){0};
     RadioSm_ctor(&machine);
     RadioSm_start(&machine);
@@ -110,6 +110,16 @@ void Radio_OnTuneFailed(void)
     RadioSm_dispatch_event(&machine, RadioSm_EventId_TUNE_FAILED);
 }
 
+void Radio_OnBandDone(void)
+{
+    RadioSm_dispatch_event(&machine, RadioSm_EventId_BAND_DONE);
+}
+
+void Radio_OnBandFailed(void)
+{
+    RadioSm_dispatch_event(&machine, RadioSm_EventId_BAND_FAILED);
+}
+
 void Radio_OnAudioFault(void)
 {
     RadioSm_dispatch_event(&machine, RadioSm_EventId_AUDIO_FAULT);
@@ -122,6 +132,8 @@ RadState Radio_GetState(void)
         return RAD_STATE_SETTLED;
     case RadioSm_StateId_TUNING:
         return RAD_STATE_TUNING;
+    case RadioSm_StateId_SWITCHING:
+        return RAD_STATE_SWITCHING;
     case RadioSm_StateId_FAULTED:
         return RAD_STATE_FAULTED;
     default:
@@ -150,9 +162,9 @@ bool rad_tune_issued(void)
     return issued;
 }
 
-bool rad_band_switched(void)
+bool rad_band_switch_begun(void)
 {
-    return switched;
+    return switch_begun;
 }
 
 bool rad_pending_is_tune(void)
@@ -163,6 +175,11 @@ bool rad_pending_is_tune(void)
 bool rad_pending_is_band(void)
 {
     return pending.kind == RAD_CMD_BAND;
+}
+
+bool rad_pending_out_of_range(void)
+{
+    return pending.kind == RAD_CMD_TUNE && !rad_integration_in_range(pending.arg);
 }
 
 /* --- Actions called by the diagram --------------------------------------------- */
@@ -181,18 +198,18 @@ void rad_begin_pending(void)
     begin(next);
 }
 
-void rad_switch_band_request(void)
+void rad_begin_band_request(void)
 {
     if (current != NULL) {
-        switch_band(*current);
+        begin_band(*current);
     }
 }
 
-void rad_switch_band_pending(void)
+void rad_begin_band_pending(void)
 {
     const RadCommand next = pending;
     pending = no_command;
-    switch_band(next);
+    begin_band(next);
 }
 
 void rad_hold_request(void)
@@ -222,6 +239,14 @@ void rad_reject(RadReject reason)
 {
     publish(reason == RAD_REJECT_RANGE ? RAD_PUB_REJECTED_RANGE : RAD_PUB_REJECTED_UNAVAILABLE,
             current);
+}
+
+void rad_reject_pending(RadReject reason)
+{
+    const RadCommand rejected = pending;
+    pending = no_command;
+    publish(reason == RAD_REJECT_RANGE ? RAD_PUB_REJECTED_RANGE : RAD_PUB_REJECTED_UNAVAILABLE,
+            &rejected);
 }
 
 void rad_publish(RadPublished event)

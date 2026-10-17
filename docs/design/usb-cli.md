@@ -179,15 +179,16 @@ OK RADIO BAND=FM FREQ=99100 kHz (99.100 MHz) RSSI=7 SNR=2 VALID=0
 `TUNE`, `UP`, `DOWN` and `BAND <band>` go to the Radio machine
 ([RadioSm](behavior/RadioSm.puml)) through the bounded M7 event queue. If the queue
 refuses the command, the reply is `ERR BUSY` and nothing changes. Otherwise the reply
-comes when the command's outcome is known: a tune does not hold the CLI or the
-foreground loop while the receiver settles. One tune is in flight at a time, and
-one newer command waits behind it. A command that arrives while another is waiting
+comes when the command's outcome is known: neither a tune nor a band switch holds
+the CLI or the foreground loop while the receiver settles or power-cycles. One tune
+or band switch is in flight at a time, and one newer command waits behind it. A command that arrives while another is waiting
 replaces it, and the replaced command is answered `OK RADIO SUPERSEDED`, so a client
 that streams targets (for example a Pd slider) gets exactly one reply per line and
 no backlog builds up. Other replies are `ERR RADIO tune failed` (bus error, or no
 completion within 2 s), `ERR RADIO abandoned; radio fault` for a command still
 waiting when the radio faults, and `ERR RADIO audio path is not running` once the
-radio is out of service. A band switch is still one synchronous step.
+radio is out of service. A `TUNE` that waits behind a band switch is checked
+against the new band when the switch completes.
 
 In-band tuning (`TUNE`, `UP`, `DOWN` and Classic's jumps) is allowed while
 recording ([decision 0003](../decisions/0003-radio-control-during-recording.md);
