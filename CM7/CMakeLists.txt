@@ -49,7 +49,7 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 option(SPOOKY_RADIO_BAND_QUALIFICATION
-    "Allow band changes while recording for bench qualification (54w.12)" OFF)
+    "Bench fault injection: the BAND FAIL command fails the next band switch (54w.12.3)" OFF)
 if(SPOOKY_RADIO_BAND_QUALIFICATION)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SPOOKY_RADIO_BAND_QUALIFICATION=1)
 endif()

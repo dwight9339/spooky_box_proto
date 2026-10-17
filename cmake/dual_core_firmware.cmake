@@ -7,7 +7,7 @@ set(SPOOKY_FIRMWARE_SUFFIX ".elf")
 option(SPOOKY_IPC_SMOKE "Build the unvalidated dual-core IPC bench experiment" OFF)
 set(SPOOKY_IPC_M4_VERSION "1" CACHE STRING "M4 diagnostic ABI; 2 tests mismatch")
 option(SPOOKY_RADIO_BAND_QUALIFICATION
-    "Allow band changes while recording for bench qualification (54w.12)" OFF)
+    "Bench fault injection: the BAND FAIL command fails the next band switch (54w.12.3)" OFF)
 option(SPOOKY_LOGGER_LOAD_QUALIFICATION
     "Add LOG LOAD and LOG FAULT for logger saturation bench qualification (jjy.6)" OFF)
 option(SPOOKY_ISR_TIMING_QUALIFICATION

@@ -148,7 +148,7 @@ foreground service. The budget table and queue-headroom rationale are in
 
 While Preparing, Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
 transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE`, `UI MATRIX ORIENT`,
-`UI MATRIX FEEDBACK ON` and `UI DISPLAY TEST` patterns, and radio band changes (except in the `BandSwitchQual` preset) are rejected before their service handlers
+`UI MATRIX FEEDBACK ON` and `UI DISPLAY TEST` patterns are rejected before their service handlers
 run. Status and diagnostic reads, `CLASSIC` parameter commands and `MONITOR PTT` remain available. Every policy rejection is a
 numeric `COMMAND_REJECTED` diagnostic and returns one stable `ERR` line. No command
 is deferred until the recording ends.
@@ -200,17 +200,20 @@ Until a reset, `STATUS` and every radio command answer
 `HAS_FAULT`, and `RECORD START` is refused with `ERR RECORD radio audio path is not
 running`.
 
-In-band tuning (`TUNE`, `UP`, `DOWN` and Classic's jumps) is allowed while
-recording ([decision 0003](../decisions/0003-radio-control-during-recording.md);
-[evidence](../evidence/2026-10-16-tune-guard-lift.md)). Each tune is stored in the
-session's event log, and the radio track inside a retune interval holds receiver output
-that is not a measurement ([decision 0015](../decisions/0015-raw-radio-track-during-in-band-tunes.md)).
-Band changes are still rejected while recording, with
-`ERR RADIO band changes disabled while recording`, until `full_spooky_proto-54w.12`
-qualifies them. The opt-in `BandSwitchQual` preset allows them while recording, for
-that qualification only. It also accepts `BAND FAIL`, which makes the next band switch
-fail after its receiver power-up command, as if the receiver had answered an error;
-the reply is `OK RADIO next band switch fails at POWER_UP`.
+In-band tuning (`TUNE`, `UP`, `DOWN` and Classic's jumps) and band changes are allowed
+while recording ([decision 0003](../decisions/0003-radio-control-during-recording.md);
+evidence for [tuning](../evidence/2026-10-16-tune-guard-lift.md) and
+[band changes](../evidence/2026-10-17-band-guard-lift.md)). Each tune and band switch
+is stored in the session's event log. The radio track inside a retune interval holds
+receiver output that is not a measurement
+([decision 0015](../decisions/0015-raw-radio-track-during-in-band-tunes.md)), and inside
+a band switch's gap it holds digital silence
+([decision 0004](../decisions/0004-radio-track-continuity-across-transitions.md)).
+
+The opt-in `BandSwitchQual` preset is for bench fault injection. It accepts
+`BAND FAIL`, which makes the next band switch fail after its receiver power-up command,
+as if the receiver had answered an error; the reply is
+`OK RADIO next band switch fails at POWER_UP`.
 
 During a band switch the audio path's stream gate is closed. Each radio half-buffer
 then reaches the recorder as digital silence of the same length, so the radio and
