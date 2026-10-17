@@ -1185,12 +1185,19 @@ void UiBoardTest_MatrixRelease(bool blank)
   ui_matrix_held = false;
 }
 
+#if defined(SPOOKY_DEMO)
+static void UiDemoLightsStop(void);
+#endif
+
 void UiBoardTest_SafeOff(void)
 {
   ui_watch_enabled = false;
   ui_matrix_held = false;
   ui_led_chase_active = false;
   UiRenderService_SafeOff();
+#if defined(SPOOKY_DEMO)
+  UiDemoLightsStop();
+#endif
   UiAllLedsOff();
   UiMatrixHardwareOff();
   UiDisplayHardwareOff();
@@ -1342,6 +1349,36 @@ void UiBoardTest_DemoSetLights(const uint16_t button_duty[2], const uint16_t enc
 
     *UiDemoPwmCompare(&ui_demo_pwm[index]) =
       (duty > UI_DEMO_PWM_PERIOD) ? UI_DEMO_PWM_PERIOD : duty;
+  }
+}
+
+/* SafeOff (sleep entry, UI OFF): writes to the output latch do not reach a pin
+ * in timer mode, so hand every LED pin back to GPIO, latched low, and stop the
+ * timers. The lights stay dark until the next reset. */
+static void UiDemoLightsStop(void)
+{
+  GPIO_InitTypeDef gpio = {0};
+  uint32_t index;
+
+  if (!ui_demo_pwm_ready)
+  {
+    return;
+  }
+  ui_demo_pwm_ready = false;
+  UiAllLedsOff();
+  gpio.Mode = GPIO_MODE_OUTPUT_PP;
+  gpio.Pull = GPIO_NOPULL;
+  gpio.Speed = GPIO_SPEED_FREQ_LOW;
+  for (index = 0U; index < UI_LED_COUNT; ++index)
+  {
+    gpio.Pin = ui_leds[index].pin;
+    HAL_GPIO_Init(ui_leds[index].port, &gpio);
+  }
+  for (index = 0U; index < (sizeof(ui_demo_pwm_timers) / sizeof(ui_demo_pwm_timers[0]));
+       ++index)
+  {
+    ui_demo_pwm_timers[index]->CR1 = 0U;
+    ui_demo_pwm_timers[index]->CCER = 0U;
   }
 }
 

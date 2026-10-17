@@ -34,8 +34,9 @@ void UiBoardTest_MatrixRelease(bool blank);
  * forwarded to DemoField_OnControl and DemoField_OnDetents from the UI service
  * pass. LightsStart gives the two button LEDs and the twelve encoder LED
  * channels to timer PWM (TIM16, TIM17, TIM1, TIM2, TIM4, TIM12, TIM13, TIM14;
- * p04.12); duty is in permille, encoder channels red, green, blue. DisplayStart resets and blanks the OLED (about 200 ms, boot only);
- * DisplayWritePage writes one 128-byte page (bounded SPI6 transfer). Pressed
+ * p04.12); duty is in permille, encoder channels red, green, blue. SafeOff
+ * returns those pins to GPIO, low, until the next reset. DisplayStart resets
+ * and blanks the OLED (about 200 ms, boot only); DisplayWritePage writes one 128-byte page (bounded SPI6 transfer). Pressed
  * reads a control's raw level, for the initial state only. */
 bool UiBoardTest_DemoLightsStart(void);
 void UiBoardTest_DemoSetLights(const uint16_t button_duty[2], const uint16_t encoder_duty[4][3]);
