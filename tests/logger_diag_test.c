@@ -85,6 +85,11 @@ static void test_history(void)
                   FOREGROUND_SERVICE_USB, 11U);
   CHECK(h.summary.have_fault);
   CHECK(h.summary.last_fault.type == DIAG_FOREGROUND_BUDGET);
+  /* A receiver held in reset after a failed band switch is a fault (54w.12.3). */
+  DiagHistory_Init(&h);
+  DiagHistory_Add(&h, 2U, DIAG_RADIO_FAULT, 3U, 1U);
+  CHECK(h.summary.have_fault && h.summary.last_fault.type == DIAG_RADIO_FAULT);
+  CHECK(strcmp(DiagHistory_Name(DIAG_RADIO_FAULT), "RADIO_FAULT") == 0);
 }
 
 static void test_logger(void)

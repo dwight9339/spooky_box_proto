@@ -25,6 +25,7 @@ typedef enum
   DIAG_FOREGROUND_BUDGET,
   DIAG_USB_BACKPRESSURE,
   DIAG_STORAGE_MARGIN, /* Decision 0014 warning; not a fault. */
+  DIAG_RADIO_FAULT,    /* The receiver is held in reset, e.g. a failed band switch. */
   DIAG_EVENT_LIMIT
 } DiagEventType;
 

@@ -91,3 +91,18 @@ RadioGapEdges RadioGap_NewEdges(RadioGapReporter *reporter, const RadioGapSnapsh
   }
   return edges;
 }
+
+bool RadioGap_SpansOrigin(const RadioGapSnapshot *now, uint64_t origin_frame)
+{
+  uint64_t first_frame;
+  uint64_t last_frame;
+
+  if ((now == NULL) || (now->opened == 0U))
+  {
+    return false;
+  }
+  first_frame = (uint64_t)now->first_block * RADIO_GAP_FRAMES_PER_BLOCK;
+  last_frame = ((uint64_t)now->last_block * RADIO_GAP_FRAMES_PER_BLOCK) +
+               (RADIO_GAP_FRAMES_PER_BLOCK - 1U);
+  return (first_frame < origin_frame) && (now->open || (last_frame >= origin_frame));
+}

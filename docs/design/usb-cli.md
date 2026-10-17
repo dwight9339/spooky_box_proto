@@ -148,7 +148,7 @@ foreground service. The budget table and queue-headroom rationale are in
 
 While Preparing, Recording or Finalizing, sleep, another recording start, SD maintenance, WAV
 transfer, `EMF ZERO`, the `UI LEDS`, `UI MATRIX ANIMATE`, `UI MATRIX ORIENT`,
-`UI MATRIX FEEDBACK ON` and `UI DISPLAY TEST` patterns, and radio tuning/band changes are rejected before their service handlers
+`UI MATRIX FEEDBACK ON` and `UI DISPLAY TEST` patterns are rejected before their service handlers
 run. Status and diagnostic reads, `CLASSIC` parameter commands and `MONITOR PTT` remain available. Every policy rejection is a
 numeric `COMMAND_REJECTED` diagnostic and returns one stable `ERR` line. No command
 is deferred until the recording ends.
@@ -168,8 +168,9 @@ is power-cycled. The defaults, ranges, and `UP`/`DOWN` increments are:
 | LW | 198 kHz | 153..279 | 9 kHz |
 
 The antenna path follows the band automatically. `TUNE` always accepts an integer
-frequency in kHz and validates it against the current band; FM values are rounded to
-the Si4735's nearest 10 kHz command unit. A successful tune returns the band, actual
+frequency in kHz. The Radio machine validates it against the band the tune will run
+in, so a `TUNE` sent right after a `BAND` command is checked against the new band;
+FM values are rounded to the Si4735's nearest 10 kHz command unit. A successful tune returns the band, actual
 frequency, RSSI, SNR, and valid-channel flag, for example:
 
 ```text
@@ -179,25 +180,40 @@ OK RADIO BAND=FM FREQ=99100 kHz (99.100 MHz) RSSI=7 SNR=2 VALID=0
 `TUNE`, `UP`, `DOWN` and `BAND <band>` go to the Radio machine
 ([RadioSm](behavior/RadioSm.puml)) through the bounded M7 event queue. If the queue
 refuses the command, the reply is `ERR BUSY` and nothing changes. Otherwise the reply
-comes when the command's outcome is known: a tune does not hold the CLI or the
-foreground loop while the receiver settles. One tune is in flight at a time, and
-one newer command waits behind it. A command that arrives while another is waiting
+comes when the command's outcome is known: neither a tune nor a band switch holds
+the CLI or the foreground loop while the receiver settles or power-cycles. One tune
+or band switch is in flight at a time, and one newer command waits behind it. A command that arrives while another is waiting
 replaces it, and the replaced command is answered `OK RADIO SUPERSEDED`, so a client
 that streams targets (for example a Pd slider) gets exactly one reply per line and
 no backlog builds up. Other replies are `ERR RADIO tune failed` (bus error, or no
 completion within 2 s), `ERR RADIO abandoned; radio fault` for a command still
 waiting when the radio faults, and `ERR RADIO audio path is not running` once the
-radio is out of service. A band switch is still one synchronous step.
+radio is out of service. A `TUNE` that waits behind a band switch is checked
+against the new band when the switch completes.
 
-In-band tuning (`TUNE`, `UP`, `DOWN` and Classic's jumps) is allowed while
-recording ([decision 0003](../decisions/0003-radio-control-during-recording.md);
-[evidence](../evidence/2026-10-16-tune-guard-lift.md)). Each tune is stored in the
-session's event log, and the radio track inside a retune interval holds receiver output
-that is not a measurement ([decision 0015](../decisions/0015-raw-radio-track-during-in-band-tunes.md)).
-Band changes are still rejected while recording, with
-`ERR RADIO band changes disabled while recording`, until `full_spooky_proto-54w.12`
-qualifies them. The opt-in `BandSwitchQual` preset allows them while recording, for
-that qualification only.
+A band switch that fails holds the receiver in reset and keeps the output muted. Radio
+capture keeps running with silence in the radio channels, so a recording in progress
+continues with its microphone track and an open gap
+([decision 0004](../decisions/0004-radio-track-continuity-across-transitions.md)).
+Until a reset, `STATUS` and every radio command answer
+`ERR RADIO band switch failed; reset required`, a `RADIO_FAULT` diagnostic sets
+`HAS_FAULT`, and `RECORD START` is refused with `ERR RECORD radio audio path is not
+running`.
+
+In-band tuning (`TUNE`, `UP`, `DOWN` and Classic's jumps) and band changes are allowed
+while recording ([decision 0003](../decisions/0003-radio-control-during-recording.md);
+evidence for [tuning](../evidence/2026-10-16-tune-guard-lift.md) and
+[band changes](../evidence/2026-10-16-band-guard-lift.md)). Each tune and band switch
+is stored in the session's event log. The radio track inside a retune interval holds
+receiver output that is not a measurement
+([decision 0015](../decisions/0015-raw-radio-track-during-in-band-tunes.md)), and inside
+a band switch's gap it holds digital silence
+([decision 0004](../decisions/0004-radio-track-continuity-across-transitions.md)).
+
+The opt-in `BandSwitchQual` preset is for bench fault injection. It accepts
+`BAND FAIL`, which makes the next band switch fail after its receiver power-up command,
+as if the receiver had answered an error; the reply is
+`OK RADIO next band switch fails at POWER_UP`.
 
 During a band switch the audio path's stream gate is closed. Each radio half-buffer
 then reaches the recorder as digital silence of the same length, so the radio and

@@ -38,11 +38,7 @@ static void every_policy_row_has_the_decision_0008_class(void)
         COMMAND_POLICY_REJECTED, /* UI test pattern */
         COMMAND_POLICY_REJECTED, /* EMF calibration */
         COMMAND_POLICY_ALLOWED,  /* in-band tuning: decision 0003, lifted by 54w.6 */
-#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
-        COMMAND_POLICY_ALLOWED,  /* band change: opt-in qualification build */
-#else
-        COMMAND_POLICY_REJECTED, /* band change: guard until 54w.12 qualifies it */
-#endif
+        COMMAND_POLICY_ALLOWED,  /* band change: decision 0003, lifted by 54w.12 */
         COMMAND_POLICY_ALLOWED   /* Field engine parameters (C-103 to C-106, C-110) */
     };
     for (int action = COMMAND_ACTION_NONE; action < COMMAND_ACTION_COUNT; ++action) {

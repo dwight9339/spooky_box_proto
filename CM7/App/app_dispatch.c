@@ -30,6 +30,8 @@ static void Route(void *context, const EvqEvent *event)
     case APP_EVENT_RADIO_STARTED:
     case APP_EVENT_RADIO_TUNE_DONE:
     case APP_EVENT_RADIO_TUNE_FAILED:
+    case APP_EVENT_RADIO_BAND_DONE:
+    case APP_EVENT_RADIO_BAND_FAILED:
     case APP_EVENT_RADIO_AUDIO_FAULT:
       RadioAdapter_Dispatch(event);
       break;

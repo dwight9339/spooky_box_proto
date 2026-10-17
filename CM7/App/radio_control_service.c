@@ -1,14 +1,19 @@
-/* Extracted from the proven M7 radio bring-up. The start and band-switch paths
- * keep the proven Si4735 command sequence, property values, delays and timeouts.
+/* Extracted from the proven M7 radio bring-up. The start path keeps the proven
+ * Si4735 command sequence, property values, delays and timeouts.
  * In-band tuning is also available without blocking (full_spooky_proto-54w.28):
  * RadioControl_BeginTune issues TUNE_FREQ and returns, and RadioControl_PollTune
  * performs at most one status transaction per call until the tune completes. Its
  * device-ready waits are bounded by RADIO_FAST_CTS_TIMEOUT_MS, so a stuck
  * receiver shows up as a failed tune instead of a stalled foreground loop.
  *
- * Band transition sequence (RadioControl_SwitchBand with the caller's muting), as
- * the firmware performs it. Every receiver command waits for CTS before and after
- * it is sent, each wait up to 2 s; the fixed delays add up to 71 ms.
+ * Band transition sequence, with the caller's muting. It keeps the proven
+ * commands, property values, delays and timeouts but does not block
+ * (full_spooky_proto-54w.12.2): RadioControl_BeginSwitchBand starts it without
+ * touching the bus, and each RadioControl_PollSwitchBand call advances it by at
+ * most one bus step (one command write with a status read before and after it,
+ * or one completion poll of the first tune). Every receiver command waits for CTS before and after
+ * it is sent, each wait up to 2 s across calls; the fixed delays, also waited
+ * across calls, add up to 71 ms.
  *   1. Caller mutes the codec over I2C4 and closes the stream gate.
  *   2. Set the digital output rate to zero (10 ms).
  *   3. Power down the receiver (1 ms).
@@ -111,6 +116,48 @@ static bool tune_in_flight;
 static RadioBand tune_band;
 static uint32_t tune_start_tick;
 static uint32_t tune_last_poll_tick;
+
+/* The non-blocking band switch in flight, if any: its step in the sequence
+ * above, where in that step it is, and when the current wait began. */
+typedef enum
+{
+  SWITCH_STEP_RATE_OFF = 0,
+  SWITCH_STEP_POWER_DOWN,
+  SWITCH_STEP_POWER_UP,
+  SWITCH_STEP_REFCLK,
+  SWITCH_STEP_PRESCALE,
+  SWITCH_STEP_VOLUME,
+  SWITCH_STEP_HARD_MUTE,
+  SWITCH_STEP_TUNE,
+  SWITCH_STEP_RATE_ON,
+  SWITCH_STEP_FORMAT,
+  SWITCH_STEP_COUNT
+} SwitchStep;
+
+typedef enum
+{
+  SWITCH_PHASE_SEND = 0, /* wait for CTS, then write the step's command */
+  SWITCH_PHASE_REPLY,    /* wait for CTS after the command */
+  SWITCH_PHASE_TUNE,     /* the first tune: wait for its completion */
+  SWITCH_PHASE_DELAY     /* the step's fixed delay */
+} SwitchPhase;
+
+static const char *const switch_step_names[SWITCH_STEP_COUNT] =
+{
+  "DIGITAL_RATE=0", "POWER_DOWN", "POWER_UP", "REFCLK_FREQ", "REFCLK_PRESCALE",
+  "RX_VOLUME", "RX_HARD_MUTE", "TUNE", "DIGITAL_RATE", "DIGITAL_FORMAT"
+};
+
+static bool switch_in_flight;
+static RadioBand switch_band;
+static SwitchStep switch_step;
+static SwitchPhase switch_phase;
+static uint32_t switch_wait_tick;
+static uint32_t switch_last_poll_tick;
+static RadioTuneStatus switch_result;
+#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
+static bool switch_fault_armed; /* the next switch fails at POWER_UP */
+#endif
 
 static HAL_StatusTypeDef WaitCtsWithin(uint8_t *status, uint32_t timeout_ms)
 {
@@ -309,13 +356,30 @@ static uint32_t RoundToDeviceUnit(RadioBand band, uint32_t frequency_khz)
                                  : frequency_khz;
 }
 
+/* The band's TUNE_FREQ command for a frequency; returns its length. */
+static uint16_t TuneCommand(RadioBand band, uint32_t frequency_khz,
+                            uint8_t tune[6])
+{
+  const RadioBandConfig *config = &band_configs[band];
+  const uint16_t device_frequency = (band == RADIO_BAND_FM)
+    ? (uint16_t)((frequency_khz + 5U) / 10U)
+    : (uint16_t)frequency_khz;
+
+  tune[0] = config->tune_command;
+  tune[1] = 0U;
+  tune[2] = (uint8_t)(device_frequency >> 8);
+  tune[3] = (uint8_t)device_frequency;
+  tune[4] = (uint8_t)(config->antenna_capacitance >> 8);
+  tune[5] = (uint8_t)config->antenna_capacitance;
+  return (band == RADIO_BAND_FM) ? 5U : 6U;
+}
+
 static bool IssueTune(RadioBand band, uint32_t frequency_khz,
                       uint32_t cts_timeout_ms)
 {
   const RadioBandConfig *config = &band_configs[band];
   uint8_t tune[6] = {0U};
   uint8_t status = 0U;
-  uint16_t device_frequency;
   uint16_t tune_length;
 
   radio_target_khz = frequency_khz;
@@ -324,16 +388,7 @@ static bool IssueTune(RadioBand band, uint32_t frequency_khz,
   {
     return false;
   }
-  device_frequency = (band == RADIO_BAND_FM)
-    ? (uint16_t)((frequency_khz + 5U) / 10U)
-    : (uint16_t)frequency_khz;
-  tune[0] = config->tune_command;
-  tune[1] = 0U;
-  tune[2] = (uint8_t)(device_frequency >> 8);
-  tune[3] = (uint8_t)device_frequency;
-  tune[4] = (uint8_t)(config->antenna_capacitance >> 8);
-  tune[5] = (uint8_t)config->antenna_capacitance;
-  tune_length = (band == RADIO_BAND_FM) ? 5U : 6U;
+  tune_length = TuneCommand(band, frequency_khz, tune);
 
   return CommandWithin(tune, tune_length, &status, sizeof(status),
                        cts_timeout_ms) == HAL_OK;
@@ -608,40 +663,261 @@ RadioTunePoll RadioControl_PollTune(RadioTuneStatus *result)
   return RADIO_TUNE_POLL_PENDING;
 }
 
-bool RadioControl_SwitchBand(RadioBand band, RadioTuneStatus *result)
+bool RadioControl_BeginSwitchBand(RadioBand band)
 {
-  const uint8_t power_down = SI4735_CMD_POWER_DOWN;
-  const RadioBandConfig *config;
-  uint8_t status;
-
-  if ((band >= RADIO_BAND_COUNT) || (result == NULL))
+  if ((band >= RADIO_BAND_COUNT) || !radio_powered || switch_in_flight)
   {
     return false;
   }
-  config = &band_configs[band];
-  tune_in_flight = false;
+  tune_in_flight = false; /* a band switch abandons the tune in flight */
+  switch_in_flight = true;
+  switch_band = band;
+  switch_step = SWITCH_STEP_RATE_OFF;
+  switch_phase = SWITCH_PHASE_SEND;
+  switch_wait_tick = HAL_GetTick();
+  return true;
+}
 
-  /* Remove digital output cleanly before changing receiver function. */
-  if (!SetProperty(SI4735_PROP_DIGITAL_RATE, 0U) ||
-      (Command(&power_down, sizeof(power_down), &status,
-               sizeof(status)) != HAL_OK))
-  {
-    radio_last_fault = RADIO_CONTROL_FAULT_BAND_SWITCH;
-    return false;
-  }
-  HAL_Delay(1U);
-  if (!PowerUpBand(band, radio_last_frequency_khz[band], result))
-  {
-    radio_last_fault = RADIO_CONTROL_FAULT_BAND_SWITCH;
-    return false;
-  }
+/* The step's command and the fixed delay after its reply, as in the proven
+ * sequence; returns the command's length. */
+static uint16_t SwitchCommand(SwitchStep step, uint8_t command[6],
+                              uint32_t *delay_ms)
+{
+  const RadioBandConfig *config = &band_configs[switch_band];
+  uint16_t property;
+  uint16_t value;
 
+  *delay_ms = 10U;
+  switch (step)
+  {
+    case SWITCH_STEP_POWER_DOWN:
+      command[0] = SI4735_CMD_POWER_DOWN;
+      *delay_ms = 1U;
+      return 1U;
+    case SWITCH_STEP_POWER_UP:
+      command[0] = SI4735_CMD_POWER_UP;
+      command[1] = config->power_up_function;
+      command[2] = SI4735_POWER_UP_FM_DIGITAL;
+      *delay_ms = 0U;
+      return 3U;
+    case SWITCH_STEP_TUNE:
+      *delay_ms = 0U;
+      return TuneCommand(switch_band, radio_last_frequency_khz[switch_band],
+                         command);
+    case SWITCH_STEP_REFCLK:
+      property = SI4735_PROP_REFCLK_FREQ;
+      value = 32768U;
+      break;
+    case SWITCH_STEP_PRESCALE:
+      property = SI4735_PROP_REFCLK_PRESCALE;
+      value = 1U;
+      break;
+    case SWITCH_STEP_VOLUME:
+      property = SI4735_PROP_RX_VOLUME;
+      value = 50U;
+      break;
+    case SWITCH_STEP_HARD_MUTE:
+      property = SI4735_PROP_RX_HARD_MUTE;
+      value = 0U;
+      break;
+    case SWITCH_STEP_RATE_ON:
+      property = SI4735_PROP_DIGITAL_RATE;
+      value = RADIO_DIGITAL_RATE_HZ;
+      break;
+    case SWITCH_STEP_FORMAT:
+      property = SI4735_PROP_DIGITAL_FORMAT;
+      value = 0x0000U;
+      break;
+    case SWITCH_STEP_RATE_OFF:
+    default:
+      /* Remove digital output cleanly before changing receiver function. */
+      property = SI4735_PROP_DIGITAL_RATE;
+      value = 0U;
+      break;
+  }
+  command[0] = SI4735_CMD_SET_PROPERTY;
+  command[1] = 0U;
+  command[2] = (uint8_t)(property >> 8);
+  command[3] = (uint8_t)property;
+  command[4] = (uint8_t)(value >> 8);
+  command[5] = (uint8_t)value;
+  return 6U;
+}
+
+static RadioBandPoll FailSwitch(void)
+{
+  switch_in_flight = false;
+  radio_last_fault = RADIO_CONTROL_FAULT_BAND_SWITCH;
+  printf("[radio] FAIL: %s band switch at %s\r\n",
+         band_configs[switch_band].info.name, switch_step_names[switch_step]);
+  return RADIO_BAND_POLL_FAILED;
+}
+
+/* The next step, or the end of the sequence. */
+static RadioBandPoll NextSwitchStep(uint32_t now, RadioTuneStatus *result)
+{
+  const RadioBandConfig *config = &band_configs[switch_band];
+
+  switch_step = (SwitchStep)((uint32_t)switch_step + 1U);
+  switch_phase = SWITCH_PHASE_SEND;
+  switch_wait_tick = now;
+  if (switch_step < SWITCH_STEP_COUNT)
+  {
+    return RADIO_BAND_POLL_PENDING;
+  }
+  switch_in_flight = false;
   radio_last_fault = RADIO_CONTROL_FAULT_NONE;
-  RadioControl_LogTune("switched to", result);
+  if (result != NULL)
+  {
+    *result = switch_result;
+  }
   printf("[radio] antenna path=%s\r\n",
          config->select_whip ? "SW whip" :
-         (band == RADIO_BAND_FM ? "FM input" : "AM/LW loop"));
-  return true;
+         (switch_band == RADIO_BAND_FM ? "FM input" : "AM/LW loop"));
+  return RADIO_BAND_POLL_DONE;
+}
+
+/* One status read and what it allows in the current step: write the step's
+ * command (SEND), or finish the step once the receiver has taken it (REPLY). */
+static RadioBandPoll SwitchBusStep(uint32_t now, RadioTuneStatus *result)
+{
+  uint8_t command[6] = {0U};
+  uint16_t length;
+  uint32_t delay_ms;
+  uint8_t status = 0U;
+
+  /* A read the bus refuses counts as not ready, as in WaitCtsWithin; ERR fails
+   * the step. */
+  if (HAL_I2C_Master_Receive(radio_i2c, SI4735_I2C_ADDRESS_HAL, &status, 1U,
+                             RADIO_I2C_TIMEOUT_MS) != HAL_OK)
+  {
+    status = 0U;
+  }
+  if ((status & SI4735_STATUS_ERR) != 0U)
+  {
+    return FailSwitch();
+  }
+  if ((status & SI4735_STATUS_CTS) == 0U)
+  {
+    return ((now - switch_wait_tick) >= RADIO_DEVICE_TIMEOUT_MS)
+      ? FailSwitch() : RADIO_BAND_POLL_PENDING;
+  }
+
+  length = SwitchCommand(switch_step, command, &delay_ms);
+  if (switch_phase == SWITCH_PHASE_SEND)
+  {
+    if (switch_step == SWITCH_STEP_POWER_UP)
+    {
+      HAL_GPIO_WritePin(RADIO_SW_SWITCH_GPIO_Port, RADIO_SW_SWITCH_Pin,
+                        band_configs[switch_band].select_whip ? GPIO_PIN_SET
+                                                              : GPIO_PIN_RESET);
+    }
+    else if (switch_step == SWITCH_STEP_TUNE)
+    {
+      radio_target_khz = radio_last_frequency_khz[switch_band];
+    }
+    if (HAL_I2C_Master_Transmit(radio_i2c, SI4735_I2C_ADDRESS_HAL, command,
+                                length, RADIO_I2C_TIMEOUT_MS) != HAL_OK)
+    {
+      return FailSwitch();
+    }
+    switch_phase = SWITCH_PHASE_REPLY;
+    switch_wait_tick = now;
+    return RADIO_BAND_POLL_PENDING;
+  }
+
+#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
+  if (switch_fault_armed && (switch_step == SWITCH_STEP_POWER_UP))
+  {
+    /* Induced fault: as if POWER_UP had answered ERR. */
+    switch_fault_armed = false;
+    return FailSwitch();
+  }
+#endif
+
+  /* The command's reply: CTS after it. */
+  if (switch_step == SWITCH_STEP_TUNE)
+  {
+    /* AM-family digital clocks do not start until the first tune completes. */
+    switch_phase = SWITCH_PHASE_TUNE;
+    switch_wait_tick = now;
+    switch_last_poll_tick = now;
+    return RADIO_BAND_POLL_PENDING;
+  }
+  if (delay_ms != 0U)
+  {
+    switch_phase = SWITCH_PHASE_DELAY;
+    switch_wait_tick = now;
+    return RADIO_BAND_POLL_PENDING;
+  }
+  return NextSwitchStep(now, result);
+}
+
+RadioBandPoll RadioControl_PollSwitchBand(RadioTuneStatus *result)
+{
+  const uint32_t now = HAL_GetTick();
+  RadioBandPoll poll;
+  uint8_t command[6] = {0U};
+  uint32_t delay_ms;
+
+  if (!switch_in_flight)
+  {
+    return RADIO_BAND_POLL_IDLE;
+  }
+  switch (switch_phase)
+  {
+    case SWITCH_PHASE_DELAY:
+      (void)SwitchCommand(switch_step, command, &delay_ms);
+      /* Strictly longer, like HAL_Delay: the wait began part way into a tick. */
+      if ((now - switch_wait_tick) <= delay_ms)
+      {
+        return RADIO_BAND_POLL_PENDING;
+      }
+      poll = NextSwitchStep(now, result);
+      if (poll != RADIO_BAND_POLL_PENDING)
+      {
+        return poll;
+      }
+      break; /* the next step's command goes out in this poll */
+
+    case SWITCH_PHASE_TUNE:
+      if ((now - switch_last_poll_tick) < RADIO_TUNE_POLL_INTERVAL_MS)
+      {
+        return RADIO_BAND_POLL_PENDING;
+      }
+      switch_last_poll_tick = now;
+      switch (PollTuneOnce(switch_band, RADIO_FAST_CTS_TIMEOUT_MS, &switch_result))
+      {
+        case TUNE_POLL_DONE:
+          return NextSwitchStep(now, result);
+        case TUNE_POLL_BUS_FAILED:
+          return FailSwitch();
+        case TUNE_POLL_PENDING:
+        default:
+          break;
+      }
+      return ((now - switch_wait_tick) >= RADIO_DEVICE_TIMEOUT_MS)
+        ? FailSwitch() : RADIO_BAND_POLL_PENDING;
+
+    case SWITCH_PHASE_SEND:
+    case SWITCH_PHASE_REPLY:
+    default:
+      break;
+  }
+
+  /* A command just written is usually answered at once, so its reply is read
+   * in the same poll: at most one write, with a status read before and after
+   * it, and no waiting. */
+  if (switch_phase != SWITCH_PHASE_SEND)
+  {
+    return SwitchBusStep(now, result);
+  }
+  poll = SwitchBusStep(now, result);
+  if ((poll == RADIO_BAND_POLL_PENDING) && (switch_phase == SWITCH_PHASE_REPLY))
+  {
+    poll = SwitchBusStep(now, result);
+  }
+  return poll;
 }
 
 void RadioControl_PowerDown(void)
@@ -649,14 +925,27 @@ void RadioControl_PowerDown(void)
   const uint8_t power_down = SI4735_CMD_POWER_DOWN;
   uint8_t status;
 
+  /* A receiver held in reset would only time out, for 2 s. */
+  if (!radio_powered)
+  {
+    return;
+  }
   (void)Command(&power_down, sizeof(power_down), &status, sizeof(status));
 }
+
+#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
+void RadioControl_ArmSwitchFault(void)
+{
+  switch_fault_armed = true;
+}
+#endif
 
 void RadioControl_HoldReset(void)
 {
   HAL_GPIO_WritePin(RADIO_RST_GPIO_Port, RADIO_RST_Pin, GPIO_PIN_RESET);
   radio_powered = false;
   tune_in_flight = false;
+  switch_in_flight = false;
 }
 
 const RadioBandInfo *RadioControl_GetBandInfo(RadioBand band)
@@ -676,5 +965,6 @@ bool RadioControl_GetStatus(RadioControlStatus *status)
   status->tune = radio_tune_status;
   status->last_fault = radio_last_fault;
   status->tune_in_flight = tune_in_flight;
+  status->band_switch_in_flight = switch_in_flight;
   return true;
 }

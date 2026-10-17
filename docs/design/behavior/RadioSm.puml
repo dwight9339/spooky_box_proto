@@ -5,18 +5,18 @@
 ' Guards and actions call only functions in CM7/App/sm/radio_port.h.
 '
 ' Commands come from the CLI today and from scan engines and physical controls
-' later; every command is answered exactly once to its source. In-band tunes do
-' not block: the machine waits in Tuning while the radio service polls completion
-' once per loop pass. A band switch is still one synchronous action; making it
-' incremental and qualifying it during recording is full_spooky_proto-54w.12.
+' later; every command is answered exactly once to its source. Neither tunes nor
+' band switches block: the machine waits in Tuning or Switching while the radio
+' service advances the receiver one bounded bus step per loop pass
+' (full_spooky_proto-54w.28 and 54w.12.2).
 '
 ' Band, frequency, signal quality and each band's last frequency are model data
 ' kept by the radio service. The published frequency is always a completed result
 ' (Principle II), never a requested target.
 '
 ' Session state never makes a radio command legal or illegal here (top-level
-' DEV-I4). Today's recording guard is applied by the shared command policy before
-' a command reaches this machine (decision 0003, Principle VI).
+' DEV-I4), and the shared command policy allows tunes and band changes in every
+' session state (decision 0003; qualified by full_spooky_proto-54w.6 and -54w.12).
 
 [*] --> Stopped
 
@@ -24,10 +24,11 @@ state Stopped
 state Operational {
   state Settled
   state Tuning
+  state Switching
 }
 state Faulted
 state TuneIssue <<choice>>
-state BandSwitch <<choice>>
+state BandIssue <<choice>>
 state NextCommand <<choice>>
 
 ' --- Start ----------------------------------------------------------------------
@@ -43,7 +44,7 @@ Stopped : BAND / rad_reject(RAD_REJECT_UNAVAILABLE);
 Settled --> TuneIssue : TUNE [rad_request_in_range()] / rad_begin_request();
 Settled : TUNE [!rad_request_in_range()] / rad_reject(RAD_REJECT_RANGE);
 Settled --> TuneIssue : STEP / rad_begin_request();
-Settled --> BandSwitch : BAND / rad_switch_band_request();
+Settled --> BandIssue : BAND / rad_begin_band_request();
 
 ' Issuing the tune can fail on the bus; the last completed result stays published.
 TuneIssue --> Tuning : [rad_tune_issued()] / rad_publish(RAD_PUB_TUNE_STARTED);
@@ -62,16 +63,35 @@ Tuning : BAND / rad_hold_request();
 Tuning --> NextCommand : TUNE_DONE / rad_publish(RAD_PUB_TUNED);
 Tuning --> NextCommand : TUNE_FAILED / rad_publish(RAD_PUB_TUNE_FAILED);
 
+' A tune held behind a band switch is checked against the new band here.
+NextCommand --> Settled : [rad_pending_out_of_range()] / rad_reject_pending(RAD_REJECT_RANGE);
 NextCommand --> TuneIssue : [rad_pending_is_tune()] / rad_begin_pending();
-NextCommand --> BandSwitch : [rad_pending_is_band()] / rad_switch_band_pending();
+NextCommand --> BandIssue : [rad_pending_is_band()] / rad_begin_band_pending();
 NextCommand --> Settled
 
 ' --- Band switch -----------------------------------------------------------------
-' Mute the monitor and close the stream gate; power-cycle the receiver into the
-' band on its antenna path; tune the band's last frequency; restart digital output;
-' open the gate and unmute. The sequence is documented in radio_control_service.c.
-BandSwitch --> Settled : [rad_band_switched()] / rad_publish(RAD_PUB_BAND_CHANGED);
-BandSwitch --> Faulted : / rad_publish(RAD_PUB_FAULT_BAND);
+' Mute the monitor and close the stream gate, then begin the switch: power-cycle
+' the receiver into the band on its antenna path, tune the band's last frequency
+' and restart digital output. When the receiver reports the switch complete, the
+' adapter opens the gate and unmutes. The sequence is documented in
+' radio_control_service.c. Starting it can fail before any bus step. Started,
+' completed and failed are published (BAND_STARTED, BAND_CHANGED, FAULT_BAND;
+' full_spooky_proto-54w.12.4); only the last two answer the command.
+BandIssue --> Switching : [rad_band_switch_begun()] / rad_publish(RAD_PUB_BAND_STARTED);
+BandIssue --> Faulted : / rad_publish(RAD_PUB_FAULT_BAND);
+
+' --- Switching: the receiver is changing band; no radio audio flows ------------
+' Commands wait latest-wins as in Tuning. A tune's range is checked once the new
+' band is in place, since it is not known until then.
+Switching : TUNE / rad_hold_request();
+Switching : STEP / rad_hold_request();
+Switching : BAND / rad_hold_request();
+Switching --> NextCommand : BAND_DONE / rad_publish(RAD_PUB_BAND_CHANGED);
+' A failed switch leaves the receiver in reset; the waiting command is answered.
+' Radio capture keeps running with its stream gate closed, so a session keeps
+' recording with silence in the radio track and the gap left open
+' (full_spooky_proto-54w.12.3).
+Switching --> Faulted : BAND_FAILED / rad_publish(RAD_PUB_FAULT_BAND); rad_abandon();
 
 ' --- Faults ---------------------------------------------------------------------
 ' A radio SAI or DMA error, or a codec output or volume failure, stops radio audio.
@@ -79,7 +99,8 @@ BandSwitch --> Faulted : / rad_publish(RAD_PUB_FAULT_BAND);
 Operational --> Faulted : AUDIO_FAULT / rad_abandon(); rad_publish(RAD_PUB_FAULT_AUDIO);
 
 ' Faulted: no radio audio; the receiver stays in reset and the monitored output
-' stays muted. Only a system reset leaves Faulted.
+' stays muted. Only a system reset leaves Faulted. A session continues through a
+' band fault but not through an audio fault, which stops radio capture.
 Faulted : TUNE / rad_reject(RAD_REJECT_UNAVAILABLE);
 Faulted : STEP / rad_reject(RAD_REJECT_UNAVAILABLE);
 Faulted : BAND / rad_reject(RAD_REJECT_UNAVAILABLE);
@@ -89,11 +110,6 @@ note right of Tuning
   rate it allows during recording are
   measured on the bench:
   full_spooky_proto-54w.6.
-end note
-note right of Faulted
-  Recovery without a system reset, and
-  whether a session continues while the
-  radio is Faulted: full_spooky_proto-54w.12.
 end note
 
 /'! $CONFIG : toml

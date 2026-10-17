@@ -118,6 +118,7 @@ An accepted USB send is not proof of host receipt.
 | 17 FOREGROUND_BUDGET | Foreground service ID from `foreground_budget.h` | Measured duration in milliseconds |
 | 18 USB_BACKPRESSURE | Evicted recorder reply length (progress lines are not reported) | Recorder reply queue capacity |
 | 19 STORAGE_MARGIN | Audio queue high-water when the recording's storage margin first became low (a warning, not a fault) | SD write duration in milliseconds at that point |
+| 20 RADIO_FAULT | Radio control fault: 3 band switch (a fault; the receiver is held in reset until a system reset) | Target band: 0 FM, 1 AM, 2 SW, 3 LW |
 
 IPC events are present only in IPC experiment builds. Logger and event-queue loss
 events are sampled at most once per second, so one event can summarize multiple

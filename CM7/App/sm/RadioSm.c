@@ -15,7 +15,7 @@ static void ROOT_enter(RadioSm* sm);
 
 static void ROOT_ChoicePoint_TuneIssue__transition(RadioSm* sm);
 
-static void ROOT_ChoicePoint_BandSwitch__transition(RadioSm* sm);
+static void ROOT_ChoicePoint_BandIssue__transition(RadioSm* sm);
 
 static void ROOT_ChoicePoint_NextCommand__transition(RadioSm* sm);
 
@@ -44,6 +44,20 @@ static void SETTLED_band(RadioSm* sm);
 static void SETTLED_step(RadioSm* sm);
 
 static void SETTLED_tune(RadioSm* sm);
+
+static void SWITCHING_enter(RadioSm* sm);
+
+static void SWITCHING_exit(RadioSm* sm);
+
+static void SWITCHING_band(RadioSm* sm);
+
+static void SWITCHING_band_done(RadioSm* sm);
+
+static void SWITCHING_band_failed(RadioSm* sm);
+
+static void SWITCHING_step(RadioSm* sm);
+
+static void SWITCHING_tune(RadioSm* sm);
 
 static void TUNING_enter(RadioSm* sm);
 
@@ -156,6 +170,21 @@ void RadioSm_dispatch_event(RadioSm* sm, RadioSm_EventId event_id)
             }
             break;
         
+        // STATE: Switching
+        case RadioSm_StateId_SWITCHING:
+            switch (event_id)
+            {
+                case RadioSm_EventId_TUNE: SWITCHING_tune(sm); break;
+                case RadioSm_EventId_STEP: SWITCHING_step(sm); break;
+                case RadioSm_EventId_BAND: SWITCHING_band(sm); break;
+                case RadioSm_EventId_BAND_DONE: SWITCHING_band_done(sm); break;
+                case RadioSm_EventId_BAND_FAILED: SWITCHING_band_failed(sm); break;
+                case RadioSm_EventId_AUDIO_FAULT: OPERATIONAL_audio_fault(sm); break; // First ancestor handler for this event
+                
+                default: break; // to avoid "unused enumeration value in switch" warning
+            }
+            break;
+        
         // STATE: Tuning
         case RadioSm_StateId_TUNING:
             switch (event_id)
@@ -201,6 +230,8 @@ static void exit_up_to_state_handler(RadioSm* sm, RadioSm_StateId desired_state)
             case RadioSm_StateId_OPERATIONAL: OPERATIONAL_exit(sm); break;
             
             case RadioSm_StateId_SETTLED: SETTLED_exit(sm); break;
+            
+            case RadioSm_StateId_SWITCHING: SWITCHING_exit(sm); break;
             
             case RadioSm_StateId_TUNING: TUNING_exit(sm); break;
             
@@ -257,26 +288,26 @@ static void ROOT_ChoicePoint_TuneIssue__transition(RadioSm* sm)
     } // end of behavior for ROOT.<ChoicePoint>(TuneIssue)
 }
 
-static void ROOT_ChoicePoint_BandSwitch__transition(RadioSm* sm)
+static void ROOT_ChoicePoint_BandIssue__transition(RadioSm* sm)
 {
-    // ROOT.<ChoicePoint>(BandSwitch) behavior
-    // uml: [rad_band_switched()] / { rad_publish(RAD_PUB_BAND_CHANGED); } TransitionTo(Settled)
-    if (rad_band_switched())
+    // ROOT.<ChoicePoint>(BandIssue) behavior
+    // uml: [rad_band_switch_begun()] / { rad_publish(RAD_PUB_BAND_STARTED); } TransitionTo(Switching)
+    if (rad_band_switch_begun())
     {
         // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
         
-        // Step 2: Transition action: `rad_publish(RAD_PUB_BAND_CHANGED);`.
-        rad_publish(RAD_PUB_BAND_CHANGED);
+        // Step 2: Transition action: `rad_publish(RAD_PUB_BAND_STARTED);`.
+        rad_publish(RAD_PUB_BAND_STARTED);
         
-        // Step 3: Enter/move towards transition target `Settled`.
+        // Step 3: Enter/move towards transition target `Switching`.
         OPERATIONAL_enter(sm);
-        SETTLED_enter(sm);
+        SWITCHING_enter(sm);
         
         // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
         return;
-    } // end of behavior for ROOT.<ChoicePoint>(BandSwitch)
+    } // end of behavior for ROOT.<ChoicePoint>(BandIssue)
     
-    // ROOT.<ChoicePoint>(BandSwitch) behavior
+    // ROOT.<ChoicePoint>(BandIssue) behavior
     // uml: / { rad_publish(RAD_PUB_FAULT_BAND); } TransitionTo(Faulted)
     {
         // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
@@ -289,11 +320,28 @@ static void ROOT_ChoicePoint_BandSwitch__transition(RadioSm* sm)
         
         // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
         return;
-    } // end of behavior for ROOT.<ChoicePoint>(BandSwitch)
+    } // end of behavior for ROOT.<ChoicePoint>(BandIssue)
 }
 
 static void ROOT_ChoicePoint_NextCommand__transition(RadioSm* sm)
 {
+    // ROOT.<ChoicePoint>(NextCommand) behavior
+    // uml: [rad_pending_out_of_range()] / { rad_reject_pending(RAD_REJECT_RANGE); } TransitionTo(Settled)
+    if (rad_pending_out_of_range())
+    {
+        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
+        
+        // Step 2: Transition action: `rad_reject_pending(RAD_REJECT_RANGE);`.
+        rad_reject_pending(RAD_REJECT_RANGE);
+        
+        // Step 3: Enter/move towards transition target `Settled`.
+        OPERATIONAL_enter(sm);
+        SETTLED_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for ROOT.<ChoicePoint>(NextCommand)
+    
     // ROOT.<ChoicePoint>(NextCommand) behavior
     // uml: [rad_pending_is_tune()] / { rad_begin_pending(); } TransitionTo(ROOT.<ChoicePoint>(TuneIssue))
     if (rad_pending_is_tune())
@@ -312,19 +360,19 @@ static void ROOT_ChoicePoint_NextCommand__transition(RadioSm* sm)
     } // end of behavior for ROOT.<ChoicePoint>(NextCommand)
     
     // ROOT.<ChoicePoint>(NextCommand) behavior
-    // uml: [rad_pending_is_band()] / { rad_switch_band_pending(); } TransitionTo(ROOT.<ChoicePoint>(BandSwitch))
+    // uml: [rad_pending_is_band()] / { rad_begin_band_pending(); } TransitionTo(ROOT.<ChoicePoint>(BandIssue))
     if (rad_pending_is_band())
     {
         // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition). Already at LCA, no exiting required.
         
-        // Step 2: Transition action: `rad_switch_band_pending();`.
-        rad_switch_band_pending();
+        // Step 2: Transition action: `rad_begin_band_pending();`.
+        rad_begin_band_pending();
         
-        // Step 3: Enter/move towards transition target `ROOT.<ChoicePoint>(BandSwitch)`.
-        // ROOT.<ChoicePoint>(BandSwitch) is a pseudo state and cannot have an `enter` trigger.
+        // Step 3: Enter/move towards transition target `ROOT.<ChoicePoint>(BandIssue)`.
+        // ROOT.<ChoicePoint>(BandIssue) is a pseudo state and cannot have an `enter` trigger.
         
         // Finish transition by calling pseudo state transition function.
-        ROOT_ChoicePoint_BandSwitch__transition(sm);
+        ROOT_ChoicePoint_BandIssue__transition(sm);
         return; // event processing immediately stops when a transition finishes. No other behaviors for this state are checked.
     } // end of behavior for ROOT.<ChoicePoint>(NextCommand)
     
@@ -449,19 +497,19 @@ static void SETTLED_exit(RadioSm* sm)
 static void SETTLED_band(RadioSm* sm)
 {
     // Settled behavior
-    // uml: BAND / { rad_switch_band_request(); } TransitionTo(ROOT.<ChoicePoint>(BandSwitch))
+    // uml: BAND / { rad_begin_band_request(); } TransitionTo(ROOT.<ChoicePoint>(BandIssue))
     {
         // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
         exit_up_to_state_handler(sm, RadioSm_StateId_ROOT);
         
-        // Step 2: Transition action: `rad_switch_band_request();`.
-        rad_switch_band_request();
+        // Step 2: Transition action: `rad_begin_band_request();`.
+        rad_begin_band_request();
         
-        // Step 3: Enter/move towards transition target `ROOT.<ChoicePoint>(BandSwitch)`.
-        // ROOT.<ChoicePoint>(BandSwitch) is a pseudo state and cannot have an `enter` trigger.
+        // Step 3: Enter/move towards transition target `ROOT.<ChoicePoint>(BandIssue)`.
+        // ROOT.<ChoicePoint>(BandIssue) is a pseudo state and cannot have an `enter` trigger.
         
         // Finish transition by calling pseudo state transition function.
-        ROOT_ChoicePoint_BandSwitch__transition(sm);
+        ROOT_ChoicePoint_BandIssue__transition(sm);
         return; // event processing immediately stops when a transition finishes. No other behaviors for this state are checked.
     } // end of behavior for Settled
     
@@ -517,6 +565,100 @@ static void SETTLED_tune(RadioSm* sm)
         ROOT_ChoicePoint_TuneIssue__transition(sm);
         return; // event processing immediately stops when a transition finishes. No other behaviors for this state are checked.
     } // end of behavior for Settled
+    
+    // No ancestor handles this event.
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// event handlers for state SWITCHING
+////////////////////////////////////////////////////////////////////////////////
+
+static void SWITCHING_enter(RadioSm* sm)
+{
+    sm->state_id = RadioSm_StateId_SWITCHING;
+}
+
+static void SWITCHING_exit(RadioSm* sm)
+{
+    sm->state_id = RadioSm_StateId_OPERATIONAL;
+}
+
+static void SWITCHING_band(RadioSm* sm)
+{
+    // Switching behavior
+    // uml: BAND / { rad_hold_request(); }
+    {
+        // Step 1: execute action `rad_hold_request();`
+        rad_hold_request();
+    } // end of behavior for Switching
+    
+    // No ancestor handles this event.
+}
+
+static void SWITCHING_band_done(RadioSm* sm)
+{
+    // Switching behavior
+    // uml: BAND_DONE / { rad_publish(RAD_PUB_BAND_CHANGED); } TransitionTo(ROOT.<ChoicePoint>(NextCommand))
+    {
+        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
+        exit_up_to_state_handler(sm, RadioSm_StateId_ROOT);
+        
+        // Step 2: Transition action: `rad_publish(RAD_PUB_BAND_CHANGED);`.
+        rad_publish(RAD_PUB_BAND_CHANGED);
+        
+        // Step 3: Enter/move towards transition target `ROOT.<ChoicePoint>(NextCommand)`.
+        // ROOT.<ChoicePoint>(NextCommand) is a pseudo state and cannot have an `enter` trigger.
+        
+        // Finish transition by calling pseudo state transition function.
+        ROOT_ChoicePoint_NextCommand__transition(sm);
+        return; // event processing immediately stops when a transition finishes. No other behaviors for this state are checked.
+    } // end of behavior for Switching
+    
+    // No ancestor handles this event.
+}
+
+static void SWITCHING_band_failed(RadioSm* sm)
+{
+    // Switching behavior
+    // uml: BAND_FAILED / { rad_publish(RAD_PUB_FAULT_BAND); rad_abandon(); } TransitionTo(Faulted)
+    {
+        // Step 1: Exit states until we reach `ROOT` state (Least Common Ancestor for transition).
+        exit_up_to_state_handler(sm, RadioSm_StateId_ROOT);
+        
+        // Step 2: Transition action: `rad_publish(RAD_PUB_FAULT_BAND); rad_abandon();`.
+        rad_publish(RAD_PUB_FAULT_BAND); rad_abandon();
+        
+        // Step 3: Enter/move towards transition target `Faulted`.
+        FAULTED_enter(sm);
+        
+        // Step 4: complete transition. Ends event dispatch. No other behaviors are checked.
+        return;
+    } // end of behavior for Switching
+    
+    // No ancestor handles this event.
+}
+
+static void SWITCHING_step(RadioSm* sm)
+{
+    // Switching behavior
+    // uml: STEP / { rad_hold_request(); }
+    {
+        // Step 1: execute action `rad_hold_request();`
+        rad_hold_request();
+    } // end of behavior for Switching
+    
+    // No ancestor handles this event.
+}
+
+static void SWITCHING_tune(RadioSm* sm)
+{
+    // Switching behavior
+    // uml: TUNE / { rad_hold_request(); }
+    {
+        // Step 1: execute action `rad_hold_request();`
+        rad_hold_request();
+    } // end of behavior for Switching
     
     // No ancestor handles this event.
 }
@@ -728,6 +870,7 @@ char const * RadioSm_state_id_to_string(RadioSm_StateId id)
         case RadioSm_StateId_FAULTED: return "FAULTED";
         case RadioSm_StateId_OPERATIONAL: return "OPERATIONAL";
         case RadioSm_StateId_SETTLED: return "SETTLED";
+        case RadioSm_StateId_SWITCHING: return "SWITCHING";
         case RadioSm_StateId_TUNING: return "TUNING";
         case RadioSm_StateId_STOPPED: return "STOPPED";
         default: return "?";
@@ -741,6 +884,8 @@ char const * RadioSm_event_id_to_string(RadioSm_EventId id)
     {
         case RadioSm_EventId_AUDIO_FAULT: return "AUDIO_FAULT";
         case RadioSm_EventId_BAND: return "BAND";
+        case RadioSm_EventId_BAND_DONE: return "BAND_DONE";
+        case RadioSm_EventId_BAND_FAILED: return "BAND_FAILED";
         case RadioSm_EventId_START_FAILED: return "START_FAILED";
         case RadioSm_EventId_START_OK: return "START_OK";
         case RadioSm_EventId_STEP: return "STEP";
@@ -761,6 +906,7 @@ RadioSm_StateId RadioSm_get_parent_id(RadioSm_StateId id)
         case RadioSm_StateId_FAULTED: return RadioSm_StateId_ROOT;
         case RadioSm_StateId_OPERATIONAL: return RadioSm_StateId_ROOT;
         case RadioSm_StateId_SETTLED: return RadioSm_StateId_OPERATIONAL;
+        case RadioSm_StateId_SWITCHING: return RadioSm_StateId_OPERATIONAL;
         case RadioSm_StateId_TUNING: return RadioSm_StateId_OPERATIONAL;
         case RadioSm_StateId_STOPPED: return RadioSm_StateId_ROOT;
         default: return RadioSm_StateId_ROOT;

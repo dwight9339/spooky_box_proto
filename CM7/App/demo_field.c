@@ -451,7 +451,9 @@ static void BuildModel(uint32_t now, const CtxStatus *ctx, const InpStatus *inp,
   model->screen = (uint8_t)Screen(ctx, inp);
   model->session = (uint8_t)Session_GetState();
   model->shift = InputResolution_ShiftActive();
-  model->radio_ok = (radio_state == RAD_STATE_SETTLED) || (radio_state == RAD_STATE_TUNING);
+  /* A band switch in flight (54w.12.2) is the radio running, not off. */
+  model->radio_ok = (radio_state == RAD_STATE_SETTLED) || (radio_state == RAD_STATE_TUNING) ||
+                    (radio_state == RAD_STATE_SWITCHING);
   (void)RadioControl_GetStatus(&radio);
   model->band = (uint8_t)radio.tune.band;
   model->frequency_khz = radio.tune.frequency_khz;
@@ -958,7 +960,8 @@ void inp_integration_issue(InpCommand command)
     return;
   }
   /* An open-ended session, as RECORD START without a duration. */
-  posted = start ? SessionControl_RequestStart(0U, AudioPath_IsRunning())
+  /* As RECORD START: not while a failed band switch holds the radio (54w.12.3). */
+  posted = start ? SessionControl_RequestStart(0U, RadioAdapter_AudioReady())
                  : SessionControl_RequestStop();
   printf("[demo] session %s from the prompt%s\r\n", start ? "start" : "stop",
          posted ? "" : ": queue full");
