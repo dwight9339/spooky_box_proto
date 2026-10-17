@@ -11,6 +11,7 @@
 #define FULL_LIGHTNESS 1000U
 
 static uint16_t idle_lightness;
+static uint16_t balance[DEMO_LIGHT_CHANNELS];
 static bool fault_active;
 static uint32_t fault_start_ms;
 
@@ -32,7 +33,13 @@ uint16_t DemoLights_LightnessToDuty(uint16_t lightness_permille)
 
 void DemoLights_Init(void)
 {
+  uint32_t channel;
+
   idle_lightness = DEMO_LIGHTS_IDLE_LIGHTNESS;
+  for (channel = 0U; channel < DEMO_LIGHT_CHANNELS; ++channel)
+  {
+    balance[channel] = DEMO_LIGHTS_BALANCE_FULL;
+  }
   fault_active = false;
   fault_start_ms = 0U;
 }
@@ -46,6 +53,35 @@ void DemoLights_SetIdleLightness(uint16_t lightness_permille)
 uint16_t DemoLights_IdleLightness(void)
 {
   return idle_lightness;
+}
+
+void DemoLights_SetBalance(const uint16_t balance_permille[DEMO_LIGHT_CHANNELS])
+{
+  uint32_t channel;
+
+  if (balance_permille == NULL)
+  {
+    return;
+  }
+  for (channel = 0U; channel < DEMO_LIGHT_CHANNELS; ++channel)
+  {
+    balance[channel] = (balance_permille[channel] > DEMO_LIGHTS_BALANCE_FULL)
+      ? DEMO_LIGHTS_BALANCE_FULL : balance_permille[channel];
+  }
+}
+
+void DemoLights_GetBalance(uint16_t balance_permille[DEMO_LIGHT_CHANNELS])
+{
+  uint32_t channel;
+
+  if (balance_permille == NULL)
+  {
+    return;
+  }
+  for (channel = 0U; channel < DEMO_LIGHT_CHANNELS; ++channel)
+  {
+    balance_permille[channel] = balance[channel];
+  }
 }
 
 void DemoLights_OnSessionFault(uint32_t now_ms)
@@ -156,6 +192,28 @@ static void Encoders(const DemoLightsInput *input, uint8_t rgb[4])
   }
 }
 
+/* Each channel an encoder's colour uses gets the duty of the idle level,
+ * scaled by that channel's balance. */
+static void EncoderDuty(const uint8_t rgb[4], uint16_t duty[4][DEMO_LIGHT_CHANNELS])
+{
+  const uint32_t lit_duty = DemoLights_LightnessToDuty(idle_lightness);
+  uint32_t encoder;
+  uint32_t channel;
+
+  for (encoder = 0U; encoder < 4U; ++encoder)
+  {
+    for (channel = 0U; channel < DEMO_LIGHT_CHANNELS; ++channel)
+    {
+      const bool on = (rgb[encoder] & (DEMO_LIGHT_RED >> channel)) != 0U;
+
+      duty[encoder][channel] = on
+        ? (uint16_t)(((lit_duty * balance[channel]) + (DEMO_LIGHTS_BALANCE_FULL / 2U)) /
+                     DEMO_LIGHTS_BALANCE_FULL)
+        : 0U;
+    }
+  }
+}
+
 void DemoLights_Compute(const DemoLightsInput *input, uint32_t now_ms,
                         DemoLightsOutput *output)
 {
@@ -172,4 +230,5 @@ void DemoLights_Compute(const DemoLightsInput *input, uint32_t now_ms,
     output->button_duty[button] = DemoLights_LightnessToDuty(lightness[button]);
   }
   Encoders(input, output->encoder_rgb);
+  EncoderDuty(output->encoder_rgb, output->encoder_duty);
 }

@@ -604,7 +604,7 @@ static void ServiceLights(uint32_t now, const CtxStatus *ctx, const DemoViewMode
   DemoLights_Compute(&input, now, &output);
   if (!lights_valid || (memcmp(&output, &lights_shown, sizeof(output)) != 0))
   {
-    UiBoardTest_DemoSetLights(output.button_duty, output.encoder_rgb);
+    UiBoardTest_DemoSetLights(output.button_duty, output.encoder_duty);
     lights_shown = output;
     lights_valid = true;
   }
@@ -1216,44 +1216,87 @@ void ctx_integration_publish(CtxPublished event, int32_t arg)
 
 /* --- CLI ----------------------------------------------------------------------- */
 
-/* `DEMO LIGHTS` reports and `DEMO LIGHTS IDLE <0-1000>` sets the button idle
- * level in permille of perceived lightness, for setting it by eye on the bench.
- * Not kept across a reset. */
-static bool HandleLights(const char *command)
+/* Parses one decimal of at most four digits, 0..1000, ending at a space or the
+ * end of the command; *cursor moves past it. */
+static bool ParsePermille(const char **cursor, uint16_t *value)
 {
-  static const char prefix[] = "DEMO LIGHTS IDLE ";
-  char response[96];
-  const char *digits;
-  uint32_t value = 0U;
+  const char *digits = *cursor;
+  uint32_t parsed = 0U;
   uint32_t count = 0U;
 
-  if (strcmp(command, "DEMO LIGHTS") != 0)
+  while ((*digits >= '0') && (*digits <= '9') && (count <= 4U))
   {
-    if (strncmp(command, prefix, sizeof(prefix) - 1U) != 0)
+    parsed = (parsed * 10U) + (uint32_t)(*digits - '0');
+    ++count;
+    ++digits;
+  }
+  if ((count == 0U) || (count > 4U) || (parsed > 1000U) ||
+      ((*digits != '\0') && (*digits != ' ')))
+  {
+    return false;
+  }
+  *value = (uint16_t)parsed;
+  *cursor = digits;
+  return true;
+}
+
+/* `DEMO LIGHTS` reports, `DEMO LIGHTS IDLE <0-1000>` sets the idle level of
+ * the buttons and lit encoders in permille of perceived lightness, and
+ * `DEMO LIGHTS BALANCE <r> <g> <b>` scales each encoder channel's duty in
+ * permille (p04.12), for setting both by eye on the bench. Not kept across a
+ * reset. */
+static bool HandleLights(const char *command)
+{
+  static const char idle_prefix[] = "DEMO LIGHTS IDLE ";
+  static const char balance_prefix[] = "DEMO LIGHTS BALANCE ";
+  char response[128];
+  uint16_t balance[DEMO_LIGHT_CHANNELS];
+
+  if (strncmp(command, idle_prefix, sizeof(idle_prefix) - 1U) == 0)
+  {
+    const char *cursor = &command[sizeof(idle_prefix) - 1U];
+    uint16_t value;
+
+    if (!ParsePermille(&cursor, &value) || (*cursor != '\0'))
     {
-      return false;
+      (void)UsbTest_SendText("ERR usage: DEMO LIGHTS [IDLE 0..1000 | BALANCE r g b]\r\n");
+      return true;
     }
-    for (digits = &command[sizeof(prefix) - 1U]; (*digits >= '0') && (*digits <= '9');
-         ++digits)
+    DemoLights_SetIdleLightness(value);
+  }
+  else if (strncmp(command, balance_prefix, sizeof(balance_prefix) - 1U) == 0)
+  {
+    const char *cursor = &command[sizeof(balance_prefix) - 1U];
+    uint32_t channel;
+
+    for (channel = 0U; channel < DEMO_LIGHT_CHANNELS; ++channel)
     {
-      value = (value * 10U) + (uint32_t)(*digits - '0');
-      ++count;
-      if (count > 4U)
+      if ((channel > 0U) && (*cursor++ != ' '))
+      {
+        break;
+      }
+      if (!ParsePermille(&cursor, &balance[channel]))
       {
         break;
       }
     }
-    if ((count == 0U) || (count > 4U) || (*digits != '\0') || (value > 1000U))
+    if ((channel < DEMO_LIGHT_CHANNELS) || (*cursor != '\0'))
     {
-      (void)UsbTest_SendText("ERR usage: DEMO LIGHTS [IDLE 0..1000]\r\n");
+      (void)UsbTest_SendText("ERR usage: DEMO LIGHTS [IDLE 0..1000 | BALANCE r g b]\r\n");
       return true;
     }
-    DemoLights_SetIdleLightness((uint16_t)value);
+    DemoLights_SetBalance(balance);
   }
+  else if (strcmp(command, "DEMO LIGHTS") != 0)
+  {
+    return false;
+  }
+  DemoLights_GetBalance(balance);
   (void)snprintf(response, sizeof(response),
-                 "OK DEMO LIGHTS IDLE=%u DUTY=%u PRESSED_DUTY=1000\r\n",
+                 "OK DEMO LIGHTS IDLE=%u DUTY=%u PRESSED_DUTY=1000 BALANCE=%u,%u,%u\r\n",
                  (unsigned)DemoLights_IdleLightness(),
-                 (unsigned)DemoLights_LightnessToDuty(DemoLights_IdleLightness()));
+                 (unsigned)DemoLights_LightnessToDuty(DemoLights_IdleLightness()),
+                 (unsigned)balance[0], (unsigned)balance[1], (unsigned)balance[2]);
   (void)UsbTest_SendText(response);
   return true;
 }

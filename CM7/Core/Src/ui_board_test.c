@@ -1199,73 +1199,149 @@ void UiBoardTest_SafeOff(void)
 #if defined(SPOOKY_DEMO)
 /* --- Demo-only surfaces (decision 0011 item 12, p04.3) ----------------------- */
 
-/* Button LED PWM: PF6 is TIM16_CH1 and PF7 TIM17_CH1 (AF1). The demo image
- * gives both timers to the M7; the M4 sleeps. Duty is in permille. */
+/* LED PWM: every button and encoder LED pin is a timer channel (p04.12;
+ * docs/design/prototype-hardware.md). The demo image gives these timers to the
+ * M7; neither core uses them otherwise, and the M4 sleeps. Duty is in permille. */
 #define UI_DEMO_PWM_PRESCALER 2U
 #define UI_DEMO_PWM_PERIOD 1000U
 
+typedef struct
+{
+  TIM_TypeDef *timer;
+  uint8_t channel;   /* 1 to 4 */
+  uint8_t alternate; /* GPIO alternate function */
+} UiDemoPwm;
+
+/* In ui_leds order: BTN0, BTN1, then ENCn_R, _G, _B for encoders 0 to 3. */
+static const UiDemoPwm ui_demo_pwm[] =
+{
+  {TIM16, 1U, GPIO_AF1_TIM16},
+  {TIM17, 1U, GPIO_AF1_TIM17},
+  {TIM2,  3U, GPIO_AF1_TIM2},
+  {TIM13, 1U, GPIO_AF9_TIM13},
+  {TIM14, 1U, GPIO_AF9_TIM14},
+  {TIM2,  1U, GPIO_AF1_TIM2},
+  {TIM2,  2U, GPIO_AF1_TIM2},
+  {TIM12, 2U, GPIO_AF2_TIM12},
+  {TIM4,  3U, GPIO_AF2_TIM4},
+  {TIM4,  4U, GPIO_AF2_TIM4},
+  {TIM1,  4U, GPIO_AF1_TIM1},
+  {TIM1,  1U, GPIO_AF1_TIM1},
+  {TIM1,  2U, GPIO_AF1_TIM1},
+  {TIM1,  3U, GPIO_AF1_TIM1}
+};
+
+_Static_assert((sizeof(ui_demo_pwm) / sizeof(ui_demo_pwm[0])) ==
+               (sizeof(ui_leds) / sizeof(ui_leds[0])),
+               "one PWM channel per UI LED");
+
+static TIM_TypeDef *const ui_demo_pwm_timers[] =
+{
+  TIM16, TIM17, TIM1, TIM2, TIM4, TIM12, TIM13, TIM14
+};
+
 static bool ui_demo_pwm_ready;
 
-static void UiDemoPwmTimerStart(TIM_TypeDef *timer)
+static volatile uint32_t *UiDemoPwmCompare(const UiDemoPwm *pwm)
 {
-  timer->CR1 = 0U;
-  timer->PSC = UI_DEMO_PWM_PRESCALER;
-  timer->ARR = UI_DEMO_PWM_PERIOD - 1U;
-  timer->CCR1 = 0U;
-  timer->CCMR1 = TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1PE; /* PWM 1 */
-  timer->CCER = TIM_CCER_CC1E;
-  timer->BDTR = TIM_BDTR_MOE;
-  timer->EGR = TIM_EGR_UG;
-  timer->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
+  return &(&pwm->timer->CCR1)[pwm->channel - 1U];
+}
+
+/* PWM mode 1 with preload on one channel, starting dark. */
+static void UiDemoPwmChannelStart(const UiDemoPwm *pwm)
+{
+  const uint32_t index = pwm->channel - 1U;
+  const uint32_t mode = (TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1PE)
+                        << (8U * (index % 2U));
+
+  *UiDemoPwmCompare(pwm) = 0U;
+  if (index < 2U)
+  {
+    pwm->timer->CCMR1 |= mode;
+  }
+  else
+  {
+    pwm->timer->CCMR2 |= mode;
+  }
+  pwm->timer->CCER |= (TIM_CCER_CC1E << (4U * index));
 }
 
 bool UiBoardTest_DemoLightsStart(void)
 {
   GPIO_InitTypeDef gpio = {0};
+  uint32_t index;
 
   if (!ui_ready)
   {
     return false;
   }
+  __HAL_RCC_TIM1_CLK_ENABLE();
+  __HAL_RCC_TIM2_CLK_ENABLE();
+  __HAL_RCC_TIM4_CLK_ENABLE();
+  __HAL_RCC_TIM12_CLK_ENABLE();
+  __HAL_RCC_TIM13_CLK_ENABLE();
+  __HAL_RCC_TIM14_CLK_ENABLE();
   __HAL_RCC_TIM16_CLK_ENABLE();
   __HAL_RCC_TIM17_CLK_ENABLE();
-  UiDemoPwmTimerStart(TIM16);
-  UiDemoPwmTimerStart(TIM17);
-  gpio.Pin = ui_leds[0].pin;
+  for (index = 0U; index < (sizeof(ui_demo_pwm_timers) / sizeof(ui_demo_pwm_timers[0]));
+       ++index)
+  {
+    TIM_TypeDef *timer = ui_demo_pwm_timers[index];
+
+    timer->CR1 = 0U;
+    timer->PSC = UI_DEMO_PWM_PRESCALER;
+    timer->ARR = UI_DEMO_PWM_PERIOD - 1U;
+    timer->CCMR1 = 0U;
+    if (IS_TIM_CC3_INSTANCE(timer))
+    {
+      timer->CCMR2 = 0U; /* TIM12, TIM13, TIM14, TIM16, TIM17 have no channel 3 */
+    }
+    timer->CCER = 0U;
+  }
+  for (index = 0U; index < (sizeof(ui_demo_pwm) / sizeof(ui_demo_pwm[0])); ++index)
+  {
+    UiDemoPwmChannelStart(&ui_demo_pwm[index]);
+  }
+  for (index = 0U; index < (sizeof(ui_demo_pwm_timers) / sizeof(ui_demo_pwm_timers[0]));
+       ++index)
+  {
+    TIM_TypeDef *timer = ui_demo_pwm_timers[index];
+
+    if (IS_TIM_BREAK_INSTANCE(timer))
+    {
+      timer->BDTR = TIM_BDTR_MOE; /* TIM1, TIM16, TIM17: main output enable */
+    }
+    timer->EGR = TIM_EGR_UG;
+    timer->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
+  }
   gpio.Mode = GPIO_MODE_AF_PP;
   gpio.Pull = GPIO_NOPULL;
   gpio.Speed = GPIO_SPEED_FREQ_LOW;
-  gpio.Alternate = GPIO_AF1_TIM16;
-  HAL_GPIO_Init(ui_leds[0].port, &gpio);
-  gpio.Pin = ui_leds[1].pin;
-  gpio.Alternate = GPIO_AF1_TIM17;
-  HAL_GPIO_Init(ui_leds[1].port, &gpio);
+  for (index = 0U; index < (sizeof(ui_demo_pwm) / sizeof(ui_demo_pwm[0])); ++index)
+  {
+    gpio.Pin = ui_leds[index].pin;
+    gpio.Alternate = ui_demo_pwm[index].alternate;
+    HAL_GPIO_Init(ui_leds[index].port, &gpio);
+  }
   ui_demo_pwm_ready = true;
   return true;
 }
 
-void UiBoardTest_DemoSetLights(const uint16_t button_duty[2], const uint8_t encoder_rgb[4])
+void UiBoardTest_DemoSetLights(const uint16_t button_duty[2], const uint16_t encoder_duty[4][3])
 {
-  uint32_t encoder;
+  uint32_t index;
 
-  if (!ui_demo_pwm_ready || (button_duty == NULL) || (encoder_rgb == NULL))
+  if (!ui_demo_pwm_ready || (button_duty == NULL) || (encoder_duty == NULL))
   {
     return;
   }
-  TIM16->CCR1 = (button_duty[0] > UI_DEMO_PWM_PERIOD) ? UI_DEMO_PWM_PERIOD : button_duty[0];
-  TIM17->CCR1 = (button_duty[1] > UI_DEMO_PWM_PERIOD) ? UI_DEMO_PWM_PERIOD : button_duty[1];
-  /* ui_leds[2..13]: ENCn_R, _G, _B for encoders 0 to 3. */
-  for (encoder = 0U; encoder < 4U; ++encoder)
+  for (index = 0U; index < (sizeof(ui_demo_pwm) / sizeof(ui_demo_pwm[0])); ++index)
   {
-    uint32_t channel;
+    const uint16_t duty = (index < 2U) ? button_duty[index]
+                                       : encoder_duty[(index - 2U) / 3U][(index - 2U) % 3U];
 
-    for (channel = 0U; channel < 3U; ++channel)
-    {
-      const UiLed *led = &ui_leds[2U + (encoder * 3U) + channel];
-      const bool on = (encoder_rgb[encoder] & (4U >> channel)) != 0U;
-
-      HAL_GPIO_WritePin(led->port, led->pin, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    }
+    *UiDemoPwmCompare(&ui_demo_pwm[index]) =
+      (duty > UI_DEMO_PWM_PERIOD) ? UI_DEMO_PWM_PERIOD : duty;
   }
 }
 

@@ -212,6 +212,81 @@ static void test_adjustable_idle(void)
     CHECK(DemoLights_IdleLightness() == DEMO_LIGHTS_IDLE_LIGHTNESS);
 }
 
+/* A lit encoder shows its colour at the buttons' idle level (p04.12): every
+ * channel of its colour gets the idle duty, the others none, and an unlit
+ * encoder is dark. */
+static void test_encoder_levels_match_the_buttons(void)
+{
+    DemoLightsInput input = idle_classic();
+    DemoLightsOutput output;
+
+    DemoLights_Init();
+    output = compute(&input, 0u);
+    for (unsigned encoder = 0u; encoder < 4u; ++encoder) {
+        for (unsigned channel = 0u; channel < DEMO_LIGHT_CHANNELS; ++channel) {
+            CHECK(output.encoder_duty[encoder][channel] == idle_duty);
+        }
+    }
+    CHECK(output.encoder_duty[0][0] == output.button_duty[0]);
+
+    input.screen = DEMO_SCREEN_PROMPT_STOP;   /* Encoder 0 yellow, the rest dark */
+    output = compute(&input, 0u);
+    CHECK(output.encoder_duty[0][0] == idle_duty);
+    CHECK(output.encoder_duty[0][1] == idle_duty);
+    CHECK(output.encoder_duty[0][2] == 0u);
+    for (unsigned encoder = 1u; encoder < 4u; ++encoder) {
+        for (unsigned channel = 0u; channel < DEMO_LIGHT_CHANNELS; ++channel) {
+            CHECK(output.encoder_duty[encoder][channel] == 0u);
+        }
+    }
+
+    input = idle_classic();                   /* the idle level moves them together */
+    DemoLights_SetIdleLightness(1000u);
+    output = compute(&input, 0u);
+    CHECK(output.encoder_duty[3][2] == 1000u);
+    DemoLights_SetIdleLightness(0u);
+    output = compute(&input, 0u);
+    CHECK(output.encoder_duty[3][2] == 0u);
+    CHECK(output.button_duty[1] == 0u);
+}
+
+/* The balance scales each channel's duty so white looks neutral, is clamped to
+ * full, and leaves the buttons alone. */
+static void test_encoder_balance(void)
+{
+    const uint16_t balance[DEMO_LIGHT_CHANNELS] = {1000u, 500u, 250u};
+    const uint16_t too_high[DEMO_LIGHT_CHANNELS] = {1001u, 2000u, 0u};
+    uint16_t read[DEMO_LIGHT_CHANNELS];
+    DemoLightsInput input = idle_classic();
+    DemoLightsOutput output;
+
+    DemoLights_Init();
+    DemoLights_GetBalance(read);
+    CHECK(read[0] == 1000u && read[1] == 1000u && read[2] == 1000u);
+    DemoLights_SetIdleLightness(1000u);
+    DemoLights_SetBalance(balance);
+    output = compute(&input, 0u);
+    CHECK(output.encoder_duty[2][0] == 1000u);
+    CHECK(output.encoder_duty[2][1] == 500u);
+    CHECK(output.encoder_duty[2][2] == 250u);
+    CHECK(output.button_duty[0] == 1000u);
+
+    DemoLights_SetIdleLightness(DEMO_LIGHTS_IDLE_LIGHTNESS);   /* duty 113 */
+    output = compute(&input, 0u);
+    CHECK(output.encoder_duty[2][1] == 57u);                  /* rounded half */
+    CHECK(output.encoder_duty[2][2] == 28u);
+
+    DemoLights_SetBalance(too_high);
+    DemoLights_GetBalance(read);
+    CHECK(read[0] == 1000u && read[1] == 1000u && read[2] == 0u);
+    output = compute(&input, 0u);
+    CHECK(output.encoder_duty[1][2] == 0u);
+
+    DemoLights_Init();                                          /* boot resets it */
+    DemoLights_GetBalance(read);
+    CHECK(read[2] == 1000u);
+}
+
 int main(void)
 {
     test_lightness_curve();
@@ -221,6 +296,8 @@ int main(void)
     test_shift_lights_available_actions();
     test_screens();
     test_adjustable_idle();
+    test_encoder_levels_match_the_buttons();
+    test_encoder_balance();
     if (failures != 0u) {
         printf("%u failure(s)\n", failures);
         return 1;

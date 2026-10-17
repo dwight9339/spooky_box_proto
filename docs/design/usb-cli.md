@@ -494,17 +494,19 @@ OK DEMO SCREEN=CLASSIC INP=0 SHIFT=0 INPUTS=42 REFUSED=0 GESTURES=30/0 UNBOUND=0
 | `CMD_REJECTED`, `CMD_REFUSED` | Commands the policy rejected (shown on the display), and those the queue refused |
 | `QUEUE_HIGH` | Event queue high-water mark |
 | `OLED`, `FRAMES`, `PAGES`, `PAGE_FAIL`, `PAGE_US_MAX` | Display started; frames composed (every 50 ms, 100 ms while capturing); 128-byte pages written and failed; longest page write |
-| `LIGHTS` | Button LED PWM (TIM16, TIM17) started |
+| `LIGHTS` | Button and encoder LED PWM started (TIM16, TIM17, TIM1, TIM2, TIM4, TIM12, TIM13, TIM14) |
 | `MATRIX_REC_MS`, `MATRIX_REC_FRAMES`, `MATRIX_REC_SUPERSEDED` | Time the matrix ran while capturing, frames composed in it, and frames replaced before fully written: the matrix frame rate under capture |
 
-`DEMO LIGHTS` reports the button LEDs' idle level, and `DEMO LIGHTS IDLE <0-1000>`
-sets it, in permille of perceived lightness (CIE L*). The reply gives the level and
-its PWM duty in permille; a pressed button is always at full duty, and Button 0
-breathes from off up to a fixed peak during a session. The level resets to 400 at
-boot.
+`DEMO LIGHTS` reports the idle level shared by the button LEDs and the lit encoder
+LEDs, and `DEMO LIGHTS IDLE <0-1000>` sets it, in permille of perceived lightness
+(CIE L*). The reply gives the level and its PWM duty in permille; a pressed button is
+always at full duty, and Button 0 breathes from off up to a fixed peak during a
+session. `DEMO LIGHTS BALANCE <r> <g> <b>` scales the duty of each encoder's red,
+green and blue channel, 0 to 1000 permille, so a white encoder looks neutral. The
+level resets to 400 and the balance to `1000,1000,1000` at boot.
 
 ```text
-OK DEMO LIGHTS IDLE=400 DUTY=113 PRESSED_DUTY=1000
+OK DEMO LIGHTS IDLE=400 DUTY=113 PRESSED_DUTY=1000 BALANCE=1000,1000,1000
 ```
 
 The demo image lifts the in-band tune guard, so Classic keeps scanning during a session;

@@ -32,12 +32,13 @@ void UiBoardTest_MatrixRelease(bool blank);
 #if defined(SPOOKY_DEMO)
 /* Demo-only surfaces (demo_field.c). Switch edges and encoder detents are
  * forwarded to DemoField_OnControl and DemoField_OnDetents from the UI service
- * pass. LightsStart gives the button LEDs to TIM16 and TIM17 PWM; duty is in
- * permille. DisplayStart resets and blanks the OLED (about 200 ms, boot only);
+ * pass. LightsStart gives the two button LEDs and the twelve encoder LED
+ * channels to timer PWM (TIM16, TIM17, TIM1, TIM2, TIM4, TIM12, TIM13, TIM14;
+ * p04.12); duty is in permille, encoder channels red, green, blue. DisplayStart resets and blanks the OLED (about 200 ms, boot only);
  * DisplayWritePage writes one 128-byte page (bounded SPI6 transfer). Pressed
  * reads a control's raw level, for the initial state only. */
 bool UiBoardTest_DemoLightsStart(void);
-void UiBoardTest_DemoSetLights(const uint16_t button_duty[2], const uint8_t encoder_rgb[4]);
+void UiBoardTest_DemoSetLights(const uint16_t button_duty[2], const uint16_t encoder_duty[4][3]);
 bool UiBoardTest_DemoDisplayStart(void);
 bool UiBoardTest_DemoDisplayWritePage(uint8_t page, const uint8_t *bytes);
 bool UiBoardTest_DemoPressed(uint8_t control);
