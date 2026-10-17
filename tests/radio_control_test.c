@@ -407,8 +407,14 @@ static void a_band_switch_performs_the_proven_sequence_in_steps(void)
     CHECK(!status().band_switch_in_flight);
     CHECK(status().last_fault == RADIO_CONTROL_FAULT_NONE);
     CHECK(RadioControl_PollSwitchBand(NULL) == RADIO_BAND_POLL_IDLE);
-    /* At least the fixed delays, the power-up wait and the tune. */
+    /* At least the fixed delays, the power-up wait and the tune; and with 1 ms
+     * passes, little more: a command's reply is read in the poll that wrote
+     * it, and the poll that ends a delay writes the next command. */
     CHECK(test_tick - begun >= 71u + 120u + 40u);
+    CHECK(test_tick - begun <= 71u + 120u + 40u + 15u);
+    if (test_tick - begun > 71u + 120u + 40u + 15u) {
+        printf("  switch took %lu ms\n", (unsigned long)(test_tick - begun));
+    }
 
     /* The proven commands, in order, with the fixed delay after each. */
     static const struct {

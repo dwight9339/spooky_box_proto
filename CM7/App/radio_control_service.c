@@ -10,8 +10,8 @@
  * commands, property values, delays and timeouts but does not block
  * (full_spooky_proto-54w.12.2): RadioControl_BeginSwitchBand starts it without
  * touching the bus, and each RadioControl_PollSwitchBand call advances it by at
- * most one bus step (one status read and one command write, or one completion
- * poll of the first tune). Every receiver command waits for CTS before and after
+ * most one bus step (one command write with a status read before and after it,
+ * or one completion poll of the first tune). Every receiver command waits for CTS before and after
  * it is sent, each wait up to 2 s across calls; the fixed delays, also waited
  * across calls, add up to 71 ms.
  *   1. Caller mutes the codec over I2C4 and closes the stream gate.
@@ -774,53 +774,17 @@ static RadioBandPoll NextSwitchStep(uint32_t now, RadioTuneStatus *result)
   return RADIO_BAND_POLL_DONE;
 }
 
-RadioBandPoll RadioControl_PollSwitchBand(RadioTuneStatus *result)
+/* One status read and what it allows in the current step: write the step's
+ * command (SEND), or finish the step once the receiver has taken it (REPLY). */
+static RadioBandPoll SwitchBusStep(uint32_t now, RadioTuneStatus *result)
 {
-  const uint32_t now = HAL_GetTick();
   uint8_t command[6] = {0U};
   uint16_t length;
   uint32_t delay_ms;
   uint8_t status = 0U;
 
-  if (!switch_in_flight)
-  {
-    return RADIO_BAND_POLL_IDLE;
-  }
-  switch (switch_phase)
-  {
-    case SWITCH_PHASE_DELAY:
-      (void)SwitchCommand(switch_step, command, &delay_ms);
-      /* Strictly longer, like HAL_Delay: the wait began part way into a tick. */
-      return ((now - switch_wait_tick) > delay_ms) ? NextSwitchStep(now, result)
-                                                    : RADIO_BAND_POLL_PENDING;
-
-    case SWITCH_PHASE_TUNE:
-      if ((now - switch_last_poll_tick) < RADIO_TUNE_POLL_INTERVAL_MS)
-      {
-        return RADIO_BAND_POLL_PENDING;
-      }
-      switch_last_poll_tick = now;
-      switch (PollTuneOnce(switch_band, RADIO_FAST_CTS_TIMEOUT_MS, &switch_result))
-      {
-        case TUNE_POLL_DONE:
-          return NextSwitchStep(now, result);
-        case TUNE_POLL_BUS_FAILED:
-          return FailSwitch();
-        case TUNE_POLL_PENDING:
-        default:
-          break;
-      }
-      return ((now - switch_wait_tick) >= RADIO_DEVICE_TIMEOUT_MS)
-        ? FailSwitch() : RADIO_BAND_POLL_PENDING;
-
-    case SWITCH_PHASE_SEND:
-    case SWITCH_PHASE_REPLY:
-    default:
-      break;
-  }
-
-  /* One status read. A read the bus refuses counts as not ready, as in
-   * WaitCtsWithin; ERR fails the step. */
+  /* A read the bus refuses counts as not ready, as in WaitCtsWithin; ERR fails
+   * the step. */
   if (HAL_I2C_Master_Receive(radio_i2c, SI4735_I2C_ADDRESS_HAL, &status, 1U,
                              RADIO_I2C_TIMEOUT_MS) != HAL_OK)
   {
@@ -875,6 +839,73 @@ RadioBandPoll RadioControl_PollSwitchBand(RadioTuneStatus *result)
     return RADIO_BAND_POLL_PENDING;
   }
   return NextSwitchStep(now, result);
+}
+
+RadioBandPoll RadioControl_PollSwitchBand(RadioTuneStatus *result)
+{
+  const uint32_t now = HAL_GetTick();
+  RadioBandPoll poll;
+  uint8_t command[6] = {0U};
+  uint32_t delay_ms;
+
+  if (!switch_in_flight)
+  {
+    return RADIO_BAND_POLL_IDLE;
+  }
+  switch (switch_phase)
+  {
+    case SWITCH_PHASE_DELAY:
+      (void)SwitchCommand(switch_step, command, &delay_ms);
+      /* Strictly longer, like HAL_Delay: the wait began part way into a tick. */
+      if ((now - switch_wait_tick) <= delay_ms)
+      {
+        return RADIO_BAND_POLL_PENDING;
+      }
+      poll = NextSwitchStep(now, result);
+      if (poll != RADIO_BAND_POLL_PENDING)
+      {
+        return poll;
+      }
+      break; /* the next step's command goes out in this poll */
+
+    case SWITCH_PHASE_TUNE:
+      if ((now - switch_last_poll_tick) < RADIO_TUNE_POLL_INTERVAL_MS)
+      {
+        return RADIO_BAND_POLL_PENDING;
+      }
+      switch_last_poll_tick = now;
+      switch (PollTuneOnce(switch_band, RADIO_FAST_CTS_TIMEOUT_MS, &switch_result))
+      {
+        case TUNE_POLL_DONE:
+          return NextSwitchStep(now, result);
+        case TUNE_POLL_BUS_FAILED:
+          return FailSwitch();
+        case TUNE_POLL_PENDING:
+        default:
+          break;
+      }
+      return ((now - switch_wait_tick) >= RADIO_DEVICE_TIMEOUT_MS)
+        ? FailSwitch() : RADIO_BAND_POLL_PENDING;
+
+    case SWITCH_PHASE_SEND:
+    case SWITCH_PHASE_REPLY:
+    default:
+      break;
+  }
+
+  /* A command just written is usually answered at once, so its reply is read
+   * in the same poll: at most one write, with a status read before and after
+   * it, and no waiting. */
+  if (switch_phase != SWITCH_PHASE_SEND)
+  {
+    return SwitchBusStep(now, result);
+  }
+  poll = SwitchBusStep(now, result);
+  if ((poll == RADIO_BAND_POLL_PENDING) && (switch_phase == SWITCH_PHASE_REPLY))
+  {
+    poll = SwitchBusStep(now, result);
+  }
+  return poll;
 }
 
 void RadioControl_PowerDown(void)

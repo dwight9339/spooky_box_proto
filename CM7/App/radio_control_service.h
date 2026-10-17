@@ -85,8 +85,8 @@ RadioTunePoll RadioControl_PollTune(RadioTuneStatus *result);
  * the proven power-cycle sequence into the band without touching the bus and
  * abandons any tune in flight; it refuses an invalid band, an unpowered receiver
  * or a switch already in flight. Each PollSwitchBand call performs at most one
- * bus step: one status read and one command write, or one completion poll of the
- * band's first tune. Fixed delays and device waits elapse between calls. DONE
+ * bus step and never waits: one command write with a status read before and
+ * after it, or one completion poll of the band's first tune. Fixed delays and device waits elapse between calls. DONE
  * reports the first tune's result in the new band; after FAILED the receiver
  * state is unknown and the caller holds it in reset. Callers mute and gate the
  * audio around the switch. */
