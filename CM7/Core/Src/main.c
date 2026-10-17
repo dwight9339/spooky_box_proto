@@ -391,7 +391,7 @@ static void UsbCliCommand(const char *line)
     }
     return;
   }
-  if (RadioRecorder_HandleCommand(command, AudioPath_IsRunning()))
+  if (RadioRecorder_HandleCommand(command, RadioAdapter_AudioReady()))
   {
     return;
   }
@@ -454,6 +454,15 @@ static void UsbCliCommand(const char *line)
     RadioUsbSendBand();
     return;
   }
+#if defined(SPOOKY_RADIO_BAND_QUALIFICATION)
+  if (strcmp(command, "BAND FAIL") == 0)
+  {
+    /* Qualification only (54w.12.3): induce a failed band switch. */
+    RadioControl_ArmSwitchFault();
+    (void)UsbTest_SendText("OK RADIO next band switch fails at POWER_UP\r\n");
+    return;
+  }
+#endif
   if ((strncmp(command, "BAND", 4U) == 0) &&
       ((command[4] == ' ') || (command[4] == '\t')))
   {

@@ -52,7 +52,8 @@ static void ClassicPayload(SessionEvent *event, uint8_t published, const Classic
 
 /* The state a reader needs from this frame on: Classic, PTT if held, and a
  * tune in flight (items 11 and 13). At frame 0 the tune began before the
- * origin and is flagged. */
+ * origin and is flagged. A gap open at the origin is added by
+ * SessionEvents_Begin. */
 static void PostState(uint64_t frame, uint32_t uncertainty, uint16_t flags, uint32_t now_ms)
 {
   ClassicState classic;
@@ -97,6 +98,7 @@ void SessionEvents_Begin(const AudioTimelinePosition *origin, uint32_t now_ms)
 {
   RadioControlStatus radio;
   SessionEvent event;
+  uint8_t band_before = 0U;
 
   SessionEventLog_Reset(&session_log);
   session_active = false;
@@ -111,6 +113,16 @@ void SessionEvents_Begin(const AudioTimelinePosition *origin, uint32_t now_ms)
   SessionEvent_SetBandFrequency(&event, (uint8_t)radio.tune.band, radio.tune.frequency_khz);
   (void)SessionEventLog_Post(&session_log, &event, now_ms);
   PostState(0U, 0U, SESSION_EVENT_FLAG_BEFORE_ORIGIN, now_ms);
+  /* Item 11: a gap open at the origin, from a band switch in flight or a
+   * failed one. Its own start edge lies before the origin and is not
+   * written, so this record pairs with its end, if any. */
+  if (RadioAdapter_GapAtOrigin(origin, &band_before))
+  {
+    event = Blank(SESSION_EVENT_GAP_START);
+    event.flags = SESSION_EVENT_FLAG_BEFORE_ORIGIN;
+    SessionEvent_SetGap(&event, SESSION_EVENT_GAP_BAND_SWITCH, band_before, 0U);
+    (void)SessionEventLog_Post(&session_log, &event, now_ms);
+  }
 }
 
 void SessionEvents_End(uint64_t last_frame, uint8_t end_reason, uint32_t now_ms)

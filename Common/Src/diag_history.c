@@ -34,7 +34,7 @@ void DiagHistory_Add(DiagHistory *history, uint32_t tick_ms, DiagEventType type,
           (type == DIAG_LOG_ERROR) || (type == DIAG_EVENT_QUEUE_LOSS) ||
           (type == DIAG_SESSION_MISMATCH) ||
           (type == DIAG_FOREGROUND_BUDGET) ||
-          (type == DIAG_USB_BACKPRESSURE) ||
+          (type == DIAG_USB_BACKPRESSURE) || (type == DIAG_RADIO_FAULT) ||
           ((type == DIAG_RECORD_END) && ((arg1 & 1U) != 0U)) ||
           ((type == DIAG_IPC_LINK) && (arg0 >= 2U));
   if (fault)
@@ -58,7 +58,7 @@ const char *DiagHistory_Name(uint32_t type)
     "RECORD_END", "SD_WRITE", "SD_ERROR", "RADIO_OVERRUN", "PDM_OVERRUN",
     "AUDIO_ERROR", "IPC_LINK", "LOOP_STALL", "LOG_LOSS", "LOG_ERROR", "SLEEP",
     "EVENT_QUEUE_LOSS", "SESSION_MISMATCH", "COMMAND_REJECTED",
-    "FOREGROUND_BUDGET", "USB_BACKPRESSURE", "STORAGE_MARGIN"};
+    "FOREGROUND_BUDGET", "USB_BACKPRESSURE", "STORAGE_MARGIN", "RADIO_FAULT"};
   _Static_assert((sizeof(names) / sizeof(names[0])) == DIAG_EVENT_LIMIT,
                  "every diagnostic event needs a name");
   return type < DIAG_EVENT_LIMIT ? names[type] : names[0];

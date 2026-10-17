@@ -6,6 +6,7 @@
 #include "audio_path_service.h"
 #include "classic_adapter.h"
 #include "codec_volume_service.h"
+#include "diagnostics.h"
 #include "main.h"
 #include "radio_activity_feed.h"
 #include "radio_control_service.h"
@@ -138,6 +139,23 @@ static void ReportGapEdges(void)
            (unsigned long)status.tune.frequency_khz,
            (unsigned long)gap_reporter.missed);
   }
+}
+
+bool RadioAdapter_GapAtOrigin(const AudioTimelinePosition *origin, uint8_t *band_before)
+{
+  RadioGapSnapshot snapshot;
+  AudioTimelinePosition now;
+
+  if ((origin == NULL) || !AudioPath_GetGap(&snapshot) || !AudioPath_GetPosition(&now) ||
+      (now.epoch != origin->epoch) || !RadioGap_SpansOrigin(&snapshot, origin->frame))
+  {
+    return false;
+  }
+  if (band_before != NULL)
+  {
+    *band_before = gap_band_before;
+  }
+  return true;
 }
 
 void RadioAdapter_ServiceActivity(void)
@@ -314,6 +332,7 @@ void RadioAdapter_Dispatch(const EvqEvent *event)
 static bool completion_known;
 static uint16_t completion_type;
 static bool completion_posted;
+static uint32_t switch_target_band; /* the band switch in flight */
 
 static void BandSwitchFailed(void);
 
@@ -414,11 +433,20 @@ static void SendTuneStatus(const RadioTuneStatus *tune_status)
   (void)UsbTest_SendText(response);
 }
 
+/* After a failed band switch the receiver is held in reset; its last result
+ * would not describe what the radio track holds (Principle II). */
+static const char radio_fault_reply[] = "ERR RADIO band switch failed; reset required\r\n";
+
 void RadioAdapter_SendStatus(void)
 {
   RadioControlStatus status;
 
   (void)RadioControl_GetStatus(&status);
+  if (!status.powered && (status.last_fault == RADIO_CONTROL_FAULT_BAND_SWITCH))
+  {
+    (void)UsbTest_SendText(radio_fault_reply);
+    return;
+  }
   SendTuneStatus(&status.tune);
 }
 
@@ -461,17 +489,31 @@ bool rad_integration_begin_tune(uint32_t frequency_khz)
   return retune_issued;
 }
 
-/* A band switch that cannot start or finish: radio audio stops, the receiver
- * is held in reset and the output stays muted. */
+/* A band switch that cannot start or finish (full_spooky_proto-54w.12.3, user
+ * decision Q6): the receiver is held in reset and the output stays muted, but
+ * the radio capture keeps running with its stream gate closed. Each radio block
+ * reaches the recorder as silence, so a session keeps recording its microphone
+ * track, and the decision 0004 gap the switch opened stays open: no gap end is
+ * written, and a reader closes it at session end. Only a reset clears the
+ * fault. */
 static void BandSwitchFailed(void)
 {
   AudioPath_SetStreamEnabled(false);
-  AudioPath_MarkStopped();
   (void)CodecVolume_SetTransitionMuted(true);
   RadioControl_HoldReset();
+  Diagnostics_Record(DIAG_RADIO_FAULT, (uint32_t)RADIO_CONTROL_FAULT_BAND_SWITCH,
+                     switch_target_band);
   BSP_LED_Off(LED_GREEN);
   BSP_LED_On(LED_RED);
-  printf("[radio] FAIL: band switch; receiver reset and output muted\r\n");
+  printf("[radio] FAIL: band switch; receiver reset, output muted, "
+         "radio track silent until reset\r\n");
+}
+
+bool RadioAdapter_AudioReady(void)
+{
+  RadioControlStatus status;
+
+  return AudioPath_IsRunning() && RadioControl_GetStatus(&status) && status.powered;
 }
 
 /* Sequences the monitored output around a receiver function change. The radio
@@ -485,6 +527,7 @@ bool rad_integration_begin_band_switch(uint32_t band_value)
 
   completion_known = false;
   completion_posted = false;
+  switch_target_band = band_value;
   if (band >= RADIO_BAND_COUNT)
   {
     BandSwitchFailed();
@@ -567,7 +610,7 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
     case RAD_PUB_FAULT_BAND:
       if (to_cli)
       {
-        (void)UsbTest_SendText("ERR RADIO band switch failed; reset required\r\n");
+        (void)UsbTest_SendText(radio_fault_reply);
       }
       break;
     case RAD_PUB_REJECTED_RANGE:
@@ -579,7 +622,10 @@ void rad_integration_publish(RadPublished event, const RadCommand *command)
     case RAD_PUB_REJECTED_UNAVAILABLE:
       if (to_cli)
       {
-        (void)UsbTest_SendText("ERR RADIO audio path is not running\r\n");
+        /* The capture still runs after a failed band switch; say why. */
+        (void)UsbTest_SendText(
+          (!status.powered && (status.last_fault == RADIO_CONTROL_FAULT_BAND_SWITCH))
+            ? radio_fault_reply : "ERR RADIO audio path is not running\r\n");
       }
       break;
     case RAD_PUB_SUPERSEDED:

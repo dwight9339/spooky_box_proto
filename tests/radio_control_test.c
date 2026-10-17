@@ -528,6 +528,36 @@ static void a_stuck_receiver_during_the_first_tune_fails_within_its_bound(void)
     CHECK(status().last_fault == RADIO_CONTROL_FAULT_BAND_SWITCH);
 }
 
+static void an_induced_fault_fails_the_next_switch_once(void)
+{
+    RadioTuneStatus result = {0};
+    start();
+    RadioControl_ArmSwitchFault();
+    CHECK(RadioControl_BeginSwitchBand(RADIO_BAND_AM));
+    CHECK(poll_switch(NULL, 500u) == RADIO_BAND_POLL_FAILED);
+    /* It fails after POWER_UP is written, as a real ERR answer would. */
+    CHECK(radio.written > 0u && radio.log[radio.written - 1u].bytes[0] == 0x01u);
+    CHECK(status().last_fault == RADIO_CONTROL_FAULT_BAND_SWITCH);
+
+    /* One shot: a restarted receiver switches normally. */
+    start();
+    CHECK(RadioControl_BeginSwitchBand(RADIO_BAND_AM));
+    CHECK(poll_switch(&result, 3000u) == RADIO_BAND_POLL_DONE);
+    CHECK(result.band == RADIO_BAND_AM);
+}
+
+static void power_down_skips_a_receiver_held_in_reset(void)
+{
+    start();
+    RadioControl_HoldReset();
+    const unsigned transmits = radio.transmits;
+    const uint32_t before = test_tick;
+    radio.cts_stuck = true; /* a receiver in reset never answers */
+    RadioControl_PowerDown();
+    CHECK(radio.transmits == transmits);
+    CHECK(test_tick == before);
+}
+
 static void begin_switch_refuses_invalid_unpowered_and_busy(void)
 {
     start();
@@ -602,6 +632,8 @@ int main(void)
     RUN(an_error_status_fails_the_switch);
     RUN(a_first_tune_that_never_completes_fails_the_switch);
     RUN(a_stuck_receiver_during_the_first_tune_fails_within_its_bound);
+    RUN(an_induced_fault_fails_the_next_switch_once);
+    RUN(power_down_skips_a_receiver_held_in_reset);
     RUN(begin_switch_refuses_invalid_unpowered_and_busy);
     RUN(a_band_switch_abandons_the_tune_in_flight);
     RUN(step_targets_stop_or_wrap_at_the_band_edges);

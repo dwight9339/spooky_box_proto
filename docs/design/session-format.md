@@ -183,4 +183,6 @@ From decision 0030 items 10 to 13:
   A tune start with no tune end before session end was still in flight when the
   session ended; its interval runs to session end.
 - **Gaps.** A gap (decision 0004) runs from gap start to gap end, both exact. The
-  radio track is digital silence inside it.
+  radio track is digital silence inside it. A gap start with no gap end before
+  session end was still open when the session ended, for example after a failed
+  band switch, which holds the receiver in reset; it runs to session end.
