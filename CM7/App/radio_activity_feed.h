@@ -75,6 +75,7 @@ typedef enum
 {
   RADIO_ACTIVITY_READER_CLASSIC = 0,  /* activity hold */
   RADIO_ACTIVITY_READER_MATRIX,       /* decision 0013 kicks */
+  RADIO_ACTIVITY_READER_LIGHTS,       /* decision 0031 flashes */
   RADIO_ACTIVITY_READER_COUNT
 } RadioActivityReader;
 

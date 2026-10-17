@@ -271,7 +271,7 @@ static void a_band_switch_reseeds_the_averages(void)
     CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_NONE);
 }
 
-/* Each reader sees every onset once, independently of the other. */
+/* Each reader sees every onset once, independently of the others. */
 static void each_reader_takes_its_own_onsets(void)
 {
     start();
@@ -280,6 +280,9 @@ static void each_reader_takes_its_own_onsets(void)
     CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_MATRIX) == RADIO_ONSET_LARGE);
     CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_MATRIX) == RADIO_ONSET_NONE);
     CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_LARGE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_CLASSIC) == RADIO_ONSET_NONE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_LIGHTS) == RADIO_ONSET_LARGE);
+    CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_LIGHTS) == RADIO_ONSET_NONE);
     CHECK(RadioActivityFeed_TakeOnset(RADIO_ACTIVITY_READER_COUNT) == RADIO_ONSET_NONE);
 }
 
