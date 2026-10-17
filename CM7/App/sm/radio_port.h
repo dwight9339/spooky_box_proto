@@ -49,7 +49,9 @@ typedef enum RadReject {
     RAD_REJECT_UNAVAILABLE /* the radio is not running */
 } RadReject;
 
-/* Domain events (presentation.md). Command answers carry the command. */
+/* Domain events (presentation.md). Command answers carry the command, and so do
+ * TUNE_STARTED and BAND_STARTED, which announce the command in flight without
+ * answering it. */
 typedef enum RadPublished {
     RAD_PUB_STARTED = 0,
     RAD_PUB_TUNE_STARTED,
@@ -62,7 +64,8 @@ typedef enum RadPublished {
     RAD_PUB_ABANDONED,
     RAD_PUB_FAULT_START,
     RAD_PUB_FAULT_BAND,
-    RAD_PUB_FAULT_AUDIO
+    RAD_PUB_FAULT_AUDIO,
+    RAD_PUB_BAND_STARTED /* a band switch began; not an answer (54w.12.4) */
 } RadPublished;
 
 typedef enum RadState {
