@@ -503,7 +503,10 @@ bool AudioPath_AlignCaptureLocked(uint32_t mic_latency_frames,
   uint32_t rx_index;
   uint32_t tx_index;
 
-  if ((start == NULL) || !running || !stream_enabled)
+  /* A closed stream gate does not prevent it: gated halves reach the recorder
+   * as silence (decision 0004), so a session may start inside a band switch
+   * and begins with a gap open at its origin (decision 0030 item 11). */
+  if ((start == NULL) || !running)
   {
     return false;
   }
