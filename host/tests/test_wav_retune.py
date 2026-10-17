@@ -54,7 +54,8 @@ class Classification(unittest.TestCase):
         metrics = classify([(10, 100), (3000, 3100)], tunes, 5000)
         self.assertEqual(metrics["zero_runs_checked"], 1)
         self.assertEqual(metrics["unexplained_examples"],
-                         [{"first_frame": 3000, "frames": 101, "after_end_frames": 1800}])
+                         [{"first_frame": 3000, "frames": 101, "after_end_frames": 1800,
+                           "band": None}])
         self.assertEqual(verdict(dict(metrics, unstamped_tunes=0))[1], "zero_run_outside_retune")
 
     def test_unstamped_and_other_epoch_lines(self):

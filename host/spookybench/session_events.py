@@ -97,6 +97,14 @@ def summarize(records):
             "records_dropped": reported, "last_frame": last, "problems": problems}
 
 
+def band_spans(records):
+    """(first frame, band) for each band in effect: the session's start band,
+    then each band switch from the end of its gap."""
+    spans = [(r["frame"], r["band"]) for r in records if r["kind"] == "session_start"]
+    spans += [(r["frame"] + 1, r["band"]) for r in records if r["kind"] == "gap_end"]
+    return sorted(spans)
+
+
 def gaps(records):
     """Decision 0004 gaps in session frames, both edges exact and inclusive. A gap
     still open at session end runs to session end."""

@@ -73,35 +73,75 @@ def zero_runs(left, right, minimum=MIN_RUN_FRAMES):
     return runs
 
 
-def classify(runs, tunes, frames, gaps=()):
+def _clip_to_gaps(first_frame, last_frame, gaps):
+    """The part of a zero run outside every gap, as (first, last) pieces."""
+    pieces = [(first_frame, last_frame)]
+    for gap in gaps:
+        next_pieces = []
+        for a, b in pieces:
+            if b < gap["start"] or a > gap["end"]:
+                next_pieces.append((a, b))
+                continue
+            if a < gap["start"]:
+                next_pieces.append((a, gap["start"] - 1))
+            if b > gap["end"]:
+                next_pieces.append((gap["end"] + 1, b))
+        pieces = next_pieces
+    return pieces
+
+
+def band_at(band_spans, frame):
+    """The band in effect at frame, from (first frame, band) spans in order."""
+    band = None
+    for start, value in band_spans:
+        if start > frame:
+            break
+        band = value
+    return band
+
+
+def classify(runs, tunes, frames, gaps=(), band_spans=()):
     """Match each zero run after the first tune to the tune intervals it overlaps.
-    A run inside a decision 0004 gap is explained by the gap: it is silence."""
+    The parts of a run inside a decision 0004 gap are explained by the gap, which
+    is silence; a tune's mute that runs straight into a gap is split there, so
+    the gap does not count as tune overhang. Unexplained runs are also counted
+    per band when band spans are known."""
     in_file = [tune for tune in tunes if tune["end"] >= 0 and tune["start"] < frames]
     first = in_file[0]["start"] if in_file else None
     explained, unexplained, overhang, in_gap = 0, [], {}, 0
     for first_frame, last_frame in runs:
         if first is None or last_frame < first:
             continue
-        if any(gap["start"] <= first_frame and last_frame <= gap["end"] for gap in gaps):
+        pieces = _clip_to_gaps(first_frame, last_frame, gaps)
+        if not pieces:
             explained += 1
             in_gap += 1
             continue
-        overlapping = [tune for tune in in_file
-                       if tune["start"] <= last_frame and first_frame <= tune["end"]]
-        if overlapping:
-            tune = overlapping[-1]
+        piece_ok = True
+        for a, b in pieces:
+            overlapping = [tune for tune in in_file if tune["start"] <= b and a <= tune["end"]]
+            if overlapping:
+                tune = overlapping[-1]
+                past = max(0, b - tune["end"])
+                overhang[tune["band"]] = max(overhang.get(tune["band"], 0), past)
+                continue
+            piece_ok = False
+            before = [tune for tune in in_file if tune["end"] < a]
+            unexplained.append({"first_frame": a, "frames": b - a + 1,
+                                "after_end_frames": (a - before[-1]["end"]) if before else None,
+                                "band": band_at(band_spans, a)})
+        if piece_ok:
             explained += 1
-            past = max(0, last_frame - tune["end"])
-            overhang[tune["band"]] = max(overhang.get(tune["band"], 0), past)
-            continue
-        before = [tune for tune in in_file if tune["end"] < first_frame]
-        unexplained.append({"first_frame": first_frame, "frames": last_frame - first_frame + 1,
-                            "after_end_frames": (first_frame - before[-1]["end"]) if before else None})
+            if len(pieces) == 1 and pieces[0] != (first_frame, last_frame):
+                in_gap += 1
+    by_band = {}
+    for run in unexplained:
+        by_band[run["band"]] = by_band.get(run["band"], 0) + 1
     margins = {band: -(-value // HALF_BUFFER_FRAMES) * HALF_BUFFER_FRAMES
                for band, value in overhang.items()}
     return {"tunes_in_file": len(in_file), "zero_runs_checked": explained + len(unexplained),
             "explained": explained, "explained_by_gaps": in_gap,
-            "unexplained": len(unexplained),
+            "unexplained": len(unexplained), "unexplained_by_band": by_band,
             "unexplained_examples": unexplained[:EXAMPLES],
             "max_overhang_frames": overhang, "settle_margin_frames": margins}
 
@@ -129,7 +169,7 @@ def check_gaps(left, right, gaps):
     return checked
 
 
-def analyze(wav_path, log_lines, origin, tunes=None, gaps=()):
+def analyze(wav_path, log_lines, origin, tunes=None, gaps=(), band_spans=()):
     _fmt, data_offset, data_size = read_format(wav_path)
     samples = array("h")
     with wav_path.open("rb") as stream:
@@ -142,7 +182,7 @@ def analyze(wav_path, log_lines, origin, tunes=None, gaps=()):
         tunes, unstamped = parse_retunes(log_lines, origin)
     else:
         unstamped = 0
-    metrics = classify(zero_runs(left, right), tunes, len(left), gaps)
+    metrics = classify(zero_runs(left, right), tunes, len(left), gaps, band_spans)
     metrics["gaps"] = check_gaps(left, right, gaps)
     metrics.update({"frames": len(left), "unstamped_tunes": unstamped,
                     "bands": tune_summary([t for t in tunes if t["end"] >= 0
@@ -173,7 +213,7 @@ def run_local(options):
             raise BenchError("invalid_invocation", f"file not found: {events_path}")
         _header, records = session_events.decode(events_path.read_bytes())
         metrics = analyze(wav_path, None, None, session_events.tunes(records),
-                          session_events.gaps(records))
+                          session_events.gaps(records), session_events.band_spans(records))
         metrics["source"] = "events"
         return metrics, verdict(metrics)
     if not options.get("log") or not options.get("origin"):

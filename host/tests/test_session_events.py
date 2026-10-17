@@ -154,6 +154,20 @@ class RetuneFromEvents(unittest.TestCase):
             metrics, verdict = wav_retune.run_local(self.write(root, radio, tune, gap))
             self.assertEqual(verdict[1], "gap_not_silent")
 
+    def test_mute_into_gap_and_per_band_counts(self):
+        tune = (record(1, 100, 0x0010, struct.pack("<B3xI", 0, 99200)) +
+                record(2, 300, 0x0011, struct.pack("<4B2I", 0, 1, 20, 3, 99200, 99200)))
+        gap = (record(3, 301, 0x0020, bytes([1, 0])) +
+               record(4, 811, 0x0021, bytes([1, 2, 0, 0]) + struct.pack("<I", 6000)))
+        with tempfile.TemporaryDirectory() as root:
+            # A tune mute (200..300) runs straight into the gap (301..811), then an
+            # unexplained SW run at 1500.
+            radio = [5] * 200 + [0] * 612 + [5] * 688 + [0] * 60 + [5] * 500
+            metrics, verdict = wav_retune.run_local(self.write(root, radio, tune, gap))
+        self.assertEqual(metrics["max_overhang_frames"], {"FM": 0})
+        self.assertEqual(metrics["unexplained_by_band"], {"SW": 1})
+        self.assertEqual(verdict[1], "zero_run_outside_retune")
+
     def test_needs_events_or_log_and_origin(self):
         with self.assertRaises(BenchError):
             wav_retune.run_local({"wav": __file__})
