@@ -91,6 +91,16 @@ static uint32_t last_compose_ms;
 static bool composed_once;
 static DemoLightsOutput lights_shown;
 static bool lights_valid;
+/* Bench override of the light PWM (p04.31): the channels in the mask, in
+ * ui_leds order (BTN0, BTN1, then ENC0 R, G, B to ENC3 R, G, B), run at
+ * raw_duty and every other channel holds raw_rest_duty, so only the masked
+ * pins switch. Cleared by DEMO LIGHTS RAW OFF and at reset. */
+#define DEMO_LIGHTS_RAW_CHANNELS 14U
+#define DEMO_LIGHTS_RAW_ALL ((1U << DEMO_LIGHTS_RAW_CHANNELS) - 1U)
+static bool raw_active;
+static uint16_t raw_mask;
+static uint16_t raw_duty;
+static uint16_t raw_rest_duty;
 static uint32_t cycles_per_us;
 static uint32_t matrix_last_ms;
 static uint32_t matrix_last_frames;
@@ -160,6 +170,7 @@ void DemoField_Init(void)
   session_started = false;
   composed_once = false;
   lights_valid = false;
+  raw_active = false;
   save_answer = (uint8_t)DEMO_SAVE_NONE;
   clip_return_pending = false;
   instrument_gestures = 0U;
@@ -584,6 +595,26 @@ static void ServiceDisplay(uint32_t now, const DemoViewModel *model)
   }
 }
 
+static void ApplyRawLights(DemoLightsOutput *output)
+{
+  uint32_t channel;
+
+  for (channel = 0U; channel < DEMO_LIGHTS_RAW_CHANNELS; ++channel)
+  {
+    const uint16_t duty = ((raw_mask & (1U << channel)) != 0U) ? raw_duty : raw_rest_duty;
+
+    if (channel < 2U)
+    {
+      output->button_duty[channel] = duty;
+    }
+    else
+    {
+      output->encoder_duty[(channel - 2U) / DEMO_LIGHT_CHANNELS]
+                          [(channel - 2U) % DEMO_LIGHT_CHANNELS] = duty;
+    }
+  }
+}
+
 static void ServiceLights(uint32_t now, const CtxStatus *ctx, const DemoViewModel *model)
 {
   DemoLightsInput input;
@@ -609,6 +640,10 @@ static void ServiceLights(uint32_t now, const CtxStatus *ctx, const DemoViewMode
   input.shift_quick_jump = (ctx->state == (uint8_t)CTX_STATE_CLASSIC) ||
                            (ctx->state == (uint8_t)CTX_STATE_MANUAL_QUICK_JUMP);
   DemoLights_Compute(&input, now, &output);
+  if (raw_active)
+  {
+    ApplyRawLights(&output);
+  }
   if (!lights_valid || (memcmp(&output, &lights_shown, sizeof(output)) != 0))
   {
     UiBoardTest_DemoSetLights(output.button_duty, output.encoder_duty);
@@ -1250,7 +1285,49 @@ static bool ParsePermille(const char **cursor, uint16_t *value)
 
 #define LIGHTS_USAGE \
   "ERR usage: DEMO LIGHTS [IDLE 0..1000 | ENCODER 0..1000 | BALANCE r g b | " \
-  "FLASH small medium large decay-ms]\r\n"
+  "FLASH small medium large decay-ms | RAW mask-hex duty [rest] | RAW OFF]\r\n"
+
+/* A channel mask of one to four hex digits, at most DEMO_LIGHTS_RAW_ALL,
+ * followed by a space. */
+static bool ParseRawMask(const char **cursor, uint16_t *mask)
+{
+  const char *digits = *cursor;
+  uint32_t parsed = 0U;
+  uint32_t count = 0U;
+
+  for (;;)
+  {
+    const char c = *digits;
+    uint32_t nibble;
+
+    if ((c >= '0') && (c <= '9'))
+    {
+      nibble = (uint32_t)(c - '0');
+    }
+    else if ((c >= 'A') && (c <= 'F'))
+    {
+      nibble = (uint32_t)(c - 'A') + 10U;
+    }
+    else
+    {
+      break;
+    }
+    parsed = (parsed << 4) | nibble;
+    ++count;
+    ++digits;
+    if (count > 4U)
+    {
+      return false;
+    }
+  }
+  if ((count == 0U) || (parsed > DEMO_LIGHTS_RAW_ALL) || (*digits != ' '))
+  {
+    return false;
+  }
+  *mask = (uint16_t)parsed;
+  *cursor = digits + 1;
+  return true;
+}
 
 /* `DEMO LIGHTS` reports, `DEMO LIGHTS IDLE <0-1000>` sets the idle level of
  * the buttons and `DEMO LIGHTS ENCODER <0-1000>` the level of a lit encoder,
@@ -1265,7 +1342,9 @@ static bool HandleLights(const char *command)
   static const char encoder_prefix[] = "DEMO LIGHTS ENCODER ";
   static const char balance_prefix[] = "DEMO LIGHTS BALANCE ";
   static const char flash_prefix[] = "DEMO LIGHTS FLASH ";
-  char response[224];
+  static const char raw_prefix[] = "DEMO LIGHTS RAW ";
+  char response[256];
+  char raw_text[24];
   uint16_t balance[DEMO_LIGHT_CHANNELS];
   LightFlashConfig flash;
   DemoLightsFlashCounters flash_counters;
@@ -1349,16 +1428,52 @@ static bool HandleLights(const char *command)
       return true;
     }
   }
+  else if (strcmp(command, "DEMO LIGHTS RAW OFF") == 0)
+  {
+    raw_active = false;
+  }
+  else if (strncmp(command, raw_prefix, sizeof(raw_prefix) - 1U) == 0)
+  {
+    const char *cursor = &command[sizeof(raw_prefix) - 1U];
+    uint16_t mask;
+    uint16_t duty;
+    uint16_t rest = 1000U;
+    bool ok = ParseRawMask(&cursor, &mask) && ParsePermille(&cursor, &duty);
+
+    if (ok && (*cursor == ' '))
+    {
+      ++cursor;
+      ok = ParsePermille(&cursor, &rest);
+    }
+    if (!ok || (*cursor != '\0'))
+    {
+      (void)UsbTest_SendText(LIGHTS_USAGE);
+      return true;
+    }
+    raw_mask = mask;
+    raw_duty = duty;
+    raw_rest_duty = rest;
+    raw_active = true;
+  }
   else if (strcmp(command, "DEMO LIGHTS") != 0)
   {
     return false;
+  }
+  if (raw_active)
+  {
+    (void)snprintf(raw_text, sizeof(raw_text), "%04X/%u/%u", (unsigned)raw_mask,
+                   (unsigned)raw_duty, (unsigned)raw_rest_duty);
+  }
+  else
+  {
+    (void)snprintf(raw_text, sizeof(raw_text), "OFF");
   }
   DemoLights_GetBalance(balance);
   DemoLights_GetFlash(&flash);
   DemoLights_GetFlashCounters(&flash_counters);
   (void)snprintf(response, sizeof(response),
                  "OK DEMO LIGHTS IDLE=%u DUTY=%u PRESSED_DUTY=1000 ENCODER=%u ENCODER_DUTY=%u "
-                 "BALANCE=%u,%u,%u FLASH=%u,%u,%u/%ums ONSETS=%lu SUPPRESSED=%lu\r\n",
+                 "BALANCE=%u,%u,%u FLASH=%u,%u,%u/%ums ONSETS=%lu SUPPRESSED=%lu RAW=%s\r\n",
                  (unsigned)DemoLights_IdleLightness(),
                  (unsigned)DemoLights_LightnessToDuty(DemoLights_IdleLightness()),
                  (unsigned)DemoLights_EncoderLightness(),
@@ -1367,7 +1482,7 @@ static bool HandleLights(const char *command)
                  (unsigned)flash.boost_permille[0], (unsigned)flash.boost_permille[1],
                  (unsigned)flash.boost_permille[2], (unsigned)flash.full_decay_ms,
                  (unsigned long)flash_counters.onsets,
-                 (unsigned long)flash_counters.suppressed);
+                 (unsigned long)flash_counters.suppressed, raw_text);
   (void)UsbTest_SendText(response);
   return true;
 }
