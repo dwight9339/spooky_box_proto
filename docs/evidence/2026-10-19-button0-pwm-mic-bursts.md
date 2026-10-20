@@ -1,7 +1,7 @@
 # Demo image: Button 0's LED PWM puts 160 ms click bursts in the microphone (p04.31)
 
 Date: 2026-10-17 to 2026-10-19 (local, UTC-6; the group sweep ran 2026-10-19 16:41 to
-16:43 UTC, the per-channel sweep 2026-10-20 03:08 to 03:18 UTC)  
+16:43 UTC, the per-channel sweeps 2026-10-20 03:08 to 03:47 UTC)  
 Beads issue: `full_spooky_proto-p04.31`
 
 Demo evidence qualifies the demo image only; it is not milestone evidence (roadmap,
@@ -163,12 +163,41 @@ fourteen LED PWM channels that disturbs the microphone, by one of its two edges,
 every duty tried (100, 500, 900). Button 1 and each of the twelve encoder channels are
 clean on their own.
 
+## Button 0 with its LED disconnected (`F0080` to `F0084`)
+
+Button 0 is the only one of the fourteen LEDs whose PWM causes this. Yet some backplane
+PWM traces pass closer to CN11_35 and CN11_37 (PC2 and PC3) than Button 0's, and the UI
+board sits about a foot from the audio shield. The operator found that PF6 also goes up
+into the audio shield through the Zio headers, though not close to the PDM traces on
+the shield. They then pulled Button 0's shunt jumper on the backplane. That cuts PF6
+off from the UI cable, the UI board and the LED, leaving only the pin, the Nucleo
+trace, the Zio header into the shield and the backplane stub up to the jumper.
+`pwm_mic_sweep.py sweep --channels BTN0 --follow-up ""` then ran 2026-10-20 03:44 to
+03:47 UTC:
+
+| Step | Session | Verdict | Clicks/s | In one beat window | Beats with clicks |
+| --- | --- | --- | --- | --- | --- |
+| steady-on | `F0080` | clean | 0 | - | 0/25 |
+| steady-off | `F0081` | clean | 0 | - | 0/25 |
+| all fourteen at 500 | `F0082` | bursts | 58.6 | 92% | 25/25 |
+| BTN0 at 500 | `F0083` | bursts | 60.1 | 95% | 25/25 |
+| steady-on-end | `F0084` | clean | 0 | - | 0/25 |
+
+**Result:** the bursts do not need Button 0's LED, cable or UI-board load. With the jumper
+out they are as strong as with it fitted (`F0063`, 52.9 clicks/s). The steady-off
+control keeps every timer running with no pin edges, and it is clean. So the cause is
+PF6's own voltage edge, coupled upstream of the jumper: on the MCU, the Nucleo board,
+the Zio header or the audio shield. PF7, PF8 and PF9 are PF6's neighbours on the MCU
+and do not couple, which makes coupling inside the package unlikely. The leading
+candidate is the PF6 trace on the Nucleo passing close to the PC2 or PC3 routing.
+
 ## Not covered
 
 - Which of Button 0's edges disturbs the data. A recording that changes Button 0's
   duty partway through would show it: the rising edge's train keeps its phase, and the
   falling edge's train moves.
-- The coupling path on hardware (scope on PC3 while Button 0 switches).
+- Where exactly PF6 couples into PC2 or PC3 (Nucleo layout review; scope on PC3 at
+  the MCU side and at the audio shield while Button 0 switches).
 - The Pico's SWD fault (spare probe or a scope on GP2/GP3).
 - A fix (`full_spooky_proto-p04.32`).
 
@@ -178,7 +207,7 @@ clean on their own.
   `host/tests/test_pwm_mic_sweep.py`.
 - Group run: `build/pwm-groups-p0431-20261019b/` (`cli.jsonl`, `groups.json`,
   `groups-analysis.json`); capture `CAPS/C044` on the bench card.
-- Per-channel run: `build/pwm-sweep-p0431-20261019a/` (`cli.jsonl`, `summary.json`,
+- Per-channel run: `build/pwm-sweep-p0431-20261019a/`; jumper-out run `build/pwm-sweep-p0431-20261019b/` (`cli.jsonl`, `summary.json`,
   `run.log`, the twenty fetched WAVs with their CRC32s); ST-LINK flash log
   `build/flash-p0431-stlink-20261019.log`; build declaration
   `build/p0431-demo-20261019a.json`.
