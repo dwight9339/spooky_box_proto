@@ -131,14 +131,10 @@ void DemoLights_OnSessionFault(uint32_t now_ms)
   fault_start_ms = now_ms;
 }
 
-/* Triangle from off up to the breathing peak, in perceived lightness. */
-static uint16_t Breath(uint32_t now_ms)
+/* Button 0 during a session: on, then off, DEMO_LIGHTS_SESSION_BLINK_MS each. */
+static uint16_t SessionBlink(uint32_t now_ms)
 {
-  const uint32_t half = DEMO_LIGHTS_BREATH_PERIOD_MS / 2U;
-  const uint32_t phase = now_ms % DEMO_LIGHTS_BREATH_PERIOD_MS;
-  const uint32_t rise = (phase < half) ? phase : (DEMO_LIGHTS_BREATH_PERIOD_MS - phase);
-
-  return (uint16_t)((DEMO_LIGHTS_BREATH_HIGH_LIGHTNESS * rise) / half);
+  return (((now_ms / DEMO_LIGHTS_SESSION_BLINK_MS) % 2U) == 0U) ? FULL_LIGHTNESS : 0U;
 }
 
 /* Lightness of the fault blinks, or false once they are over. */
@@ -159,26 +155,26 @@ static bool FaultBlink(uint32_t now_ms, uint16_t *lightness)
   return true;
 }
 
-/* boost: the radio onset flash now, permille of the headroom (decision 0031). */
+/* boost: the radio onset flash now, permille of the headroom (decision 0031).
+ * Button 0 is only ever off or full (p04.32): at any duty in between, its PF6
+ * PWM edges couple onto the PDM clock and click in the microphone. So it has no
+ * idle level, blinks instead of breathing, and never flashes. */
 static void Buttons(const DemoLightsInput *input, uint32_t now_ms, uint16_t boost,
                     uint16_t lightness[2])
 {
-  bool exempt[2] = {false, false}; /* decision 0031 item 2 */
+  bool exempt[2] = {true, false}; /* decision 0031 item 2; Button 0 always */
   uint32_t button;
 
-  for (button = 0U; button < 2U; ++button)
-  {
-    lightness[button] = idle_lightness;
-  }
+  lightness[0] = 0U;
+  lightness[1] = idle_lightness;
   if (input->shift)
   {
-    lightness[0] = input->shift_mode_switch ? idle_lightness : 0U;
+    lightness[0] = input->shift_mode_switch ? FULL_LIGHTNESS : 0U;
     lightness[1] = input->shift_save ? idle_lightness : 0U;
   }
   else if (input->session_active)
   {
-    lightness[0] = Breath(now_ms);
-    exempt[0] = true;
+    lightness[0] = SessionBlink(now_ms);
   }
   for (button = 0U; button < 2U; ++button)
   {
@@ -189,10 +185,7 @@ static void Buttons(const DemoLightsInput *input, uint32_t now_ms, uint16_t boos
     }
   }
   /* The fault pattern overrides Button 0, then its rule resumes. */
-  if (FaultBlink(now_ms, &lightness[0]))
-  {
-    exempt[0] = true;
-  }
+  (void)FaultBlink(now_ms, &lightness[0]);
   for (button = 0U; button < 2U; ++button)
   {
     if ((boost > 0U) && !exempt[button] && (lightness[button] > 0U))

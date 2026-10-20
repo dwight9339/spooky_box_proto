@@ -537,13 +537,20 @@ OK DEMO SCREEN=CLASSIC INP=0 SHIFT=0 INPUTS=42 REFUSED=0 GESTURES=30/0 UNBOUND=0
 | `LIGHTS` | Button and encoder LED PWM started (TIM16, TIM17, TIM1, TIM2, TIM4, TIM12, TIM13, TIM14) |
 | `MATRIX_REC_MS`, `MATRIX_REC_FRAMES`, `MATRIX_REC_SUPERSEDED` | Time the matrix ran while capturing, frames composed in it, and frames replaced before fully written: the matrix frame rate under capture |
 
-`DEMO LIGHTS` reports the light levels. `DEMO LIGHTS IDLE <0-1000>` sets the button
-LEDs' idle level and `DEMO LIGHTS ENCODER <0-1000>` the level of a lit encoder, both
+`DEMO LIGHTS` reports the light levels. `DEMO LIGHTS IDLE <0-1000>` sets Button 1's
+idle level and `DEMO LIGHTS ENCODER <0-1000>` the level of a lit encoder, both
 in permille of perceived lightness (CIE L*). The encoders need a higher level than the
 buttons to look as bright. The prompt's green or yellow Encoder 0, the confirm cue,
 is always at full lightness. The reply gives each level and its PWM duty in permille; a
-pressed button is always at full duty, and Button 0 breathes from off up to a fixed
-peak during a session. `DEMO LIGHTS BALANCE <r> <g> <b>` scales the duty of each
+pressed button is always at full duty.
+
+Button 0 is only ever off or at full duty (`full_spooky_proto-p04.32`). On the Nucleo,
+its PF6 trace runs beside the PDM clock, and any duty in between puts click bursts in
+the microphone
+([evidence](../evidence/2026-10-19-button0-pwm-mic-bursts.md)). It is dark when idle,
+blinks one second on and one second off during a session, is full in Shift when its
+mode-switch action is available, and never flashes. `DEMO LIGHTS RAW` can still switch
+it, for the bench. `DEMO LIGHTS BALANCE <r> <g> <b>` scales the duty of each
 encoder's red, green and blue channel, 0 to 1000 permille, so a white encoder looks
 neutral at every level. At boot the idle level resets to 400, the encoder level to
 800 and the balance to `1000,450,350`, the values set by eye on the bench. `UI OFF`,
@@ -553,7 +560,7 @@ and encoder LEDs dark until the next reset.
 In Field, every lit encoder and button flashes on each radio onset (decision 0031): a
 small, medium or large onset raises its lightness by one, two or three thirds of the way
 to full, and the flash falls back one third every 80 ms. No flash shows on a held
-button, on Button 0 while it breathes or blinks its fault, while Shift is held, while
+button, ever on Button 0, while Shift is held, while
 the prompt is open or in Instrument; onsets then are dropped. `DEMO LIGHTS FLASH
 <small> <medium> <large> <decay-ms>` sets the three boosts in permille of the headroom
 (1 to 1000, not decreasing) and the time a full boost takes to fall away (1 to
