@@ -1,7 +1,7 @@
 # Demo image: Button 0's LED PWM puts 160 ms click bursts in the microphone (p04.31)
 
 Date: 2026-10-17 to 2026-10-19 (local, UTC-6; the group sweep ran 2026-10-19 16:41 to
-16:43 UTC)  
+16:43 UTC, the per-channel sweep 2026-10-20 03:08 to 03:18 UTC)  
 Beads issue: `full_spooky_proto-p04.31`
 
 Demo evidence qualifies the demo image only; it is not milestone evidence (roadmap,
@@ -34,7 +34,8 @@ clock is exactly 144 times that, but it comes from PLL3, whose fractional divide
 so its error cancels. A PWM edge therefore slips one PDM clock cycle every
 1 / (3.072 MHz x 2.0266 ppm) = 160.63 ms, or 7,710.1 frames. That is the measured
 period to within 0.1 frame. For about an eighth of each slip, the edge falls close
-enough to the moment DFSDM1 samples PC3 to flip bits.
+enough to the moment DFSDM1 samples PC3 to flip bits. Only one of the two edges in each
+PWM period does this (see the per-channel sweep).
 
 Product images drive the LEDs as GPIO on and off, with no PWM edges.
 
@@ -60,7 +61,8 @@ a rising edge at a fixed phase.
 ## Group sweep (`C044`)
 
 The firmware for a per-channel sweep (`DEMO LIGHTS RAW`, image `p0431-demo-20261019a`)
-was built but not flashed. OpenOCD could not read the debug port's IDR in three flash
+was built but could not be flashed at first (it was later flashed through the on-board
+ST-LINK; see the per-channel sweep). OpenOCD could not read the debug port's IDR in three flash
 attempts and three read-only `probe` runs, at 1 MHz and at 100 kHz, including after a
 board reset and after the probe-side SWD cable was reseated. The board side is inside
 the enclosure. Nothing was written, so the board kept
@@ -97,13 +99,78 @@ be at the MCU pins. The backplane does not route PC2 and PC3 (CN11_35 and CN11_3
 unconnected there). The path is more likely along Button 0's LED net (backplane, UI
 cable, UI board) or that LED's current return.
 
+## Per-channel sweep (`F0060` to `F0079`)
+
+**Flash.** With the enclosure top off, the operator found the Pico-to-Nucleo SWD
+leads correct by continuity, with SWDIO at 3.3 V and SWCLK low at both ends. The probe
+was reflashed with the debugprobe UF2 (CMSIS-DAP 2.0.0). The handshake still failed:
+OpenOCD at `-d3` logged `SWD ack not OK ... JUNK` for every JTAG-to-SWD and
+dormant-to-SWD sequence. Its UART path (GP4/GP5) delivered clean target logs, so
+the probe's USB link, its ground and the target were all good.
+
+The Nucleo's on-board ST-LINK connected at once: JP1 (`STLK_RST`) removed, Pico USB
+unplugged, ST-LINK V3J17M10, STM32CubeProgrammer 2.23.0 hot-plug connect, device
+0x450 Rev V, 3.26 V. JP1 had been fitted throughout, including for the successful
+Spooky Bench flashes on 2026-10-17. So the target's debug port is fine and the fault
+is on the Pico side, most likely its SWD pins (GP2/GP3). That is not yet confirmed
+with a spare probe or a scope.
+
+`p0431-demo-20261019a` was flashed through the ST-LINK with STM32CubeProgrammer
+(`-d <elf> -v` for each core, then `-rst`) rather than Spooky Bench. The ELF hashes
+matched the build declaration before programming (CM7 `6215fb4d...`, CM4
+`7f23d9c8...`), and both downloads verified (CM7 at `0x08000000`, CM4 at
+`0x08100000`). After the reset, `DIAG IDENTITY` reported
+`BUILD=p0431-demo-20261019a BOOT=4`, and `DEMO LIGHTS` reported `RAW=OFF`. Spooky Bench's
+flash record does not exist for this image.
+
+**Sweep.** `host/tools/pwm_mic_sweep.py sweep --port COM3 --seconds 4` turned the
+rolling stream off. For each step it set `DEMO LIGHTS RAW <mask> <duty> 1000`,
+recorded a 4 s Field session, fetched it with the CRC transfer, and analyzed the
+microphone over 25 beats. Every other LED held duty 1000, with no edges. The controls
+started on the Classic screen with no one touching the rig.
+
+| Step | Session | Verdict | Clicks/s | In one beat window | Beats with clicks |
+| --- | --- | --- | --- | --- | --- |
+| steady-on (mask 0, all 1000) | `F0060` | clean | 0 | - | 0/25 |
+| steady-off (mask 0, all 0) | `F0061` | clean | 0 | - | 0/25 |
+| all fourteen at 500 | `F0062` | bursts | 55.1 | 96% | 25/25 |
+| BTN0 at 500 | `F0063` | bursts | 52.9 | 92% | 25/25 |
+| BTN1 at 500 | `F0064` | clean | 0 | - | 0/25 |
+| each of ENC0_R to ENC3_B at 500, alone | `F0065` to `F0076` | clean, all twelve | 0 | - | 0/25 |
+| BTN0 at 100 | `F0077` | bursts | 59.1 | 91% (9% in the adjacent window) | 25/25 |
+| BTN0 at 900 | `F0078` | bursts | 60.8 | 94% (6% in the adjacent window) | 25/25 |
+| steady-on-end | `F0079` | clean | 0 | - | 0/25 |
+
+Afterwards the script set `RAW OFF` and `ROLL ON`; the lights returned to `IDLE=400
+ENCODER=800 BALANCE=1000,450,350`.
+
+**Which edge.** In PWM mode 1 the rising edge is at the counter reset and the falling
+edge CCR x 3 timer ticks later. The PDM period is 20.833 ticks, so the falling edge
+sits (3 x CCR / 20.833) mod 1 of a beat after the rising edge:
+
+- 0 at duty 500: 1,500 ticks is exactly 72 PDM cycles, so the edges cannot be told
+  apart;
+- 0.4 of a beat (64 ms) at duty 100;
+- 0.6 of a beat (96 ms) at duty 900.
+
+If both edges disturbed the data, the 100 and 900 steps would show two trains 64 ms
+apart. Each shows one train, with the remainder in the window next to it, so only one
+edge disturbs the data. Recordings start at arbitrary points in the beat, so this
+sweep cannot say whether it is the rising or the falling edge.
+
+**Result:** confirmed per channel. Button 0 (PF6, TIM16 CH1) is the only one of the
+fourteen LED PWM channels that disturbs the microphone, by one of its two edges, at
+every duty tried (100, 500, 900). Button 1 and each of the twelve encoder channels are
+clean on their own.
+
 ## Not covered
 
-- Each encoder channel alone, and which PWM edge disturbs the data (the RAW sweep,
-  after the SWD connection is fixed).
-- Button 1 alone at about 50% duty; `F0058` covers it at duty 113 only.
+- Which of Button 0's edges disturbs the data. A recording that changes Button 0's
+  duty partway through would show it: the rising edge's train keeps its phase, and the
+  falling edge's train moves.
 - The coupling path on hardware (scope on PC3 while Button 0 switches).
-- A fix.
+- The Pico's SWD fault (spare probe or a scope on GP2/GP3).
+- A fix (`full_spooky_proto-p04.32`).
 
 ## Artifacts
 
@@ -111,7 +178,11 @@ cable, UI board) or that LED's current return.
   `host/tests/test_pwm_mic_sweep.py`.
 - Group run: `build/pwm-groups-p0431-20261019b/` (`cli.jsonl`, `groups.json`,
   `groups-analysis.json`); capture `CAPS/C044` on the bench card.
-- Flash and probe attempts: `build/flash-p0431-demo-20261019a.json` to `c.json` and
+- Per-channel run: `build/pwm-sweep-p0431-20261019a/` (`cli.jsonl`, `summary.json`,
+  `run.log`, the twenty fetched WAVs with their CRC32s); ST-LINK flash log
+  `build/flash-p0431-stlink-20261019.log`; build declaration
+  `build/p0431-demo-20261019a.json`.
+- Flash and probe attempts through the Pico: `build/flash-p0431-demo-20261019a.json` to `c.json` and
   `build/probe-p0431-20261019a.json` to `c.json`; Spooky Bench runs
   `2026-10-19T163055.104366_0000-7e706d6b`, `2026-10-19T163327.169472_0000-27dd1af1`,
   `2026-10-19T163522.897476_0000-49b76099` (flash).
