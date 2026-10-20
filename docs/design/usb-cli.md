@@ -560,8 +560,19 @@ the prompt is open or in Instrument; onsets then are dropped. `DEMO LIGHTS FLASH
 1000 ms); it resets to `333,667,1000/240ms` at boot. In the reply, `ONSETS` counts the
 onsets the lights took and `SUPPRESSED` those dropped, since boot.
 
+`DEMO LIGHTS RAW <mask> <duty> [<rest>]` is a bench override for finding which PWM
+pins disturb the microphone (`full_spooky_proto-p04.31`). The mask is one to four hex
+digits, at most `3FFF`, one bit per channel in the order `BTN0`, `BTN1`, then `ENC0`
+red, green and blue through `ENC3` red, green and blue (bit 0 is `BTN0`, bit 13
+`ENC3_B`; pins and timers in [prototype hardware](prototype-hardware.md)). The masked
+channels run at `<duty>` and every other channel holds `<rest>`, default 1000; duty is
+PWM permille, not lightness. A duty of 0 or 1000 holds the pin steady, with no PWM
+edges. The override replaces everything the lights would show, presses and flashes
+included, until `DEMO LIGHTS RAW OFF` or a reset. The reply's `RAW` field gives
+`OFF` or `<mask>/<duty>/<rest>`.
+
 ```text
-OK DEMO LIGHTS IDLE=400 DUTY=113 PRESSED_DUTY=1000 ENCODER=800 ENCODER_DUTY=567 BALANCE=1000,450,350 FLASH=333,667,1000/240ms ONSETS=0 SUPPRESSED=0
+OK DEMO LIGHTS IDLE=400 DUTY=113 PRESSED_DUTY=1000 ENCODER=800 ENCODER_DUTY=567 BALANCE=1000,450,350 FLASH=333,667,1000/240ms ONSETS=0 SUPPRESSED=0 RAW=OFF
 ```
 
 The demo image lifts the in-band tune guard, so Classic keeps scanning during a session;
