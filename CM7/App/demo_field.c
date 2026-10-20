@@ -327,11 +327,19 @@ static bool InstrumentGesture(Gesture gesture)
   target.tempo_changed = false;
   target.engine_chosen = false;
   target.pattern_edited = false;
+  target.value_changed = false;
   if (DemoSequencer_OnGesture(&seq, gesture, &target, Now()))
   {
     if (target.pattern_edited && slicing)
     {
       DemoSlicer_MarkPatternEdited(&slicer_page);
+    }
+    /* A Slicer step's new slice plays once while the transport is stopped, as
+     * selecting a slice on the Slicer page does (0022 item 8; user call
+     * 2026-10-20, p04.33). Running, the edit is heard when the step plays. */
+    if (target.value_changed && slicing && !DemoClip_RunTarget())
+    {
+      DemoClip_Audition((uint8_t)target.pattern->steps[seq.step % STEP_PATTERN_MAX_STEPS].value);
     }
     if (target.toggle_run)
     {

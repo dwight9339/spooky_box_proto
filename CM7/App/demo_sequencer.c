@@ -181,6 +181,7 @@ static void Steps(DemoSequencer *seq, Gesture gesture, DemoSeqTarget *target)
         {
           step->value = value;
           target->pattern_edited = true;
+          target->value_changed = true;
         }
       }
       else if (Is(gesture, GESTURE_CLICK, 1U))

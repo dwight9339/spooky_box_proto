@@ -808,8 +808,10 @@ and demo-only (p04.15) and do not settle C-025 or 0022 item 5.
 - **Step view.** SEQUENCER in the view menu shows the Slicer's pattern, one bar per step
   as tall as its slice, and edits it as for Granular: in step edit an Encoder 0 turn
   picks the step's slice (1 to the slice count) and an Encoder 1 click turns the step
-  on or off. The Slicer's pattern is its own: Granular's is kept while the Slicer
-  plays, and the other way round.
+  on or off. While the transport is stopped, each turn that changes the slice plays the
+  new slice once, as selecting a slice on the page does; while it runs, the edit is
+  heard when the step plays. The Slicer's pattern is its own: Granular's is kept while
+  the Slicer plays, and the other way round.
 - **Display.** The page draws the clip as a strip with a tick at each slice start, the
   selected slice filled and the playing slice marked above it, then the selected
   slice's length, the count and the clip.

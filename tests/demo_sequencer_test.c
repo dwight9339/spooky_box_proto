@@ -35,6 +35,7 @@ static bool send(GestureKind kind, uint8_t encoder, int8_t detents)
     target.tempo_changed = false;
     target.engine_chosen = false;
     target.pattern_edited = false;
+    target.value_changed = false;
     return DemoSequencer_OnGesture(&seq, make(kind, encoder, detents), &target, 1000u);
 }
 
@@ -200,7 +201,7 @@ static void test_engine_menu(void)
 
 /* Slicer steps (p04.16): a step value is a slice, one a detent, held within
  * 0..count-1; every change to a step is reported, a turn that changes nothing
- * is not. */
+ * is not. Only a value change is reported for audition (p04.33). */
 static void test_slicer_steps(void)
 {
     static const uint16_t counts[] = {4u, 8u, 16u};
@@ -217,14 +218,19 @@ static void test_slicer_steps(void)
         CHECK(send(GESTURE_CLICK, 0u, 0) && seq.focus == DEMO_SEQ_FOCUS_STEP_EDIT);
         CHECK(!target.pattern_edited);
         CHECK(send(GESTURE_TURN, 0u, 1) && pattern.steps[2].value == 1u && target.pattern_edited);
+        CHECK(target.value_changed);
         CHECK(send(GESTURE_TURN, 0u, 2) && pattern.steps[2].value == 3u);
         CHECK(send(GESTURE_TURN, 0u, 100) && pattern.steps[2].value == counts[index] - 1u);
         CHECK(send(GESTURE_TURN, 0u, 1) && !target.pattern_edited); /* held at the last */
+        CHECK(!target.value_changed);
         CHECK(send(GESTURE_TURN, 0u, -100) && pattern.steps[2].value == 0u && target.pattern_edited);
         CHECK(send(GESTURE_TURN, 0u, -1) && !target.pattern_edited); /* held at the first */
+        CHECK(!target.value_changed);
         CHECK(send(GESTURE_CLICK, 1u, 0) && !pattern.steps[2].on && target.pattern_edited);
+        CHECK(!target.value_changed); /* on/off is not a new slice */
         CHECK(send(GESTURE_CLICK, 0u, 0) && seq.focus == DEMO_SEQ_FOCUS_STEPS);
         CHECK(send(GESTURE_TURN, 0u, 1) && !target.pattern_edited); /* browsing */
+        CHECK(!target.value_changed);
         CHECK(pattern.steps[3].value == 3u && pattern.steps[3].on);
     }
 }
