@@ -34,7 +34,8 @@ clock is exactly 144 times that, but it comes from PLL3, whose fractional divide
 so its error cancels. A PWM edge therefore slips one PDM clock cycle every
 1 / (3.072 MHz x 2.0266 ppm) = 160.63 ms, or 7,710.1 frames. That is the measured
 period to within 0.1 frame. For about an eighth of each slip, the edge falls close
-enough to the moment DFSDM1 samples PC3 to flip bits. Only one of the two edges in each
+enough to a PDM clock edge to corrupt the bit captured there. The layout section
+below shows the coupling is onto the clock line, PC2. Only one of the two edges in each
 PWM period does this (see the per-channel sweep).
 
 Product images drive the LEDs as GPIO on and off, with no PWM edges.
@@ -191,13 +192,31 @@ the Zio header or the audio shield. PF7, PF8 and PF9 are PF6's neighbours on the
 and do not couple, which makes coupling inside the package unlikely. The leading
 candidate is the PF6 trace on the Nucleo passing close to the PC2 or PC3 routing.
 
+## Coupling path on the Nucleo layout
+
+The operator traced the nets in ST's NUCLEO-H755ZI-Q (MB1364) layout files. On an
+inner layer, the PF6 trace leaves its via beside CN11_35, wraps around pins 35 and 36,
+and then runs immediately alongside the PC2 trace for a long stretch. PC2 heads for the
+Zio connector (A4) past CN9 pins 9 and 10, and the two traces turn together. PF7 passes
+close to the CN11_35 and CN11_37 pads on the top layer but never runs parallel to PC2
+or PC3, consistent with Button 1 being clean.
+
+PC2 is the DFSDM1 clock output to the microphone (PC3 is its data), so PF6's edges couple
+onto the **PDM clock**. A coupled glitch can only add or shift a clock edge if it lands
+next to the clock edge that the microphone or DFSDM1 acts on, and only one glitch
+polarity does so. That would explain why only one of PF6's two edges matters, and only
+during the part of each 160.6 ms beat when the clocks line up. The explanation fits
+every result above but has not been checked with a scope on PC2.
+
+Nothing in the backplane or UI-board layout is involved. The coupling is on the Nucleo
+board itself, so any Demo image that PWMs PF6 on this Nucleo will show it.
+
 ## Not covered
 
+- A scope capture of the glitch on PC2 (PDM clock) during `DEMO LIGHTS RAW 1 500`.
 - Which of Button 0's edges disturbs the data. A recording that changes Button 0's
   duty partway through would show it: the rising edge's train keeps its phase, and the
   falling edge's train moves.
-- Where exactly PF6 couples into PC2 or PC3 (Nucleo layout review; scope on PC3 at
-  the MCU side and at the audio shield while Button 0 switches).
 - The Pico's SWD fault (spare probe or a scope on GP2/GP3).
 - A fix (`full_spooky_proto-p04.32`).
 
