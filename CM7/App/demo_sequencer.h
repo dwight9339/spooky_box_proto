@@ -23,7 +23,8 @@
  * - Step edit: Encoder 0 changes the value at once (C-074), value_step a detent
  *   within 0..value_max (1 % of the clip for Granular, one slice for the
  *   Slicer, p04.16); an Encoder 1 click turns the step on or off (C-075); an
- *   Encoder 0 click returns (C-076).
+ *   Encoder 0 click returns (C-076). A value change is reported so the caller
+ *   can audition a Slicer step's new slice (p04.33).
  * - Settings row: Tempo and Division. Encoder 0 browses (C-078); its click edits
  *   (C-079); its long press returns to the steps (0026 item 8). An edit is heard
  *   at once (C-080); an Encoder 0 click keeps it (C-082) and an Encoder 1 click
@@ -110,6 +111,7 @@ typedef struct
   bool tempo_changed;     /* out */
   bool engine_chosen;     /* out: the engine menu committed engine */
   bool pattern_edited;    /* out: a step's value or on flag changed */
+  bool value_changed;     /* out: the selected step's value changed */
 } DemoSeqTarget;
 
 void DemoSequencer_Init(DemoSequencer *seq);
