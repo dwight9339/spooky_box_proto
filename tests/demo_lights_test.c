@@ -1,4 +1,5 @@
-/* Demo-only button and encoder lights (demo_lights.c, full_spooky_proto-p04.3). */
+/* Demo-only button and encoder lights (demo_lights.c, full_spooky_proto-p04.3;
+ * Button 0 only off or full: p04.32). */
 #include "demo_lights.h"
 #include "demo_view.h"
 
@@ -73,37 +74,38 @@ static void test_idle_and_pressed(void)
 
     DemoLights_Init();
     output = compute(&input, 1000u);
-    CHECK(output.button_duty[0] == idle_duty); /* PRES-LED-01 */
-    CHECK(output.button_duty[1] == idle_duty);
+    CHECK(output.button_duty[0] == 0u); /* p04.32: no idle level on Button 0 */
+    CHECK(output.button_duty[1] == idle_duty); /* PRES-LED-01 */
     for (unsigned encoder = 0u; encoder < 4u; ++encoder) {
         CHECK(output.encoder_rgb[encoder] == WHITE);
     }
     input.button_pressed[1] = true;
     output = compute(&input, 1000u);
-    CHECK(output.button_duty[0] == idle_duty);
+    CHECK(output.button_duty[0] == 0u);
     CHECK(output.button_duty[1] == 1000u); /* PRES-LED-02 */
+    input.button_pressed[0] = true;
+    CHECK(duty(&input, 1000u, 0u) == 1000u);
 }
 
-static void test_session_breathing(void)
+/* p04.32: Button 0 blinks fully on and off during a session instead of
+ * breathing (PRES-LED-03 in the product). */
+static void test_session_blink(void)
 {
     DemoLightsInput input = idle_classic();
     DemoLightsOutput output;
-    const uint32_t half = DEMO_LIGHTS_BREATH_PERIOD_MS / 2u;
+    const uint32_t blink = DEMO_LIGHTS_SESSION_BLINK_MS;
 
     DemoLights_Init();
     input.session_active = true;
     output = compute(&input, 0u);
-    CHECK(output.button_duty[0] == 0u); /* breathing goes all the way off */
+    CHECK(output.button_duty[0] == 1000u);
     CHECK(output.button_duty[1] == idle_duty); /* PRES-LED-04 */
-    output = compute(&input, half);
-    CHECK(output.button_duty[0] == DemoLights_LightnessToDuty(DEMO_LIGHTS_BREATH_HIGH_LIGHTNESS));
-    output = compute(&input, half / 2u);
-    CHECK(output.button_duty[0] > 0u);
-    CHECK(output.button_duty[0] < DemoLights_LightnessToDuty(DEMO_LIGHTS_BREATH_HIGH_LIGHTNESS));
-    CHECK(duty(&input, half / 2u, 0u) ==
-          duty(&input, half + half / 2u, 0u));
+    CHECK(duty(&input, blink - 1u, 0u) == 1000u);
+    CHECK(duty(&input, blink, 0u) == 0u);
+    CHECK(duty(&input, (2u * blink) - 1u, 0u) == 0u);
+    CHECK(duty(&input, 2u * blink, 0u) == 1000u);
     input.button_pressed[0] = true;
-    CHECK(duty(&input, half / 2u, 0u) == 1000u);
+    CHECK(duty(&input, blink, 0u) == 1000u);
 }
 
 static void test_fault_blinks_then_resume(void)
@@ -118,10 +120,9 @@ static void test_fault_blinks_then_resume(void)
         CHECK(duty(&input, start + (2u * n * blink), 0u) == 1000u);
         CHECK(duty(&input, start + (2u * n * blink) + blink, 0u) == 0u);
     }
-    CHECK(duty(&input, start + (2u * DEMO_LIGHTS_BLINKS * blink), 0u) ==
-          idle_duty);
+    CHECK(duty(&input, start + (2u * DEMO_LIGHTS_BLINKS * blink), 0u) == 0u);
     /* Over for good: an earlier time does not restart it. */
-    CHECK(duty(&input, start, 0u) == idle_duty);
+    CHECK(duty(&input, start, 0u) == 0u);
     /* Button 1 never blinks. */
     DemoLights_OnSessionFault(start);
     CHECK(duty(&input, start + blink, 1u) == idle_duty);
@@ -139,7 +140,7 @@ static void test_shift_lights_available_actions(void)
     CHECK(output.encoder_rgb[1] == WHITE); /* Manual quick-jump */
     CHECK(output.encoder_rgb[2] == 0u);
     CHECK(output.encoder_rgb[3] == 0u);
-    CHECK(output.button_duty[0] == idle_duty); /* mode switch available */
+    CHECK(output.button_duty[0] == 1000u);    /* mode switch available: full (p04.32) */
     CHECK(output.button_duty[1] == 0u);       /* save not in this build */
 
     input.session_active = true;
@@ -183,26 +184,24 @@ static void test_screens(void)
 static void test_adjustable_idle(void)
 {
     DemoLightsInput input = idle_classic();
-    const uint32_t half = DEMO_LIGHTS_BREATH_PERIOD_MS / 2u;
+    const uint32_t blink = DEMO_LIGHTS_SESSION_BLINK_MS;
 
     DemoLights_Init();
     CHECK(DemoLights_IdleLightness() == DEMO_LIGHTS_IDLE_LIGHTNESS);
     DemoLights_SetIdleLightness(600u);
     CHECK(DemoLights_IdleLightness() == 600u);
-    CHECK(duty(&input, 0u, 0u) == DemoLights_LightnessToDuty(600u));
+    CHECK(duty(&input, 0u, 0u) == 0u);             /* Button 0 has no idle level */
     CHECK(duty(&input, 0u, 1u) == DemoLights_LightnessToDuty(600u));
     input.button_pressed[1] = true;
     CHECK(duty(&input, 0u, 1u) == 1000u); /* still room to brighten */
     input.button_pressed[1] = false;
-    /* Breathing does not depend on the idle level. */
+    /* The session blink does not depend on the idle level. */
     input.session_active = true;
-    CHECK(duty(&input, 0u, 0u) == 0u);
-    CHECK(duty(&input, half, 0u) ==
-          DemoLights_LightnessToDuty(DEMO_LIGHTS_BREATH_HIGH_LIGHTNESS));
+    CHECK(duty(&input, 0u, 0u) == 1000u);
+    CHECK(duty(&input, blink, 0u) == 0u);
     DemoLights_SetIdleLightness(900u);
-    CHECK(duty(&input, 0u, 0u) == 0u);
-    CHECK(duty(&input, half, 0u) ==
-          DemoLights_LightnessToDuty(DEMO_LIGHTS_BREATH_HIGH_LIGHTNESS));
+    CHECK(duty(&input, 0u, 0u) == 1000u);
+    CHECK(duty(&input, blink, 0u) == 0u);
     DemoLights_SetIdleLightness(5000u);
     CHECK(DemoLights_IdleLightness() == 1000u);
     DemoLights_SetIdleLightness(0u);
@@ -233,7 +232,7 @@ static void test_encoder_levels(void)
             CHECK(output.encoder_duty[encoder][channel] == encoder_duty);
         }
     }
-    CHECK(output.button_duty[0] == idle_duty);
+    CHECK(output.button_duty[0] == 0u);
 
     /* Encoder 0 yellow at the prompt level (the confirm cue), the rest dark. */
     input.screen = DEMO_SCREEN_PROMPT_STOP;
@@ -297,7 +296,7 @@ static void test_encoder_balance(void)
     CHECK(output.encoder_duty[2][0] == 1000u);
     CHECK(output.encoder_duty[2][1] == 500u);
     CHECK(output.encoder_duty[2][2] == 250u);
-    CHECK(output.button_duty[0] == idle_duty);
+    CHECK(output.button_duty[1] == idle_duty);
 
     DemoLights_SetEncoderLightness(DEMO_LIGHTS_IDLE_LIGHTNESS);   /* duty 113 */
     output = compute(&input, 0u);
@@ -346,7 +345,7 @@ static void test_flash_raises_lit_lights(void)
 
     DemoLights_Init();
     output = onset_at(input, 3u, 1000u);                 /* large: to full */
-    CHECK(output.button_duty[0] == 1000u);
+    CHECK(output.button_duty[0] == 0u);                  /* Button 0 never flashes */
     CHECK(output.button_duty[1] == 1000u);
     for (unsigned encoder = 0u; encoder < 4u; ++encoder) {
         for (unsigned channel = 0u; channel < DEMO_LIGHT_CHANNELS; ++channel) {
@@ -358,12 +357,12 @@ static void test_flash_raises_lit_lights(void)
     CHECK(output.encoder_duty[2][1] ==
           encoder_channel(LightFlash_Apply(DEMO_LIGHTS_ENCODER_LIGHTNESS, 667u), 1u));
     output = compute(&input, 1240u);                     /* over */
-    CHECK(output.button_duty[0] == idle_duty);
+    CHECK(output.button_duty[1] == idle_duty);
     CHECK(output.encoder_duty[3][0] == encoder_channel(DEMO_LIGHTS_ENCODER_LIGHTNESS, 0u));
 
     DemoLights_Init();
     output = onset_at(input, 1u, 2000u);                 /* small: one third */
-    CHECK(output.button_duty[0] == DemoLights_LightnessToDuty(
+    CHECK(output.button_duty[1] == DemoLights_LightnessToDuty(
         LightFlash_Apply(DEMO_LIGHTS_IDLE_LIGHTNESS, 333u)));
     output = onset_at(input, 3u, 2040u);                 /* a larger one restarts */
     CHECK(output.button_duty[1] == 1000u);
@@ -394,29 +393,26 @@ static void test_flash_leaves_dark_controls_dark(void)
     CHECK(output.button_duty[1] == 0u);
 }
 
-/* Item 2: a held button stays at full, Button 0 keeps breathing and keeps its
- * fault pattern; the other button still flashes. */
+/* Item 2: a held button stays at full, and Button 0 never flashes (p04.32):
+ * not when idle, not in its session blink, not in its fault pattern. The
+ * other button still flashes. */
 static void test_flash_exempt_buttons(void)
 {
-    const uint32_t breath_at = 500u;
+    const uint32_t blink = DEMO_LIGHTS_SESSION_BLINK_MS;
     DemoLightsInput input = idle_classic();
     DemoLightsOutput output;
-    uint16_t breathing;
 
     DemoLights_Init();
     input.button_pressed[1] = true;
     output = onset_at(input, 1u, 1000u);
     CHECK(output.button_duty[1] == 1000u);               /* held: stays at full */
-    CHECK(output.button_duty[0] > idle_duty);            /* Button 0 flashes */
+    CHECK(output.button_duty[0] == 0u);                  /* Button 0: no flash */
 
     input = idle_classic();
     input.session_active = true;
     DemoLights_Init();
-    output = compute(&input, breath_at);
-    breathing = output.button_duty[0];
-    DemoLights_Init();
-    output = onset_at(input, 3u, breath_at);
-    CHECK(output.button_duty[0] == breathing);           /* breathing: no flash */
+    output = onset_at(input, 3u, blink);                 /* blink off phase */
+    CHECK(output.button_duty[0] == 0u);
     CHECK(output.button_duty[1] == 1000u);
 
     input = idle_classic();
@@ -438,11 +434,11 @@ static void test_flash_suppressed(void)
     DemoLights_Init();
     input.shift = true;
     output = onset_at(input, 3u, 1000u);
-    CHECK(output.button_duty[0] == idle_duty);           /* mode switch lit, no flash */
+    CHECK(output.button_duty[0] == 1000u);               /* mode switch lit, no flash */
     CHECK(output.encoder_duty[0][0] == encoder_channel(DEMO_LIGHTS_ENCODER_LIGHTNESS, 0u));
     input.shift = false;
     output = compute(&input, 1010u);                     /* dropped, not deferred */
-    CHECK(output.button_duty[0] == idle_duty);
+    CHECK(output.button_duty[1] == idle_duty);
 
     input.screen = DEMO_SCREEN_PROMPT_START;
     output = onset_at(input, 3u, 2000u);
@@ -453,14 +449,14 @@ static void test_flash_suppressed(void)
     input.field = false;                                 /* Instrument */
     input.screen = DEMO_SCREEN_INSTRUMENT;
     output = onset_at(input, 3u, 3000u);
-    CHECK(output.button_duty[0] == idle_duty);
+    CHECK(output.button_duty[1] == idle_duty);
 
     input = idle_classic();                              /* a flash in progress ends */
     output = onset_at(input, 3u, 4000u);
     CHECK(output.button_duty[1] == 1000u);
     input.shift = true;
     output = compute(&input, 4020u);
-    CHECK(output.button_duty[0] == idle_duty);           /* mode switch lit, no flash */
+    CHECK(output.button_duty[0] == 1000u);               /* mode switch lit, no flash */
     input.shift = false;
     output = compute(&input, 4040u);
     CHECK(output.button_duty[1] == idle_duty);           /* does not come back */
@@ -488,7 +484,7 @@ static void test_flash_settings(void)
     CHECK(DemoLights_SetFlash(&config));
     (void)onset_at(input, 3u, 1000u);
     output = compute(&input, 1240u);
-    CHECK(output.button_duty[0] > idle_duty);            /* halfway */
+    CHECK(output.button_duty[1] > idle_duty);            /* halfway */
     config.boost_permille[1] = 200u;                    /* below small */
     CHECK(!DemoLights_SetFlash(&config));
     DemoLights_GetFlash(&config);
@@ -498,11 +494,48 @@ static void test_flash_settings(void)
     CHECK(config.full_decay_ms == 240u);
 }
 
+/* p04.32: whatever the inputs, levels and time, Button 0's duty is 0 or 1000,
+ * so PF6 never switches at a partial duty (no PWM edges near the PDM clock). */
+static void test_button0_never_partial(void)
+{
+    static const uint8_t screens[] = {DEMO_SCREEN_CLASSIC, DEMO_SCREEN_MANUAL,
+        DEMO_SCREEN_BAND_MENU, DEMO_SCREEN_PROMPT_START, DEMO_SCREEN_PROMPT_STOP,
+        DEMO_SCREEN_UTILITY, DEMO_SCREEN_INSTRUMENT};
+    static const uint16_t idles[] = {0u, 1u, 400u, 999u, 1000u};
+
+    for (unsigned flags = 0u; flags < 64u; ++flags) {
+        for (unsigned s = 0u; s < sizeof(screens); ++s) {
+            for (unsigned i = 0u; i < sizeof(idles) / sizeof(idles[0]); ++i) {
+                DemoLightsInput input = idle_classic();
+
+                DemoLights_Init();
+                DemoLights_SetIdleLightness(idles[i]);
+                input.screen = screens[s];
+                input.shift = (flags & 1u) != 0u;
+                input.session_active = (flags & 2u) != 0u;
+                input.button_pressed[0] = (flags & 4u) != 0u;
+                input.button_pressed[1] = (flags & 8u) != 0u;
+                input.shift_mode_switch = (flags & 16u) != 0u;
+                input.field = (flags & 32u) == 0u;
+                if ((flags & 3u) == 3u) {
+                    DemoLights_OnSessionFault(0u);
+                }
+                for (uint32_t now = 0u; now < 4000u; now += 37u) {
+                    const DemoLightsOutput output = ((now % 3u) == 0u)
+                        ? onset_at(input, 3u, now) : compute(&input, now);
+
+                    CHECK((output.button_duty[0] == 0u) || (output.button_duty[0] == 1000u));
+                }
+            }
+        }
+    }
+}
+
 int main(void)
 {
     test_lightness_curve();
     test_idle_and_pressed();
-    test_session_breathing();
+    test_session_blink();
     test_fault_blinks_then_resume();
     test_shift_lights_available_actions();
     test_screens();
@@ -514,6 +547,7 @@ int main(void)
     test_flash_exempt_buttons();
     test_flash_suppressed();
     test_flash_settings();
+    test_button0_never_partial();
     if (failures != 0u) {
         printf("%u failure(s)\n", failures);
         return 1;

@@ -6,18 +6,24 @@
  * full_spooky_proto-p04.3). Computes what the two button LEDs and the four
  * encoder RGB LEDs show from published state and the physical press state:
  *
- * - Buttons (PRES-LED-01 to -05): an adjustable idle level when not pressed,
- *   100% while pressed, Button 0 breathing from off up to a fixed peak while a
- *   session is active (user direction 2026-10-04), and three fast blinks on Button 0 for a rejected or
- *   aborted session. Brightness is perceived lightness converted to PWM duty
- *   through the inverse CIE L* curve. PRES-LED-01 asks for 10%; on the bench
- *   that was too dim to see in normal light, so the demo starts brighter and
- *   the level can be set at run time (user direction 2026-10-04).
+ * - Buttons (PRES-LED-01 to -05): 100% while pressed, and three fast blinks on
+ *   Button 0 for a rejected or aborted session. Button 1 shows an adjustable
+ *   idle level when not pressed. Brightness is perceived lightness converted to
+ *   PWM duty through the inverse CIE L* curve. PRES-LED-01 asks for 10%; on the
+ *   bench that was too dim to see in normal light, so the demo starts brighter
+ *   and the level can be set at run time (user direction 2026-10-04).
+ * - Button 0 is only ever off or full (full_spooky_proto-p04.32, user
+ *   direction 2026-10-20). On the Nucleo, its PF6 trace runs beside the PDM
+ *   clock (PC2), and its PWM edges put click bursts in the microphone (evidence
+ *   2026-10-19-button0-pwm-mic-bursts). So it is dark when idle instead of
+ *   showing the idle level (PRES-LED-01), blinks slowly during a session instead
+ *   of breathing (PRES-LED-03), is full in Shift when its action is available,
+ *   and never flashes.
  * - Encoders: white on the controls with an action on the current screen;
  *   while the session prompt is open only Encoder 0, the confirm, green to
  *   start and yellow to stop (PRES-LED-06). In Shift only the controls with an
- *   available Shift action are lit (decision 0008 item 8, PRES-INP-01), the
- *   buttons at the idle level. A lit encoder shows its colour at its own
+ *   available Shift action are lit (decision 0008 item 8, PRES-INP-01),
+ *   Button 1 at the idle level. A lit encoder shows its colour at its own
  *   adjustable level (full_spooky_proto-p04.12): the encoders need a higher
  *   level than the buttons to look as bright (bench 2026-10-16). Each channel
  *   the colour uses gets that level's PWM duty, scaled down by a per-channel
@@ -27,8 +33,8 @@
  * - Radio onset flashes (decision 0031, full_spooky_proto-p04.29): in Field,
  *   each onset from the feed's lights reader raises every lit encoder and
  *   button toward full through the light_flash envelope, encoders keeping
- *   their hue. Dark controls stay dark. No flash on a held button or on
- *   Button 0 while it breathes or blinks its fault (item 2), and none while
+ *   their hue. Dark controls stay dark. No flash on a held button or ever on
+ *   Button 0 (item 2, and p04.32), and none while
  *   Shift is held, while the prompt is open or in Instrument (item 3): onsets
  *   then are dropped and a flash in progress stops showing.
  *
@@ -49,9 +55,8 @@
 #define DEMO_LIGHT_CHANNELS 3U /* red, green, blue */
 
 /* Starting values for bench trials (Principle IV). */
-#define DEMO_LIGHTS_IDLE_LIGHTNESS 400U       /* permille L*, adjustable */
-#define DEMO_LIGHTS_BREATH_HIGH_LIGHTNESS 850U /* breathing runs from off to here */
-#define DEMO_LIGHTS_BREATH_PERIOD_MS 4000U
+#define DEMO_LIGHTS_IDLE_LIGHTNESS 400U       /* permille L*, Button 1, adjustable */
+#define DEMO_LIGHTS_SESSION_BLINK_MS 1000U    /* Button 0's on and off time in a session */
 #define DEMO_LIGHTS_BLINK_MS 120U             /* on and off time of a fault blink */
 #define DEMO_LIGHTS_BLINKS 3U
 #define DEMO_LIGHTS_ENCODER_LIGHTNESS 800U    /* permille L*, set by eye on the bench */
@@ -95,8 +100,8 @@ typedef struct
  * DEMO_LIGHTS_* defaults, the flash to LightFlash_DefaultConfig, and the flash
  * counters. */
 void DemoLights_Init(void);
-/* Perceived lightness of a button that is not pressed, permille, clamped to
- * 0..1000. */
+/* Perceived lightness of Button 1 when not pressed, permille, clamped to
+ * 0..1000. Button 0 has no idle level (p04.32). */
 void DemoLights_SetIdleLightness(uint16_t lightness_permille);
 uint16_t DemoLights_IdleLightness(void);
 /* Perceived lightness of a lit encoder, permille, clamped to 0..1000. */
