@@ -103,7 +103,8 @@ static void open_steps(void)
     send(GESTURE_CLICK, 0u, 0);
 }
 
-/* C-072 to C-076: browse, edit the value at once, toggle, and return. */
+/* C-072 to C-076: browse, edit the value at once, toggle, and return. An
+ * Encoder 1 click toggles from browse too (p04.34). */
 static void test_steps(void)
 {
     open_steps();
@@ -112,6 +113,10 @@ static void test_steps(void)
     CHECK(send(GESTURE_TURN, 0u, -40) && seq.step == 0u);
     send(GESTURE_TURN, 0u, 2);
     CHECK(send(GESTURE_TURN, 1u, 4) && pattern.steps[2].value == 125u); /* swallowed */
+    CHECK(send(GESTURE_CLICK, 1u, 0) && !pattern.steps[2].on && target.pattern_edited);
+    CHECK(seq.focus == DEMO_SEQ_FOCUS_STEPS && !target.value_changed);
+    CHECK(pattern.steps[1].on && pattern.steps[3].on); /* only the selected step */
+    CHECK(send(GESTURE_CLICK, 1u, 0) && pattern.steps[2].on && target.pattern_edited);
     CHECK(send(GESTURE_CLICK, 0u, 0) && seq.focus == DEMO_SEQ_FOCUS_STEP_EDIT);
     CHECK(send(GESTURE_TURN, 0u, 5) && pattern.steps[2].value == 175u);
     CHECK(send(GESTURE_TURN, 0u, -100) && pattern.steps[2].value == 0u);
