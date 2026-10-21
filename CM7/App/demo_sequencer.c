@@ -165,6 +165,11 @@ static void Steps(DemoSequencer *seq, Gesture gesture, DemoSeqTarget *target)
       {
         seq->focus = (uint8_t)DEMO_SEQ_FOCUS_STEP_EDIT;
       }
+      else if (Is(gesture, GESTURE_CLICK, 1U))
+      {
+        step->on = !step->on; /* C-075 without entering the edit (p04.34) */
+        target->pattern_edited = true;
+      }
       else if (Is(gesture, GESTURE_HOLD, 0U))
       {
         seq->focus = (uint8_t)DEMO_SEQ_FOCUS_SETTINGS;

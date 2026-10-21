@@ -19,7 +19,9 @@
  *   Encoder 0 click selects, an Encoder 1 click closes without a change, and the
  *   menu closes after DEMO_SEQ_MENU_TIMEOUT_MS without input.
  * - Step view, steps: Encoder 0 browses (C-072); its click edits the step
- *   (C-073); its long press moves to the settings row (C-077).
+ *   (C-073); its long press moves to the settings row (C-077). An Encoder 1
+ *   click turns the selected step on or off without entering the edit, as in
+ *   step edit (C-075; user call 2026-10-20, p04.34).
  * - Step edit: Encoder 0 changes the value at once (C-074), value_step a detent
  *   within 0..value_max (1 % of the clip for Granular, one slice for the
  *   Slicer, p04.16); an Encoder 1 click turns the step on or off (C-075); an

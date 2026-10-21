@@ -748,10 +748,11 @@ or D-012.
   fades out over 5 ms, then the new one fades in over 5 ms (decision 0027). The
   transport runs on, each engine keeps its own pattern, and only the active engine's
   pattern plays; the new engine joins the current step in time.
-- **Step view.** Encoder 0 browses the steps and its click edits one: Encoder 0 then
-  sets the value at once (1 % of the clip a detent for Granular, one slice a detent for
-  the Slicer) and an Encoder 1 click turns the step on or off; another Encoder 0 click
-  returns. A long Encoder 0 press moves to the settings row, Tempo (40
+- **Step view.** Encoder 0 browses the steps and an Encoder 1 click turns the
+  selected step on or off. An Encoder 0 click edits the step: Encoder 0 then sets the
+  value at once (1 % of the clip a detent for Granular, one slice a detent for the
+  Slicer), an Encoder 1 click still turns the step on or off, and another Encoder 0
+  click returns. A long Encoder 0 press moves to the settings row, Tempo (40
   to 200 BPM) and Division (1/16, 1/8, 1/4), where the same keys browse and edit. An
   edit is heard at once; an Encoder 0 click keeps it and an Encoder 1 click restores
   the value from before it. A long Encoder 0 press returns to the steps.
@@ -807,8 +808,8 @@ and demo-only (p04.15) and do not settle C-025 or 0022 item 5.
   click runs or stops the transport and an Encoder 0 click closes the slice.
 - **Step view.** SEQUENCER in the view menu shows the Slicer's pattern, one bar per step
   as tall as its slice, and edits it as for Granular: in step edit an Encoder 0 turn
-  picks the step's slice (1 to the slice count) and an Encoder 1 click turns the step
-  on or off. While the transport is stopped, each turn that changes the slice plays the
+  picks the step's slice (1 to the slice count), and an Encoder 1 click turns the step
+  on or off, in browse or in edit. While the transport is stopped, each turn that changes the slice plays the
   new slice once, as selecting a slice on the page does; while it runs, the edit is
   heard when the step plays. The Slicer's pattern is its own: Granular's is kept while
   the Slicer plays, and the other way round.
